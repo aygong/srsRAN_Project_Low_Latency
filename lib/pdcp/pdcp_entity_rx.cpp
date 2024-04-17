@@ -34,7 +34,7 @@ pdcp_entity_rx::pdcp_entity_rx(uint32_t                        ue_index,
                                pdcp_rx_config                  cfg_,
                                pdcp_rx_upper_data_notifier&    upper_dn_,
                                pdcp_rx_upper_control_notifier& upper_cn_,
-                               timer_factory                   timers_) :
+                               timer_factory                   ue_ul_timer_factory_) :
   pdcp_entity_tx_rx_base(rb_id_, cfg_.rb_type, cfg_.rlc_mode, cfg_.sn_size),
   logger("PDCP", {ue_index, rb_id_, "UL"}),
   cfg(cfg_),
@@ -43,11 +43,11 @@ pdcp_entity_rx::pdcp_entity_rx(uint32_t                        ue_index,
   rx_window(create_rx_window(cfg.sn_size)),
   upper_dn(upper_dn_),
   upper_cn(upper_cn_),
-  timers(timers_)
+  ue_ul_timer_factory(ue_ul_timer_factory_)
 {
   // t-Reordering timer
   if (cfg.t_reordering != pdcp_t_reordering::ms0 && cfg.t_reordering != pdcp_t_reordering::infinity) {
-    reordering_timer = timers.create_timer();
+    reordering_timer = ue_ul_timer_factory.create_timer();
     if (static_cast<uint32_t>(cfg.t_reordering) > 0) {
       reordering_timer.set(std::chrono::milliseconds{static_cast<unsigned>(cfg.t_reordering)},
                            reordering_callback{this});
@@ -73,8 +73,15 @@ void pdcp_entity_rx::handle_pdu(byte_buffer_chain buf)
     return;
   }
 
-  byte_buffer   pdu = buf.deep_copy();
-  pdcp_dc_field dc  = pdcp_pdu_get_dc(*(pdu.begin()));
+  auto pdu_copy = buf.deep_copy();
+  if (pdu_copy.is_error()) {
+    metrics_add_dropped_pdus(1);
+    logger.log_error("Dropping PDU: Copy failed. pdu_len={}", buf.length());
+    return;
+  }
+  byte_buffer pdu = std::move(pdu_copy.value());
+
+  pdcp_dc_field dc = pdcp_pdu_get_dc(*(pdu.begin()));
   if (is_srb() || dc == pdcp_dc_field::data) {
     handle_data_pdu(std::move(pdu));
   } else {
@@ -468,10 +475,9 @@ bool pdcp_entity_rx::integrity_verify(byte_buffer_view buf, uint32_t count, cons
                count,
                bearer_id,
                direction);
-    logger.log(
-        level, (uint8_t*)sec_cfg.k_128_int.value().data(), sec_cfg.k_128_int.value().size(), "Integrity check key.");
-    logger.log(level, (uint8_t*)mac_exp.data(), mac_exp.size(), "MAC expected.");
-    logger.log(level, (uint8_t*)mac.data(), mac.size(), "MAC found.");
+    logger.log(level, "Integrity check key: {}", sec_cfg.k_128_int);
+    logger.log(level, "MAC expected: {}", mac_exp);
+    logger.log(level, "MAC found: {}", mac);
     logger.log(level, buf.begin(), buf.end(), "Integrity check input message. len={}", buf.length());
   }
 
@@ -481,7 +487,7 @@ bool pdcp_entity_rx::integrity_verify(byte_buffer_view buf, uint32_t count, cons
 byte_buffer pdcp_entity_rx::cipher_decrypt(byte_buffer_view& msg, uint32_t count)
 {
   logger.log_debug("Cipher decrypt. count={} bearer_id={} dir={}", count, bearer_id, direction);
-  logger.log_debug((uint8_t*)sec_cfg.k_128_enc.data(), sec_cfg.k_128_enc.size(), "Cipher decrypt key.");
+  logger.log_debug("Cipher decrypt key: {}", sec_cfg.k_128_enc);
   logger.log_debug(msg.begin(), msg.end(), "Cipher decrypt input msg.");
 
   byte_buffer ct;

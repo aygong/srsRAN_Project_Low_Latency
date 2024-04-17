@@ -93,11 +93,12 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
   // Find a SearchSpace candidate.
   const search_space_info* ss_info = ue_cell_cfg.find_search_space(grant.ss_id);
   if (ss_info == nullptr) {
-    logger.warning("Failed to allocate PDSCH. Cause: No valid SearchSpace found.");
+    logger.warning("ue={} rnti={}: Failed to allocate PDSCH. Cause: No valid SearchSpace found.", u.ue_index, u.crnti);
     return alloc_outcome::invalid_params;
   }
   if (ss_info->bwp->bwp_id != ue_cc->active_bwp_id()) {
-    logger.warning("Failed to allocate PDSCH. Cause: SearchSpace not valid for active BWP.");
+    logger.warning(
+        "ue={} rnti={}: Failed to allocate PDSCH. Cause: SearchSpace not valid for active BWP.", u.ue_index, u.crnti);
     return alloc_outcome::invalid_params;
   }
   const search_space_configuration& ss_cfg = *ss_info->cfg;
@@ -119,14 +120,19 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
   //    CRC scrambled by a RA-RNTI, a MsgB-RNTI, or a TC-RNTI on the primary cell.
   if (dci_type == dci_dl_rnti_config_type::tc_rnti_f1_0 and
       grant.ss_id != cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common.ra_search_space_id) {
-    logger.info("Failed to allocate PDSCH. Cause: SearchSpace not valid for re-transmission of Msg4.");
+    logger.info("ue={} rnti={}: Failed to allocate PDSCH. Cause: SearchSpace not valid for re-transmission of Msg4.",
+                u.ue_index,
+                u.crnti);
     return alloc_outcome::invalid_params;
   }
 
   // Note: Unable to multiplex CSI and SRB0 retransmission.
   if (dci_type == dci_dl_rnti_config_type::tc_rnti_f1_0 and
       not get_res_alloc(grant.cell_index)[0].result.dl.csi_rs.empty()) {
-    logger.info("Failed to allocate PDSCH. Cause: Multiplexing of CSI-RS and TC-RNTI retransmission is not allowed.");
+    logger.info("ue={} rnti={}: Failed to allocate PDSCH. Cause: Multiplexing of CSI-RS and TC-RNTI retransmission is "
+                "not allowed.",
+                u.ue_index,
+                u.crnti);
     return alloc_outcome::skip_ue;
   }
 
@@ -140,30 +146,44 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
   if (pdsch_alloc.result.dl.bc.sibs.size() + pdsch_alloc.result.dl.paging_grants.size() +
           pdsch_alloc.result.dl.rar_grants.size() + pdsch_alloc.result.dl.ue_grants.size() >=
       expert_cfg.max_pdschs_per_slot) {
-    logger.info("Failed to allocate PDSCH. Cause: Max number of PDSCHs per slot {} was reached.",
+    logger.info("ue={} rnti={}: Failed to allocate PDSCH. Cause: Max number of PDSCHs per slot {} was reached.",
+                u.ue_index,
+                u.crnti,
                 expert_cfg.max_pdschs_per_slot);
     return alloc_outcome::skip_slot;
   }
   if (not cell_cfg.is_dl_enabled(pdcch_alloc.slot)) {
-    logger.warning("Failed to allocate PDSCH in slot={}. Cause: DL is not active in the PDCCH slot", pdsch_alloc.slot);
+    logger.warning("ue={} rnti={}: Failed to allocate PDSCH in slot={}. Cause: DL is not active in the PDCCH slot",
+                   u.ue_index,
+                   u.crnti,
+                   pdsch_alloc.slot);
     return alloc_outcome::skip_slot;
   }
   if (not cell_cfg.is_dl_enabled(pdsch_alloc.slot)) {
-    logger.warning("Failed to allocate PDSCH in slot={}. Cause: DL is not active in the PDSCH slot", pdsch_alloc.slot);
+    logger.warning("ue={} rnti={}: Failed to allocate PDSCH in slot={}. Cause: DL is not active in the PDSCH slot",
+                   u.ue_index,
+                   u.crnti,
+                   pdsch_alloc.slot);
     return alloc_outcome::invalid_params;
   }
   // Check whether PDSCH time domain resource does not overlap with CORESET.
   if (pdsch_td_cfg.symbols.start() < ss_cfg.get_first_symbol_index() + cs_cfg.duration) {
-    logger.warning("Failed to allocate PDSCH in slot={}. Cause: PDSCH time domain resource ={} is starting before the "
+    logger.warning("ue={} rnti={}: Failed to allocate PDSCH in slot={}. Cause: PDSCH time domain resource={} is "
+                   "starting before the "
                    "CORESET symbols",
+                   u.ue_index,
+                   u.crnti,
                    pdsch_alloc.slot,
                    grant.time_res_index);
     return alloc_outcome::invalid_params;
   }
   // Check whether PDSCH time domain resource fits in DL symbols of the slot.
   if (pdsch_td_cfg.symbols.stop() > cell_cfg.get_nof_dl_symbol_per_slot(pdsch_alloc.slot)) {
-    logger.warning("Failed to allocate PDSCH in slot={}. Cause: Nof. DL symbols in PDSCH slot shorter than PDSCH time "
-                   "domain resource ={}",
+    logger.warning("ue={} rnti={}: Failed to allocate PDSCH in slot={}. Cause: Nof. DL symbols in PDSCH slot shorter "
+                   "than PDSCH time "
+                   "domain resource={}",
+                   u.ue_index,
+                   u.crnti,
                    pdsch_alloc.slot,
                    grant.time_res_index);
     return alloc_outcome::invalid_params;
@@ -204,6 +224,15 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
                    u.ue_index,
                    u.crnti);
     return alloc_outcome::invalid_params;
+  }
+
+  // Verify only one PDSCH exists for a RNTI.
+  // Reason: Unable to distinguish/map HARQ acknowledge bits to HARQ Id if there are more than one PDSCH per UE per
+  // slot.
+  for (const dl_msg_alloc& pdsch : pdsch_alloc.result.dl.ue_grants) {
+    if (pdsch.pdsch_cfg.rnti == u.crnti) {
+      return alloc_outcome::skip_ue;
+    }
   }
 
   // Allocate PDCCH position.
@@ -249,7 +278,7 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
       pdsch_cfg = get_pdsch_config_f1_0_tc_rnti(cell_cfg, pdsch_list[grant.time_res_index]);
       break;
     case dci_dl_rnti_config_type::c_rnti_f1_0:
-      pdsch_cfg = get_pdsch_config_f1_0_c_rnti(ue_cell_cfg, pdsch_list[grant.time_res_index]);
+      pdsch_cfg = get_pdsch_config_f1_0_c_rnti(cell_cfg, &ue_cell_cfg, pdsch_list[grant.time_res_index]);
       break;
     case dci_dl_rnti_config_type::c_rnti_f1_1:
       pdsch_cfg = get_pdsch_config_f1_1_c_rnti(ue_cell_cfg, pdsch_list[grant.time_res_index], grant.nof_layers);
@@ -276,7 +305,16 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
   optional<sch_mcs_tbs> mcs_tbs_info;
   // If it's a new Tx, compute the MCS and TBS.
   if (h_dl.empty()) {
-    mcs_tbs_info = compute_dl_mcs_tbs(pdsch_cfg, ue_cell_cfg, adjusted_mcs, grant.crbs.length());
+    // As \c txDirectCurrentLocation, in \c SCS-SpecificCarrier, TS 38.331, "If this field (\c txDirectCurrentLocation)
+    // is absent for downlink within ServingCellConfigCommon and ServingCellConfigCommonSIB, the UE assumes the default
+    // value of 3300 (i.e. "Outside the carrier")".
+    bool contains_dc = false;
+    if (cell_cfg.dl_cfg_common.freq_info_dl.scs_carrier_list.back().tx_direct_current_location.has_value()) {
+      contains_dc = dc_offset_helper::is_contained(
+          cell_cfg.dl_cfg_common.freq_info_dl.scs_carrier_list.back().tx_direct_current_location.value(), grant.crbs);
+    }
+
+    mcs_tbs_info = compute_dl_mcs_tbs(pdsch_cfg, adjusted_mcs, grant.crbs.length(), contains_dc);
   } else {
     // It is a retx.
     mcs_tbs_info.emplace(
@@ -341,8 +379,8 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
       break;
     case dci_dl_rnti_config_type::c_rnti_f1_0:
       build_dci_f1_0_c_rnti(pdcch->dci,
-                            ue_cell_cfg,
-                            grant.ss_id,
+                            ue_cell_cfg.search_space(grant.ss_id),
+                            cell_cfg.dl_cfg_common.init_dl_bwp,
                             grant.crbs,
                             grant.time_res_index,
                             k1,
@@ -395,8 +433,8 @@ alloc_outcome ue_cell_grid_allocator::allocate_dl_grant(const ue_pdsch_grant& gr
                               pdsch_cfg,
                               mcs_tbs_info.value().tbs,
                               u.crnti,
-                              ue_cell_cfg,
-                              grant.ss_id,
+                              cell_cfg,
+                              ue_cell_cfg.search_space(grant.ss_id),
                               pdcch->dci.c_rnti_f1_0,
                               grant.crbs,
                               h_dl.tb(0).nof_retxs == 0);
@@ -466,13 +504,16 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
   // Find a SearchSpace candidate.
   const search_space_info* ss_info = ue_cell_cfg.find_search_space(grant.ss_id);
   if (ss_info == nullptr) {
-    logger.warning("Failed to allocate PUSCH. Cause: No valid SearchSpace found.");
+    logger.warning("ue={} rnti={}: Failed to allocate PUSCH. Cause: No valid SearchSpace found.", u.ue_index, u.crnti);
     return alloc_outcome::invalid_params;
   }
   if (ss_info->bwp->bwp_id != ue_cc->active_bwp_id()) {
-    logger.warning("Failed to allocate PUSCH. Cause: Chosen SearchSpace {} does not belong to the active BWP {}",
-                   grant.ss_id,
-                   ue_cc->active_bwp_id());
+    logger.warning(
+        "ue={} rnti={}: Failed to allocate PUSCH. Cause: Chosen SearchSpace {} does not belong to the active BWP {}",
+        u.ue_index,
+        u.crnti,
+        grant.ss_id,
+        ue_cc->active_bwp_id());
     return alloc_outcome::invalid_params;
   }
   const search_space_configuration&            ss_cfg       = *ss_info->cfg;
@@ -491,18 +532,21 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
   //    CRC scrambled by a RA-RNTI, a MsgB-RNTI, or a TC-RNTI on the primary cell.
   if (dci_type == dci_ul_rnti_config_type::tc_rnti_f0_0 and
       grant.ss_id != cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common.ra_search_space_id) {
-    logger.info("Failed to allocate PUSCH. Cause: SearchSpace not valid for re-transmission.");
+    logger.info("ue={} rnti={}: Failed to allocate PUSCH. Cause: SearchSpace not valid for re-transmission.",
+                u.ue_index,
+                u.crnti);
     return alloc_outcome::invalid_params;
   }
 
   // In case of re-transmission DCI format must remain same and therefore its necessary to find the SS which support
   // that DCI format.
   if (dci_type != dci_ul_rnti_config_type::tc_rnti_f0_0 and dci_type != ss_supported_crnti_dci_type) {
-    logger.info(
-        "rnti={} Failed to allocate PUSCH. Cause: DCI format {} in HARQ retx is not supported in SearchSpace {}.",
-        u.crnti,
-        dci_ul_rnti_config_format(h_ul.last_tx_params().dci_cfg_type),
-        grant.ss_id);
+    logger.info("ue={} rnti={}: Failed to allocate PUSCH. Cause: DCI format {} in HARQ retx is not supported in "
+                "SearchSpace {}.",
+                u.ue_index,
+                u.crnti,
+                dci_ul_rnti_config_format(h_ul.last_tx_params().dci_cfg_type),
+                grant.ss_id);
     return alloc_outcome::invalid_params;
   }
 
@@ -512,59 +556,93 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
       get_res_alloc(grant.cell_index)[pdcch_delay_in_slots + pusch_td_cfg.k2 + cell_cfg.ntn_cs_koffset];
 
   if (not cell_cfg.is_dl_enabled(pdcch_alloc.slot)) {
-    logger.warning("rnti={} Failed to allocate PUSCH in slot={}. Cause: DL is not active in the PDCCH slot",
+    logger.warning("ue={} rnti={}: Failed to allocate PUSCH in slot={}. Cause: DL is not active in the PDCCH slot",
+                   u.ue_index,
                    u.crnti,
                    pusch_alloc.slot);
     return alloc_outcome::skip_slot;
   }
   if (not cell_cfg.is_ul_enabled(pusch_alloc.slot)) {
-    logger.warning("rnti={} Failed to allocate PUSCH in slot={}. Cause: UL is not active in the PUSCH slot (k2={})",
-                   u.crnti,
-                   pusch_alloc.slot,
-                   pusch_td_cfg.k2);
+    logger.warning(
+        "ue={} rnti={}: Failed to allocate PUSCH in slot={}. Cause: UL is not active in the PUSCH slot (k2={})",
+        u.ue_index,
+        u.crnti,
+        pusch_alloc.slot,
+        pusch_td_cfg.k2);
     return alloc_outcome::invalid_params;
   }
   if (pusch_alloc.result.ul.puschs.size() >= expert_cfg.max_puschs_per_slot) {
-    logger.info("Failed to allocate PUSCH. Cause: Max number of PUSCHs per slot {} was reached.",
-                expert_cfg.max_puschs_per_slot);
-    return alloc_outcome::skip_slot;
-  }
-  if (pusch_alloc.result.ul.puschs.size() >=
-      expert_cfg.max_ul_grants_per_slot - static_cast<unsigned>(pusch_alloc.result.ul.pucchs.size())) {
-    logger.info("Failed to allocate PUSCH. Cause: Max number of UL grants per slot {} was reached.",
+    logger.info("ue={} rnti={}: Failed to allocate PUSCH. Cause: Max number of PUSCHs per slot {} was reached.",
+                u.ue_index,
+                u.crnti,
                 expert_cfg.max_puschs_per_slot);
     return alloc_outcome::skip_slot;
   }
 
   // Verify there is space in PUSCH and PDCCH result lists for new allocations.
   if (pusch_alloc.result.ul.puschs.full() or pdcch_alloc.result.dl.ul_pdcchs.full()) {
-    logger.warning("rnti={} Failed to allocate PUSCH in slot={}. Cause: No space available in scheduler output list",
-                   u.crnti,
-                   pusch_alloc.slot);
+    logger.warning(
+        "ue={} rnti={}: Failed to allocate PUSCH in slot={}. Cause: No space available in scheduler output list",
+        u.ue_index,
+        u.crnti,
+        pusch_alloc.slot);
     return alloc_outcome::skip_slot;
   }
+
+  // Verify only one PUSCH exists for a RNTI.
+  for (const ul_sched_info& pusch : pusch_alloc.result.ul.puschs) {
+    if (pusch.pusch_cfg.rnti == u.crnti) {
+      return alloc_outcome::skip_ue;
+    }
+  }
+
+  const unsigned nof_pucch_grants =
+      std::count_if(pusch_alloc.result.ul.pucchs.begin(),
+                    pusch_alloc.result.ul.pucchs.end(),
+                    [&u](const pucch_info& pucch_grant) { return pucch_grant.crnti == u.crnti; });
 
   // [Implementation-defined] We skip allocation of PUSCH if there is already a PUCCH grant scheduled over the same slot
   // and the UE is in fallback mode.
   // NOTE: This is due to the lack of clarity of the TS when it comes to define what \c betaOffsets to use for PUSCH
   // when the UE does not have a dedicated configuration.
   if (ue_cc->is_in_fallback_mode()) {
-    const auto* pucch_grant_it =
-        std::find_if(pusch_alloc.result.ul.pucchs.begin(),
-                     pusch_alloc.result.ul.pucchs.end(),
-                     [&u](const pucch_info& pucch_grant) { return pucch_grant.crnti == u.crnti; });
-    if (pucch_grant_it != pusch_alloc.result.ul.pucchs.end()) {
-      logger.debug("rnti={} Allocation of PUSCH in slot={} skipped. Cause: this UE is in fallback mode and has "
+    if (nof_pucch_grants != 0) {
+      logger.debug("ue={} rnti={}: Allocation of PUSCH in slot={} skipped. Cause: this UE is in fallback mode and has "
                    "PUCCH grants scheduled",
+                   u.ue_index,
                    u.crnti,
                    pusch_alloc.slot);
       return alloc_outcome::skip_ue;
     }
   }
 
+  // [Implementation-defined] We skip allocation of PUSCH if there is already a PUCCH grant scheduled using common PUCCH
+  // resources.
+  if (get_uci_alloc(grant.cell_index).has_uci_harq_on_common_pucch_res(u.crnti, pusch_alloc.slot)) {
+    logger.debug("ue={} rnti={} Allocation of PUSCH in slot={} skipped. Cause: UE has PUCCH grant using common PUCCH "
+                 "resources scheduled",
+                 u.ue_index,
+                 u.crnti,
+                 pusch_alloc.slot);
+    return alloc_outcome::skip_ue;
+  }
+
+  // When checking the number of remaining grants for PUSCH, take into account that the PUCCH grants for this UE will be
+  // removed when multiplexing the UCI on PUSCH.
+  if (pusch_alloc.result.ul.puschs.size() >=
+      expert_cfg.max_ul_grants_per_slot -
+          (static_cast<unsigned>(pusch_alloc.result.ul.pucchs.size()) - nof_pucch_grants)) {
+    logger.info("ue={} rnti={}: Failed to allocate PUSCH. Cause: Max number of UL grants per slot {} was reached.",
+                u.ue_index,
+                u.crnti,
+                expert_cfg.max_puschs_per_slot);
+    return alloc_outcome::skip_slot;
+  }
+
   // Verify CRBs allocation.
   if (not ss_info->ul_crb_lims.contains(grant.crbs)) {
     logger.warning("rnti={} Failed to allocate PUSCH. Cause: CRBs {} allocated outside the BWP {}",
+                   u.ue_index,
                    u.crnti,
                    grant.crbs,
                    ss_info->ul_crb_lims);
@@ -573,19 +651,21 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
 
   // In case of retx, ensure the number of PRBs for the grant did not change.
   if (not h_ul.empty() and grant.crbs.length() != h_ul.last_tx_params().rbs.type1().length()) {
-    logger.warning(
-        "rnti={} Failed to allocate PUSCH. Cause: Number of CRBs has to remain constant during retxs (harq-id={}, "
-        "nof_prbs={}!={})",
-        u.crnti,
-        h_ul.id,
-        h_ul.last_tx_params().rbs.type1().length(),
-        grant.crbs.length());
+    logger.warning("ue={} rnti={}: Failed to allocate PUSCH. Cause: Number of CRBs has to remain constant during retxs "
+                   "(harq-id={}, "
+                   "nof_prbs={}!={})",
+                   u.ue_index,
+                   u.crnti,
+                   h_ul.id,
+                   h_ul.last_tx_params().rbs.type1().length(),
+                   grant.crbs.length());
     return alloc_outcome::invalid_params;
   }
 
   // Verify there is no RB collision.
   if (pusch_alloc.ul_res_grid.collides(scs, pusch_td_cfg.symbols, grant.crbs)) {
-    logger.warning("rnti={} Failed to allocate PUSCH. Cause: No space available in scheduler RB resource grid.",
+    logger.warning("ue={} rnti={}: Failed to allocate PUSCH. Cause: No space available in scheduler RB resource grid.",
+                   u.ue_index,
                    u.crnti);
     return alloc_outcome::invalid_params;
   }
@@ -595,7 +675,7 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
       get_pdcch_sched(grant.cell_index)
           .alloc_ul_pdcch_ue(pdcch_alloc, u.crnti, ue_cell_cfg, ss_cfg.get_id(), grant.aggr_lvl);
   if (pdcch == nullptr) {
-    logger.info("rnti={}: Failed to allocate PUSCH. Cause: No space in PDCCH.", u.crnti);
+    logger.info("ue={} rnti={}: Failed to allocate PUSCH. Cause: No space in PDCCH.", u.ue_index, u.crnti);
     return alloc_outcome::skip_ue;
   }
 
@@ -630,7 +710,10 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
   optional<sch_mcs_tbs> mcs_tbs_info;
   // If it's a new Tx, compute the MCS and TBS from SNR, payload size, and available RBs.
   if (h_ul.empty()) {
-    mcs_tbs_info = compute_ul_mcs_tbs(pusch_cfg, ue_cell_cfg, grant.mcs, grant.crbs.length());
+    bool contains_dc =
+        dc_offset_helper::is_contained(cell_cfg.expert_cfg.ue.initial_ul_dc_offset, cell_cfg.nof_ul_prbs, grant.crbs);
+
+    mcs_tbs_info = compute_ul_mcs_tbs(pusch_cfg, ue_cell_cfg, grant.mcs, grant.crbs.length(), contains_dc);
   }
   // If it's a reTx, fetch the MCS and TBS from the previous transmission.
   else {
@@ -640,9 +723,10 @@ alloc_outcome ue_cell_grid_allocator::allocate_ul_grant(const ue_pusch_grant& gr
   // If there is not MCS-TBS info, it means no MCS exists such that the effective code rate is <= 0.95.
   if (not mcs_tbs_info.has_value()) {
     logger.warning(
-        "rnti={} Failed to allocate PUSCH. Cause: no MCS such that code rate <= 0.95 with this "
+        "ue={} rnti={}: Failed to allocate PUSCH. Cause: no MCS such that code rate <= 0.95 with this "
         "configuration: mcs={} crbs={} symbols={} nof_oh={} tb-sc-field={} layers={} pi2bpsk={} "
         "harq_bits={} csi1_bits={} csi2_bits={} mcs_table_idx={} dmrs_A_pos={} is_dmrs_type2={} dmrs_add_pos_idx={}",
+        u.ue_index,
         u.crnti,
         grant.mcs.to_uint(),
         grant.crbs,

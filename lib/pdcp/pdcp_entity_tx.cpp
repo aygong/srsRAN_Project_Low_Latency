@@ -84,7 +84,13 @@ void pdcp_entity_tx::handle_sdu(byte_buffer buf)
   // We will need a copy of the SDU for the discard timer when using AM
   byte_buffer sdu;
   if (cfg.discard_timer.has_value() && is_am()) {
-    sdu = buf.deep_copy();
+    auto sdu_copy = buf.deep_copy();
+    if (sdu_copy.is_error()) {
+      logger.log_error("Unable to deep copy SDU");
+      upper_cn.on_protocol_failure();
+      return;
+    }
+    sdu = std::move(sdu_copy.value());
   }
 
   // Perform header compression
@@ -116,7 +122,7 @@ void pdcp_entity_tx::handle_sdu(byte_buffer buf)
     unique_timer discard_timer = {};
     // Only start for finite durations
     if (cfg.discard_timer.value() != pdcp_discard_timer::infinity) {
-      discard_timer = timers.create_timer();
+      discard_timer = ue_dl_timer_factory.create_timer();
       discard_timer.set(std::chrono::milliseconds(static_cast<unsigned>(cfg.discard_timer.value())),
                         discard_callback{this, st.tx_next});
       discard_timer.run();
@@ -223,7 +229,13 @@ void pdcp_entity_tx::write_control_pdu_to_lower_layers(byte_buffer buf)
 
 void pdcp_entity_tx::handle_status_report(byte_buffer_chain status)
 {
-  byte_buffer buf = {status.begin(), status.end()};
+  auto status_buffer = byte_buffer::create(status.begin(), status.end());
+  if (status_buffer.is_error()) {
+    logger.log_warning("Unable to allocate byte_buffer");
+    return;
+  }
+
+  byte_buffer buf = std::move(status_buffer.value());
   bit_decoder dec(buf);
 
   // Unpack and check PDU header
@@ -333,15 +345,15 @@ void pdcp_entity_tx::integrity_generate(security::sec_mac& mac, byte_buffer_view
   }
 
   logger.log_debug("Integrity gen. count={} bearer_id={} dir={}", count, bearer_id, direction);
-  logger.log_debug((uint8_t*)sec_cfg.k_128_int.value().data(), sec_cfg.k_128_int.value().size(), "Integrity gen key.");
+  logger.log_debug("Integrity gen key: {}", sec_cfg.k_128_int);
   logger.log_debug(buf.begin(), buf.end(), "Integrity gen input message.");
-  logger.log_debug((uint8_t*)mac.data(), mac.size(), "MAC generated.");
+  logger.log_debug("MAC generated: {}", mac);
 }
 
 void pdcp_entity_tx::cipher_encrypt(byte_buffer_view& buf, uint32_t count)
 {
   logger.log_debug("Cipher encrypt. count={} bearer_id={} dir={}", count, bearer_id, direction);
-  logger.log_debug((uint8_t*)sec_cfg.k_128_enc.data(), sec_cfg.k_128_enc.size(), "Cipher encrypt key.");
+  logger.log_debug("Cipher encrypt key: {}", sec_cfg.k_128_enc);
   logger.log_debug(buf.begin(), buf.end(), "Cipher encrypt input msg.");
 
   switch (sec_cfg.cipher_algo) {
@@ -420,7 +432,14 @@ void pdcp_entity_tx::retransmit_all_pdus()
       hdr.sn                   = SN(sdu_info.count);
 
       // Pack header
-      byte_buffer buf = sdu_info.sdu.deep_copy();
+      auto buf_copy = sdu_info.sdu.deep_copy();
+      if (buf_copy.is_error()) {
+        logger.log_error("Could not deep copy SDU, dropping SDU and notifying RRC. count={} {}", sdu_info.count, st);
+        upper_cn.on_protocol_failure();
+        return;
+      }
+
+      byte_buffer buf = std::move(buf_copy.value());
       if (not write_data_pdu_header(buf, hdr)) {
         logger.log_error(
             "Could not append PDU header, dropping SDU and notifying RRC. count={} {}", sdu_info.count, st);

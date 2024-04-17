@@ -133,6 +133,13 @@ class byte_buffer_chain
     buffer_offset_it_t it;
   };
 
+  struct block_deleter {
+    void operator()(void* p);
+  };
+
+  /// Creates an empty byte_buffer_chain.
+  byte_buffer_chain(void* mem);
+
 public:
   using value_type      = uint8_t;
   using reference       = uint8_t&;
@@ -143,8 +150,8 @@ public:
   using iterator       = iter_impl<uint8_t>;
   using const_iterator = iter_impl<const uint8_t>;
 
-  /// \brief Creates an empty byte_buffer_chain.
-  byte_buffer_chain();
+  /// Creates an empty byte_buffer_chain.
+  static expected<byte_buffer_chain> create();
 
   ~byte_buffer_chain()
   {
@@ -156,8 +163,8 @@ public:
 
   /// Default move constructor.
   byte_buffer_chain(byte_buffer_chain&& other) noexcept :
-    byte_count(std::exchange(other.byte_count, 0U)),
     mem_block(std::move(other.mem_block)),
+    byte_count(std::exchange(other.byte_count, 0U)),
     max_slices(std::exchange(other.max_slices, 0U)),
     slice_count(std::exchange(other.slice_count, 0U)),
     slices_ptr(std::exchange(other.slices_ptr, nullptr))
@@ -166,16 +173,36 @@ public:
 
   byte_buffer_chain(const byte_buffer_chain&) = delete;
 
-  /// Conversion from byte_buffer to byte_buffer_chain.
-  explicit byte_buffer_chain(byte_buffer buf_) : byte_buffer_chain() { append(std::move(buf_)); }
-
-  /// Conversion from byte_buffer_slice to byte_buffer_chain.
-  byte_buffer_chain(byte_buffer_slice&& buf_) : byte_buffer_chain() { append(std::move(buf_)); }
-
-  /// Conversion from byte_buffer with specified offset and size to byte_buffer_chain.
-  byte_buffer_chain(byte_buffer buf_, size_t start, size_t sz) :
-    byte_buffer_chain(byte_buffer_slice(std::move(buf_), start, sz))
+  /// Creates a byte_buffer_chain from a byte_buffer.
+  static expected<byte_buffer_chain> create(byte_buffer buf_)
   {
+    auto buf = create();
+    if (buf.is_error()) {
+      return default_error_t{};
+    }
+    if (not buf.value().append(std::move(buf_))) {
+      return default_error_t{};
+    }
+    return buf;
+  }
+
+  /// Creates a byte_buffer_chain from a byte_buffer_slice.
+  static expected<byte_buffer_chain> create(byte_buffer_slice buf_)
+  {
+    auto buf = create();
+    if (buf.is_error()) {
+      return default_error_t{};
+    }
+    if (not buf.value().append(std::move(buf_))) {
+      return default_error_t{};
+    }
+    return buf;
+  }
+
+  /// Creates a byte_buffer_chain from byte_buffer with specified offset and size to byte_buffer_chain.
+  static expected<byte_buffer_chain> create(byte_buffer buf_, size_t start, size_t sz)
+  {
+    return create(byte_buffer_slice(std::move(buf_), start, sz));
   }
 
   /// Default move assignment operator.
@@ -198,11 +225,13 @@ public:
   byte_buffer_chain& operator=(const byte_buffer_chain&) noexcept = delete;
 
   /// Performs a deep copy of this byte_buffer_chain into a byte_buffer.
-  byte_buffer deep_copy() const
+  expected<byte_buffer> deep_copy() const
   {
     byte_buffer buf;
     for (const byte_buffer_slice& slice : slices()) {
-      buf.append(slice);
+      if (not buf.append(slice)) {
+        return default_error_t{};
+      }
     }
     return buf;
   }
@@ -229,7 +258,7 @@ public:
   ///
   /// \param obj Slice to append to the byte_buffer_chain.
   /// \return true if operation was successful, false otherwise.
-  bool append(byte_buffer_slice obj) noexcept
+  SRSRAN_NODISCARD bool append(byte_buffer_slice obj) noexcept
   {
     if (obj.empty()) {
       return true;
@@ -245,11 +274,11 @@ public:
 
   /// Appends a byte_buffer to the end of the byte_buffer_chain.
   /// \return true if operation was successful, false otherwise.
-  bool append(byte_buffer buf) { return append(byte_buffer_slice{std::move(buf)}); }
+  SRSRAN_NODISCARD bool append(byte_buffer buf) { return append(byte_buffer_slice{std::move(buf)}); }
 
   /// Appends the contents of another byte_buffer_chain to the end of this byte_buffer_chain.
   /// \return true if operation was successful, false otherwise.
-  bool append(byte_buffer_chain other)
+  SRSRAN_NODISCARD bool append(byte_buffer_chain other)
   {
     if (nof_slices() + other.nof_slices() > max_nof_slices()) {
       return false;
@@ -265,7 +294,7 @@ public:
 
   /// Prepends a byte_buffer_slice to the beginning of the byte_buffer_chain. This operation has O(N) complexity.
   /// \return true if operation was successful, false otherwise.
-  bool prepend(byte_buffer_slice slice)
+  SRSRAN_NODISCARD bool prepend(byte_buffer_slice slice)
   {
     if (slice.empty()) {
       return true;
@@ -284,14 +313,14 @@ public:
     }
     byte_count += slice.length();
     slice_count++;
-    // Store slice in the first (now empty) position
+    // Store slice in the first (now empty) position.
     *slices_ptr = std::move(slice);
     return true;
   }
 
   /// Prepends a byte_buffer to the beginning of the byte_buffer_chain.
   /// \return true if operation was successful, false otherwise.
-  bool prepend(byte_buffer buf) { return prepend(byte_buffer_slice{std::move(buf)}); }
+  SRSRAN_NODISCARD bool prepend(byte_buffer buf) { return prepend(byte_buffer_slice{std::move(buf)}); }
 
   /// Release all the byte buffer slices held by the byte_buffer_chain.
   void clear()
@@ -352,25 +381,22 @@ public:
   }
 
 private:
-  struct block_deleter {
-    void operator()(void* p);
-  };
-
-  // Total number of bytes stored in this container.
-  size_t byte_count = 0;
-  // Memory block managed by a memory pool, where the slices are stored.
+  /// Memory block managed by a memory pool, where the slices are stored.
   std::unique_ptr<void, block_deleter> mem_block;
-  // Maximum number of byte_buffer_slices that this container can hold.
+  /// Total number of bytes stored in this container.
+  size_t byte_count = 0;
+  /// Maximum number of byte_buffer_slices that this container can hold.
   size_t max_slices = 0;
-  // Total number of byte_buffer_slices stored in this container.
+  /// Total number of byte_buffer_slices stored in this container.
   size_t slice_count = 0;
-  // Array where byte_buffer_slices are stored. This array is a view to the \c mem_block.
+  /// Array where byte_buffer_slices are stored. This array is a view to the \c mem_block.
   byte_buffer_slice* slices_ptr = nullptr;
 };
 
 } // namespace srsran
 
 namespace fmt {
+
 /// \brief Custom formatter for byte_buffer_chain.
 template <>
 struct formatter<srsran::byte_buffer_chain> : public formatter<srsran::byte_buffer_view> {

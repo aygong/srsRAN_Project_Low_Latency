@@ -16,6 +16,7 @@ variables:
     description: Retina Testbed Description
     options:
       - "zmq"
+      - "zmq_deb"
       - "zmq_single_ue"
       - "zmq_4x4_mimo"
       - "zmq_srsue"
@@ -143,6 +144,7 @@ e2e request validation:
     - retina-delete-orchestration-network --user-name ^ci_${GROUP} --regex
     # Add extra secret env variables to the .env file
     - |
+      echo "" >> .gitlab/ci/e2e/.env
       cat $RETINA_SECRET_ENV >> .gitlab/ci/e2e/.env
     # Set username for retina
     - |
@@ -235,7 +237,7 @@ amari 1UE:
     TESTBED: "zmq_single_ue"
     MARKERS: "zmq_single_ue"
     E2E_LOG_LEVEL: "info"
-    RETINA_ARGS: "gnb.all.pcap=True gnb.all.mac_enable=True gnb.all.rlc_enable=True"
+    RETINA_ARGS: "gnb.all.pcap=True gnb.all.rlc_enable=True"
   needs:
     - job: "basic relwithdeb"
       artifacts: true
@@ -254,11 +256,24 @@ amari 1UE 4x4 mimo:
     - *txrx-lib
     - *retina-needs
 
+amari 4UE deb:
+  extends: .zmq
+  variables:
+    TESTBED: "zmq_deb"
+    MARKERS: "smoke"
+    E2E_LOG_LEVEL: "info"
+  needs:
+    - job: "basic package"
+      artifacts: true
+    - *txrx-lib
+    - *retina-needs
+
 amari 32UE:
   extends: .zmq
   variables:
     MARKERS: "zmq and not smoke"
     E2E_LOG_LEVEL: "info"
+    RETINA_ARGS: "gnb.all.pcap=True gnb.all.rlc_enable=False"
   needs:
     - job: "basic relwithdeb"
       artifacts: true
@@ -266,7 +281,29 @@ amari 32UE:
     - *retina-needs
   parallel:
     matrix:
-      - KEYWORDS: ["attach_detach", "reestablishment", "ping", "iperf and udp", "iperf and tcp"]
+      - KEYWORDS:
+          [
+            "attach_detach",
+            "ping",
+            "iperf and udp and band:3",
+            "iperf and udp and not band:3",
+            "iperf and tcp and band:3",
+            "iperf and tcp and not band:3",
+          ]
+
+amari 32UE [reestablishment]:
+  extends: .zmq
+  variables:
+    MARKERS: "zmq and not smoke"
+    E2E_LOG_LEVEL: "info"
+    KEYWORDS: reestablishment
+    RETINA_ARGS: "gnb.all.pcap=True gnb.all.mac_enable=True gnb.all.rlc_enable=False"
+  allow_failure: true
+  needs:
+    - job: "basic relwithdeb"
+      artifacts: true
+    - *txrx-lib
+    - *retina-needs
 
 amari 32UE asan:
   extends: .zmq
@@ -310,7 +347,6 @@ test mode ue:
   stage: zmq
   extends: .e2e-run
   variables:
-    GROUP: "test_mode"
     TESTBED: "test_mode"
     MARKERS: "test_mode"
     KEYWORDS: "test_ue"
@@ -323,6 +359,8 @@ test mode ue:
 
 test mode ue tsan:
   extends: test mode ue
+  when: manual
+  allow_failure: true
   needs:
     - job: "basic tsan"
       artifacts: true
@@ -349,13 +387,13 @@ test mode ru:
   stage: zmq
   extends: .e2e-run
   variables:
-    GROUP: "test_mode"
-    TESTBED: "test_mode"
+    GROUP: "viavi"
+    TESTBED: "viavi"
     MARKERS: "test_mode"
     KEYWORDS: "test_ru"
-    E2E_LOG_LEVEL: "info"
+    E2E_LOG_LEVEL: "warning"
   needs:
-    - job: "basic relwithdeb"
+    - job: "basic avx512 dpdk"
       artifacts: true
     - *txrx-lib
     - *retina-needs
@@ -363,8 +401,7 @@ test mode ru:
 test mode ru tsan:
   extends: test mode ru
   variables:
-    E2E_LOG_LEVEL: "warning"
-  allow_failure: true
+    MARKERS: "test_mode_not_crash"
   needs:
     - job: "basic tsan"
       artifacts: true
@@ -374,8 +411,7 @@ test mode ru tsan:
 test mode ru asan:
   extends: test mode ru
   variables:
-    E2E_LOG_LEVEL: "warning"
-  allow_failure: true
+    MARKERS: "test_mode_not_crash"
   needs:
     - job: "basic asan"
       artifacts: true
@@ -385,8 +421,7 @@ test mode ru asan:
 test mode ru memcheck:
   extends: test mode ru
   variables:
-    E2E_LOG_LEVEL: "warning"
-  allow_failure: true
+    MARKERS: "test_mode_not_crash"
   needs:
     - job: "basic memcheck"
       artifacts: true
@@ -451,10 +486,6 @@ android b200:
 android x300:
   stage: rf
   extends: .e2e-run
-  rules:
-    - if: $CI_DESCRIPTION =~ /Nightly E2E Tests/
-      when: manual
-      allow_failure: true
   variables:
     GROUP: "rf"
     TESTBED: "android_x300"
@@ -478,10 +509,6 @@ android n300:
 viavi:
   stage: rf
   extends: .e2e-run
-  rules:
-    - if: $CI_DESCRIPTION =~ /Nightly E2E Tests/
-      when: manual
-      allow_failure: true
   variables:
     GROUP: "viavi"
     TESTBED: "viavi"

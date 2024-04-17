@@ -48,7 +48,6 @@ public:
                     f1ap_message_notifier&              f1ap_notifier_,
                     du_processor_e1ap_control_notifier& e1ap_ctrl_notifier_,
                     du_processor_ngap_control_notifier& ngap_ctrl_notifier_,
-                    f1ap_ue_removal_notifier&           f1ap_cu_cp_notifier_,
                     rrc_ue_nas_notifier&                rrc_ue_nas_pdu_notifier_,
                     rrc_ue_control_notifier&            rrc_ue_ngap_ctrl_notifier_,
                     rrc_du_measurement_config_notifier& rrc_du_cu_cp_notifier,
@@ -164,7 +163,7 @@ private:
   /// \brief Request UE context release over NGAP.
   /// \param[in] ue_index The UE.
   /// \param[in] cause The cause of the failure.
-  void send_ngap_ue_context_release_request(ue_index_t ue_index, cause_t cause);
+  void send_ngap_ue_context_release_request(ue_index_t ue_index, ngap_cause_t cause);
 
   srslog::basic_logger& logger = srslog::fetch_basic_logger("CU-CP");
   du_processor_config_t cfg;
@@ -174,7 +173,6 @@ private:
   f1ap_message_notifier&               f1ap_notifier;
   du_processor_e1ap_control_notifier&  e1ap_ctrl_notifier;
   du_processor_ngap_control_notifier&  ngap_ctrl_notifier;
-  f1ap_ue_removal_notifier&            f1ap_cu_cp_notifier;
   rrc_ue_nas_notifier&                 rrc_ue_nas_pdu_notifier;
   rrc_ue_control_notifier&             rrc_ue_ngap_ctrl_notifier;
   du_processor_ue_task_scheduler&      task_sched;
@@ -189,7 +187,7 @@ private:
   std::map<du_cell_index_t, du_cell_context> cell_db; /// flattened version of served cells list provided by DU/F1AP
   std::atomic<uint16_t>                      next_du_cell_index{0};
 
-  std::map<uint32_t, nr_cell_global_id_t> tac_to_nr_cgi;
+  std::map<uint32_t, std::vector<nr_cell_global_id_t>> tac_to_nr_cgi;
 
   // timers associated with a given DU.
   timer_manager timer_db;

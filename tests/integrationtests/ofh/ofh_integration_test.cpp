@@ -21,6 +21,7 @@
  */
 
 #include "../../../lib/phy/support/resource_grid_impl.h"
+#include "helpers.h"
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/circular_map.h"
 #include "srsran/ofh/ecpri/ecpri_constants.h"
@@ -51,9 +52,16 @@ using namespace std::chrono_literals;
 /// Random generator.
 static std::mt19937 rgen(0);
 
-/// Static test parameters.
-static const du_tx_window_timing_parameters tx_window_timing_params{470us, 258us, 300us, 285us, 350us, 50us};
-static const du_rx_window_timing_parameters rx_window_timing_params{150us, 25us};
+/// Transmission window parameters expressed in symbols, given the 30kHz scs.
+unsigned T1a_max_cp_dl = 13; // 470us.
+unsigned T1a_min_cp_dl = 8;  // 258us.
+unsigned T1a_max_cp_ul = 8;  // 300us.
+unsigned T1a_min_cp_ul = 8;  // 285us.
+unsigned T1a_max_up    = 9;  // 350us.
+unsigned T1a_min_up    = 2;  // 50us.
+/// Reception window parameters expressed in symbols, given the 30kHz scs.
+unsigned Ta4_min = 1; // 150us.
+unsigned Ta4_max = 5; // 25us.
 
 static const tdd_ul_dl_pattern tdd_pattern_7d2u{10, 7, 0, 2, 0};
 static const tdd_ul_dl_pattern tdd_pattern_6d3u{10, 6, 0, 3, 0};
@@ -107,39 +115,6 @@ public:
 
 static test_parameters test_params;
 
-/// Helper function to convert array of port indexes to string.
-static std::string port_ids_to_str(span<unsigned> ports)
-{
-  std::stringstream ss;
-  ss << "{";
-  for (unsigned i = 0, e = ports.size() - 1; i != e; ++i) {
-    ss << ports[i] << ", ";
-  }
-  ss << ports[ports.size() - 1] << "}";
-  return ss.str();
-}
-
-/// Helper function to parse list of ports provided as a string.
-static std::vector<unsigned> parse_port_id(const std::string& port_id_str)
-{
-  std::vector<unsigned> port_ids;
-  size_t                start_pos = port_id_str.find('{');
-  size_t                end_pos   = port_id_str.find('}');
-  if (start_pos == std::string::npos || end_pos == std::string::npos) {
-    return port_ids;
-  }
-  std::string       ports_comma_separated = port_id_str.substr(start_pos + 1, end_pos - 1);
-  std::stringstream ss(ports_comma_separated);
-  int               port;
-  while (ss >> port) {
-    port_ids.push_back(port);
-    if (ss.peek() == ',' || ss.peek() == ' ') {
-      ss.ignore();
-    }
-  }
-  return port_ids;
-}
-
 /// Prints usage information of the app.
 static void usage(const char* prog)
 {
@@ -172,55 +147,6 @@ static void usage(const char* prog)
   fmt::print("\t-v Logging level. [Default {}]\n", test_params.log_level);
   fmt::print("\t-f Log file name. [Default {}]\n", test_params.log_filename);
   fmt::print("\t-h Show this message\n");
-}
-
-/// Validates the bandwidth argument provided as a user input.
-static bool validate_bw(unsigned bandwidth)
-{
-  switch (bandwidth) {
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz5):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz5;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz10):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz10;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz15):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz15;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz20):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz20;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz25):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz25;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz30):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz30;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz40):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz40;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz50):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz50;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz60):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz60;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz70):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz70;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz80):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz80;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz90):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz90;
-      break;
-    case bs_channel_bandwidth_to_MHz(bs_channel_bandwidth_fr1::MHz100):
-      test_params.bw = bs_channel_bandwidth_fr1::MHz100;
-      break;
-    default:
-      return false;
-  }
-  return true;
 }
 
 /// Parses arguments of the app.
@@ -260,9 +186,11 @@ static void parse_args(int argc, char** argv)
         break;
       case 'w':
         if (optarg != nullptr) {
-          if (!validate_bw(std::strtol(optarg, nullptr, 10))) {
+          if (!is_valid_bw(std::strtol(optarg, nullptr, 10))) {
             fmt::print("Invalid bandwidth\n");
             invalid_arg = true;
+          } else {
+            test_params.bw = MHz_to_bs_channel_bandwidth(std::strtol(optarg, nullptr, 10));
           }
         }
         break;
@@ -753,7 +681,9 @@ public:
   void start()
   {
     slot_point slot(0, to_numerology_value(test_params.scs));
-    slot_duration_us = std::chrono::microseconds(1000 * SUBFRAME_DURATION_MSEC / slot.nof_slots_per_subframe());
+    slot_duration_us   = std::chrono::microseconds(1000 * SUBFRAME_DURATION_MSEC / slot.nof_slots_per_subframe());
+    symbol_duration_us = std::chrono::microseconds(static_cast<unsigned>(
+        std::ceil(1e3 / (get_nsymb_per_slot(cyclic_prefix::NORMAL) * get_nof_slots_per_subframe(test_params.scs)))));
     if (!executor.execute([this]() { run_test(); })) {
       report_fatal_error("Failed to start DU emulator");
     }
@@ -794,7 +724,7 @@ private:
       slot_val = (++slot).to_uint();
     }
     // Leave time fo the uplink slots to be processed.
-    auto proc_time = processing_delay_slots * slot_duration_us + tx_window_timing_params.T1a_max_cp_ul + 100ms;
+    auto proc_time = processing_delay_slots * slot_duration_us + (T1a_max_cp_ul * symbol_duration_us) + 100ms;
     std::this_thread::sleep_for(proc_time);
     test_finished.store(true, std::memory_order_relaxed);
   }
@@ -808,6 +738,7 @@ private:
 
   const unsigned            nof_prb;
   std::chrono::microseconds slot_duration_us;
+  std::chrono::microseconds symbol_duration_us;
   std::atomic<bool>         test_finished{false};
 };
 
@@ -1045,6 +976,9 @@ static void configure_ofh_sector(ru_ofh_sector_configuration& sector_cfg)
   // Default IQ data scaling to be applied prior to downlink data compression.
   const float iq_scaling = 0.9f;
 
+  std::chrono::duration<double, std::nano> symbol_duration(
+      (1e6 / (get_nsymb_per_slot(cyclic_prefix::NORMAL) * get_nof_slots_per_subframe(test_params.scs))));
+
   sector_cfg.interface                       = "lo";
   sector_cfg.mac_src_address                 = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
   sector_cfg.mac_dst_address                 = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -1055,9 +989,10 @@ static void configure_ofh_sector(ru_ofh_sector_configuration& sector_cfg)
   sector_cfg.cp                              = cyclic_prefix::NORMAL;
   sector_cfg.is_prach_control_plane_enabled  = test_params.is_prach_control_plane_enabled;
   sector_cfg.ignore_ecpri_payload_size_field = test_params.ignore_ecpri_payload_size_field;
-  sector_cfg.tx_window_timing_params         = tx_window_timing_params;
-  sector_cfg.rx_window_timing_params         = rx_window_timing_params;
-  sector_cfg.is_downlink_broadcast_enabled   = test_params.is_downlink_broadcast_enabled;
+  sector_cfg.tx_window_timing_params         = {
+              T1a_max_cp_dl, T1a_min_cp_dl, T1a_max_cp_ul, T1a_min_cp_ul, T1a_max_up, T1a_min_up};
+  sector_cfg.rx_window_timing_params       = {Ta4_min, Ta4_max};
+  sector_cfg.is_downlink_broadcast_enabled = test_params.is_downlink_broadcast_enabled;
 
   // Configure compression
   ru_compression_params dl_ul_compression_params{to_compression_type(test_params.data_compr_method),

@@ -28,6 +28,8 @@
 #include "srsran/f1u/du/f1u_config.h"
 #include "srsran/mac/mac_lc_config.h"
 #include "srsran/ran/lcid.h"
+#include "srsran/ran/qos/five_qi_qos_mapping.h"
+#include "srsran/ran/qos/qos_info.h"
 #include "srsran/ran/up_transport_layer_info.h"
 #include "srsran/rlc/rlc_config.h"
 #include "srsran/rlc/rlc_entity.h"
@@ -93,8 +95,8 @@ struct du_ue_srb {
 
   lcid_t lcid() const { return srb_id_to_lcid(srb_id); }
 
-  /// \brief Disconnect DRB MAC, RLC and F1-U notifiers.
-  void disconnect();
+  /// \brief Stops SRB by disconnecting MAC, RLC and F1-U notifiers and stopping the RLC timers.
+  void stop();
 };
 
 /// \brief DRB instance in DU manager. It contains DRB configuration information, RLC entity and adapters between
@@ -110,9 +112,13 @@ struct du_ue_drb {
   f1u_config                                                    f1u_cfg;
   std::unique_ptr<f1u_bearer, std::function<void(f1u_bearer*)>> drb_f1u;
   du_drb_connector                                              connector;
+  /// QoS characteristics to be met by the DRB.
+  qos_characteristics qos_info;
+  /// QoS information present only for GBR QoS flows.
+  optional<gbr_qos_info_t> gbr_qos_info;
 
-  /// \brief Disconnect DRB MAC, RLC and F1-U notifiers.
-  void disconnect();
+  /// \brief Stops DRB by disconnecting MAC, RLC and F1-U notifiers and stopping the RLC timers.
+  void stop();
 };
 
 /// \brief Creates a DRB instance for the whole DU.
@@ -126,7 +132,9 @@ std::unique_ptr<du_ue_drb> create_drb(du_ue_index_t                        ue_in
                                       span<const up_transport_layer_info>  uluptnl_info_list,
                                       gtpu_teid_pool&                      teid_pool,
                                       const du_manager_params&             du_params,
-                                      rlc_tx_upper_layer_control_notifier& rlc_rlf_notifier);
+                                      rlc_tx_upper_layer_control_notifier& rlc_rlf_notifier,
+                                      const qos_characteristics&           qos_info,
+                                      optional<gbr_qos_info_t>             gbr_qos_info);
 
 } // namespace srs_du
 } // namespace srsran

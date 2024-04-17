@@ -51,15 +51,21 @@ public:
   f1u_dummy_bearer             bearer;
   srs_du::f1u_rx_sdu_notifier* du_notif = nullptr;
 
+  optional<uint32_t> last_ue_idx;
+  optional<drb_id_t> last_drb_id;
+
   f1u_bearer* create_du_bearer(uint32_t                       ue_index,
                                drb_id_t                       drb_id,
                                srs_du::f1u_config             config,
                                const up_transport_layer_info& dl_tnl,
                                const up_transport_layer_info& ul_tnl,
                                srs_du::f1u_rx_sdu_notifier&   du_rx,
-                               timer_factory                  timers) override
+                               timer_factory                  timers,
+                               task_executor&                 ue_executor) override
   {
-    du_notif = &du_rx;
+    du_notif    = &du_rx;
+    last_ue_idx = ue_index;
+    last_drb_id = drb_id;
     return &bearer;
   }
 

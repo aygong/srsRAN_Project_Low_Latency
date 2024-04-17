@@ -23,7 +23,7 @@
 #include "inter_cu_handover_target_routine.h"
 #include "../pdu_session_routine_helpers.h"
 #include "srsran/ngap/ngap_handover.h"
-#include "srsran/ran/cause.h"
+#include "srsran/ran/cause/e1ap_cause_converters.h"
 
 using namespace srsran;
 using namespace srs_cu_cp;
@@ -94,7 +94,10 @@ void inter_cu_handover_target_routine::operator()(
       CORO_EARLY_RETURN(generate_handover_resource_allocation_response(false));
     }
 
-    fill_e1ap_bearer_context_setup_request(security_cfg.value());
+    if (!fill_e1ap_bearer_context_setup_request(security_cfg.value())) {
+      logger.warning("ue={}: \"{}\" failed to fill context at CU-UP", request.ue_index, name());
+      CORO_EARLY_RETURN(generate_handover_resource_allocation_response(false));
+    }
 
     // Call E1AP procedure
     CORO_AWAIT_VALUE(bearer_context_setup_response,
@@ -129,7 +132,8 @@ void inter_cu_handover_target_routine::operator()(
     if (!handle_procedure_response(
             bearer_context_modification_request, ue_context_setup_response, next_config, logger)) {
       logger.warning("ue={}: \"{}\" failed to setup UE context at DU", request.ue_index, name());
-      cu_cp_notifier.on_ue_removal_required(ue_context_setup_response.ue_index);
+      CORO_AWAIT(cu_cp_notifier.on_ue_removal_required(ue_context_setup_response.ue_index));
+      // Note: From this point the UE is removed and only the stored context can be accessed.
       CORO_EARLY_RETURN(generate_handover_resource_allocation_response(false));
     }
   }
@@ -260,16 +264,27 @@ inter_cu_handover_target_routine::generate_security_keys(security::security_cont
   return cfg;
 }
 
-void inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(const security::sec_as_config& sec_info)
+bool inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(const security::sec_as_config& sec_info)
 {
   bearer_context_setup_request.ue_index = request.ue_index;
 
   // security info
   bearer_context_setup_request.security_info.security_algorithm.ciphering_algo                 = sec_info.cipher_algo;
   bearer_context_setup_request.security_info.security_algorithm.integrity_protection_algorithm = sec_info.integ_algo;
-  bearer_context_setup_request.security_info.up_security_key.encryption_key                    = sec_info.k_enc;
+  auto k_enc_buffer = byte_buffer::create(sec_info.k_enc);
+  if (k_enc_buffer.is_error()) {
+    logger.warning("Unable to allocate byte_buffer");
+    return false;
+  }
+  bearer_context_setup_request.security_info.up_security_key.encryption_key = std::move(k_enc_buffer.value());
   if (sec_info.k_int.has_value()) {
-    bearer_context_setup_request.security_info.up_security_key.integrity_protection_key = sec_info.k_int.value();
+    auto k_int_buffer = byte_buffer::create(sec_info.k_int.value());
+    if (k_int_buffer.is_error()) {
+      logger.warning("Unable to allocate byte_buffer");
+      return false;
+    }
+    bearer_context_setup_request.security_info.up_security_key.integrity_protection_key =
+        std::move(k_int_buffer.value());
   }
 
   bearer_context_setup_request.ue_dl_aggregate_maximum_bit_rate = request.ue_aggr_max_bit_rate.ue_aggr_max_bit_rate_dl;
@@ -286,6 +301,8 @@ void inter_cu_handover_target_routine::fill_e1ap_bearer_context_setup_request(co
                                           request.pdu_session_res_setup_list_ho_req,
                                           ue_manager.get_ue_config(),
                                           default_security_indication);
+
+  return true;
 }
 
 void inter_cu_handover_target_routine::create_srb1()
@@ -334,7 +351,7 @@ inter_cu_handover_target_routine::generate_handover_resource_allocation_response
           // qos flow id
           qos_flow_item.qos_flow_id = flow_failed_item.qos_flow_id;
           // cause
-          qos_flow_item.cause = flow_failed_item.cause;
+          qos_flow_item.cause = e1ap_to_ngap_cause(flow_failed_item.cause);
 
           admitted_item.ho_request_ack_transfer.qos_flow_failed_to_setup_list.push_back(qos_flow_item);
         }

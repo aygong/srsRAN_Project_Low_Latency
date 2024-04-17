@@ -89,10 +89,9 @@ public:
 
 /// Helper class to initialize and store relevant objects for the test and provide helper methods.
 struct sib_test_bench {
-  const bwp_id_t          bwp_id           = to_bwp_id(0);
-  srslog::basic_logger&   sched_logger     = srslog::fetch_basic_logger("SCHED", true);
-  srslog::basic_logger&   test_logger      = srslog::fetch_basic_logger("TEST");
-  scheduler_result_logger sched_res_logger = scheduler_result_logger{true};
+  const bwp_id_t        bwp_id       = to_bwp_id(0);
+  srslog::basic_logger& sched_logger = srslog::fetch_basic_logger("SCHED", true);
+  srslog::basic_logger& test_logger  = srslog::fetch_basic_logger("TEST");
 
   const scheduler_expert_config            sched_cfg;
   const scheduler_si_expert_config&        si_cfg{sched_cfg.si};
@@ -100,6 +99,7 @@ struct sib_test_bench {
   cell_configuration                       cfg{sched_cfg, cfg_msg};
   cell_resource_allocator                  res_grid{cfg};
   dummy_pdcch_resource_allocator           pdcch_sch;
+  scheduler_result_logger                  sched_res_logger{true, cfg_msg.pci};
   slot_point                               sl_tx;
 
   // Test bench ctor for SIB1 scheduler test use. It allows us to set single parameters.
@@ -336,7 +336,7 @@ void test_sib1_scheduler(subcarrier_spacing                         scs_common,
     t_bench.sched_res_logger.on_slot_start();
 
     // Run SIB1 scheduler.
-    sib1_sched.schedule_sib1(t_bench.get_slot_res_grid(), t_bench.sl_tx);
+    sib1_sched.run_slot(t_bench.res_grid, t_bench.sl_tx);
 
     auto& res_slot_grid = t_bench.get_slot_res_grid();
 
@@ -401,7 +401,7 @@ void test_sib1_periodicity(sib1_rtx_periodicity sib1_rtx_period, ssb_periodicity
     t_bench.sched_res_logger.on_slot_start();
 
     // Run SIB1 scheduler.
-    sib1_sched.schedule_sib1(t_bench.get_slot_res_grid(), t_bench.sl_tx);
+    sib1_sched.run_slot(t_bench.res_grid, t_bench.sl_tx);
 
     auto& res_slot_grid = t_bench.get_slot_res_grid();
 
@@ -462,7 +462,7 @@ void test_ssb_sib1_collision(uint32_t           freq_arfcn,
     ssb_sched.schedule_ssb(t_bench.get_slot_res_grid());
 
     // Run SIB1 scheduler.
-    sib1_sched.schedule_sib1(t_bench.get_slot_res_grid(), t_bench.sl_tx);
+    sib1_sched.run_slot(t_bench.res_grid, t_bench.sl_tx);
 
     auto& res_slot_grid = t_bench.get_slot_res_grid();
 
@@ -728,7 +728,7 @@ protected:
       t_bench.sched_res_logger.on_slot_start();
 
       // Run SIB1 scheduler.
-      sib1_sched.schedule_sib1(t_bench.get_slot_res_grid(), t_bench.sl_tx);
+      sib1_sched.run_slot(t_bench.res_grid, t_bench.sl_tx);
 
       auto& res_slot_grid = t_bench.get_slot_res_grid();
 

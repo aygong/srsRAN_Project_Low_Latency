@@ -24,6 +24,7 @@
 
 #include "../adapters/cu_cp_adapters.h"
 #include "../adapters/ngap_adapters.h"
+#include "../cell_meas_manager/cell_meas_manager_impl.h"
 #include "../cu_cp_impl_interface.h"
 #include "../ue_manager/ue_manager_impl.h"
 #include "../ue_manager/ue_task_scheduler.h"

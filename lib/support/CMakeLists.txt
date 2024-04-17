@@ -25,7 +25,7 @@ add_subdirectory(version)
 set(SOURCES
         backtrace.cpp
         math_utils.cpp
-        unique_thread.cpp
+        executors/unique_thread.cpp
         executors/task_worker.cpp
         executors/task_worker_pool.cpp
         executors/task_execution_manager.cpp
@@ -36,10 +36,12 @@ set(SOURCES
         event_tracing.cpp
         sysinfo.cpp
         byte_buffer.cpp
-        byte_buffer_chain.cpp)
+        byte_buffer_chain.cpp
+        cpu_architecture_info.cpp)
 
 add_library(srsran_support STATIC ${SOURCES})
-target_link_libraries(srsran_support srsran_network ${CMAKE_THREAD_LIBS_INIT} ${YAMLCPP_LIBRARY} srslog)
+target_link_libraries(srsran_support srsran_network ${CMAKE_THREAD_LIBS_INIT} ${YAMLCPP_LIBRARY}
+                      ${NUMA_LIBRARIES} srslog)
 add_backward(srsran_support)
 
 if (Backward_FOUND AND BACKWARD_HAS_EXTERNAL_LIBRARIES)

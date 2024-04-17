@@ -69,6 +69,20 @@ void carrier_subslot_resource_grid::fill(ofdm_symbol_range symbols, span<const u
   }
 }
 
+void carrier_subslot_resource_grid::clear(ofdm_symbol_range symbols, span<const uint16_t> crb_list)
+{
+  srsran_sanity_check(symbols.stop() <= NOF_OFDM_SYM_PER_SLOT_NORMAL_CP, "OFDM symbols out-of-bounds");
+
+  // carrier bitmap RB bit=0 corresponds to CRB=carrier offset. Thus, we need to shift the CRB interval.
+  for (unsigned i = symbols.start(); i < symbols.stop(); ++i) {
+    for (uint16_t crb : crb_list) {
+      srsran_sanity_check(rb_dims().contains(crb), "CRB interval out-of-bounds");
+      crb -= offset();
+      slot_rbs.reset(crb + i * nof_rbs());
+    }
+  }
+}
+
 bool carrier_subslot_resource_grid::collides(ofdm_symbol_range symbols, crb_interval crbs) const
 {
   srsran_sanity_check(rb_dims().contains(crbs), "CRB interval out-of-bounds");
@@ -177,6 +191,12 @@ void cell_slot_resource_grid::fill(subcarrier_spacing scs, ofdm_symbol_range ofd
   carrier.subslot_rbs.fill(ofdm_symbols, crbs);
 }
 
+void cell_slot_resource_grid::clear(subcarrier_spacing scs, ofdm_symbol_range ofdm_symbols, span<const uint16_t> crbs)
+{
+  auto& carrier = get_carrier(scs);
+  carrier.subslot_rbs.clear(ofdm_symbols, crbs);
+}
+
 bool cell_slot_resource_grid::collides(grant_info grant) const
 {
   const carrier_resource_grid& carrier = get_carrier(grant.scs);
@@ -281,8 +301,7 @@ void cell_slot_resource_allocator::slot_indication(slot_point new_slot)
 cell_resource_allocator::cell_resource_allocator(const cell_configuration& cfg_) :
   cfg(cfg_),
   max_dl_slot_alloc_delay(SCHEDULER_MAX_K0),
-  max_ul_slot_alloc_delay(SCHEDULER_MAX_K0 + std::max(SCHEDULER_MAX_K1, SCHEDULER_MAX_K2 + MAX_MSG3_DELTA) +
-                          cfg.ntn_cs_koffset)
+  max_ul_slot_alloc_delay(get_max_slot_ul_alloc_delay(cfg.ntn_cs_koffset))
 {
   // Create cell_slot_resource_allocator objects.
   std::vector<scs_specific_carrier> dl_scs_carriers, ul_scs_carriers;

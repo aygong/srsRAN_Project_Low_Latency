@@ -169,13 +169,6 @@ pdcch_ul_information* pdcch_resource_allocator_impl::alloc_ul_pdcch_helper(cell_
     return nullptr;
   }
 
-  // Verify RNTI is unique.
-  for (const pdcch_ul_information& pdcch : slot_alloc.result.dl.ul_pdcchs) {
-    if (pdcch.ctx.rnti == rnti) {
-      return nullptr;
-    }
-  }
-
   // Create PDCCH list element.
   pdcch_ul_information& pdcch = slot_alloc.result.dl.ul_pdcchs.emplace_back();
   pdcch.ctx.bwp_cfg           = &bwp_cfg;
@@ -195,6 +188,12 @@ pdcch_ul_information* pdcch_resource_allocator_impl::alloc_ul_pdcch_helper(cell_
         search_space_configuration::ue_specific_dci_format::f0_0_and_f1_0))
           ? "0_0"
           : "0_1";
+  // Populate power offsets.
+  if (not cell_cfg.nzp_csi_rs_list.empty() and cell_cfg.nzp_csi_rs_list.front().pwr_ctrl_offset_ss_db.has_value()) {
+    // [Implementation-defined] It is assumed that same powerControlOffset and powerControlOffsetSS is configured in
+    // NZP-CSI-RS-Resource across all resources.
+    pdcch.ctx.tx_pwr.pwr_ctrl_offset_ss = cell_cfg.nzp_csi_rs_list.front().pwr_ctrl_offset_ss_db.value();
+  }
 
   // Allocate a position for UL PDCCH in CORESET.
   pdcch_slot_allocator& pdcch_alloc = get_pdcch_slot_alloc(slot_alloc.slot);
@@ -219,13 +218,6 @@ pdcch_dl_information* pdcch_resource_allocator_impl::alloc_dl_pdcch_helper(cell_
     return nullptr;
   }
 
-  // Verify RNTI is unique.
-  for (const pdcch_dl_information& pdcch : slot_alloc.result.dl.dl_pdcchs) {
-    if (pdcch.ctx.rnti == rnti) {
-      return nullptr;
-    }
-  }
-
   // Create PDCCH list element.
   pdcch_dl_information& pdcch = slot_alloc.result.dl.dl_pdcchs.emplace_back();
   pdcch.ctx.bwp_cfg           = &bwp_cfg;
@@ -245,6 +237,12 @@ pdcch_dl_information* pdcch_resource_allocator_impl::alloc_dl_pdcch_helper(cell_
         search_space_configuration::ue_specific_dci_format::f0_0_and_f1_0))
           ? "1_0"
           : "1_1";
+  // Populate power offsets.
+  if (not cell_cfg.nzp_csi_rs_list.empty() and cell_cfg.nzp_csi_rs_list.front().pwr_ctrl_offset_ss_db.has_value()) {
+    // [Implementation-defined] It is assumed that same powerControlOffset and powerControlOffsetSS is configured in
+    // NZP-CSI-RS-Resource across all resources.
+    pdcch.ctx.tx_pwr.pwr_ctrl_offset_ss = cell_cfg.nzp_csi_rs_list.front().pwr_ctrl_offset_ss_db.value();
+  }
 
   // Allocate a position for DL PDCCH in CORESET.
   pdcch_slot_allocator& pdcch_alloc = get_pdcch_slot_alloc(slot_alloc.slot);

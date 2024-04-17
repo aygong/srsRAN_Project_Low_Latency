@@ -41,7 +41,7 @@ f1_setup_request_message srsran::srs_du::generate_f1_setup_request_message()
   ran_params.gnb_du_name  = "srsgnb";
   ran_params.gnb_du_id    = 1;
   ran_params.rrc_version  = 1;
-  ran_params.du_bind_addr = {"127.0.0.1"};
+  ran_params.du_bind_addr = transport_layer_address::create_from_string("127.0.0.1");
   du_cell_config cell     = config_helpers::make_default_du_cell_config();
   ran_params.cells        = {cell};
   fill_f1_setup_request(request_msg, ran_params);
@@ -70,8 +70,8 @@ asn1::f1ap::drbs_to_be_setup_item_s srsran::srs_du::generate_drb_am_setup_item(d
   drb_info.snssai.sd.from_string("0027db");
   drb.rlc_mode.value = rlc_mode_opts::rlc_am;
   drb.ul_up_tnl_info_to_be_setup_list.resize(1);
-  auto&                   gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
-  transport_layer_address addr{"127.0.0.1"};
+  auto& gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
+  auto  addr    = transport_layer_address::create_from_string("127.0.0.1");
   gtp_tun.transport_layer_address.from_string(addr.to_bitstring());
   gtp_tun.gtp_teid.from_number(1);
 
@@ -130,8 +130,8 @@ asn1::f1ap::drbs_to_be_setup_mod_item_s srsran::srs_du::generate_drb_am_mod_item
   drb_info.snssai.sd.from_string("0027db");
   drb.rlc_mode.value = rlc_mode_opts::rlc_am;
   drb.ul_up_tnl_info_to_be_setup_list.resize(1);
-  auto&                   gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
-  transport_layer_address addr{"127.0.0.1"};
+  auto& gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
+  auto  addr    = transport_layer_address::create_from_string("127.0.0.1");
   gtp_tun.transport_layer_address.from_string(addr.to_bitstring());
   gtp_tun.gtp_teid.from_number(1);
   return drb;
@@ -177,7 +177,25 @@ f1ap_message srsran::srs_du::generate_ue_context_release_command()
   dl_msg->srb_id_present        = true;
   dl_msg->srb_id                = 1;
   dl_msg->rrc_container_present = true;
-  dl_msg->rrc_container         = byte_buffer{0x1, 0x2, 0x3, 0x4};
+  dl_msg->rrc_container         = byte_buffer::create({0x1, 0x2, 0x3, 0x4}).value();
+
+  return msg;
+}
+
+f1ap_message srsran::srs_du::generate_dl_rrc_message_transfer(gnb_du_ue_f1ap_id_t du_ue_id,
+                                                              gnb_cu_ue_f1ap_id_t cu_ue_id,
+                                                              srb_id_t            srb_id,
+                                                              byte_buffer         rrc_container)
+{
+  using namespace asn1::f1ap;
+  f1ap_message msg;
+
+  msg.pdu.set_init_msg().load_info_obj(ASN1_F1AP_ID_DL_RRC_MSG_TRANSFER);
+  dl_rrc_msg_transfer_s& dl_msg = msg.pdu.init_msg().value.dl_rrc_msg_transfer();
+  dl_msg->gnb_du_ue_f1ap_id     = gnb_du_ue_f1ap_id_to_uint(du_ue_id);
+  dl_msg->gnb_cu_ue_f1ap_id     = gnb_cu_ue_f1ap_id_to_uint(cu_ue_id);
+  dl_msg->srb_id                = srb_id_to_uint(srb_id);
+  dl_msg->rrc_container         = std::move(rrc_container);
 
   return msg;
 }
@@ -307,8 +325,9 @@ void f1ap_du_test::run_ue_context_setup_procedure(du_ue_index_t ue_index, const 
   }
 
   // Generate DU manager response to UE context update.
-  f1ap_du_cfg_handler.next_ue_context_update_response.result                 = true;
-  f1ap_du_cfg_handler.next_ue_context_update_response.du_to_cu_rrc_container = {0x1, 0x2, 0x3};
+  f1ap_du_cfg_handler.next_ue_context_update_response.result = true;
+  f1ap_du_cfg_handler.next_ue_context_update_response.du_to_cu_rrc_container =
+      byte_buffer::create({0x1, 0x2, 0x3}).value();
 
   // Send UE CONTEXT SETUP REQUEST message to F1AP.
   f1ap->handle_message(msg);

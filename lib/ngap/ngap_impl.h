@@ -23,6 +23,7 @@
 #pragma once
 
 #include "ngap_context.h"
+#include "ngap_error_indication_helper.h"
 #include "procedures/ngap_transaction_manager.h"
 #include "ue_context/ngap_ue_context.h"
 #include "srsran/asn1/ngap/ngap.h"
@@ -137,9 +138,10 @@ private:
   /// \param[in] ue_index The index of the related UE.
   /// \param[in] cause The cause of the Error Indication.
   /// \param[in] amf_ue_id The AMF UE ID.
-  void schedule_error_indication(ue_index_t ue_index, cause_t cause, optional<amf_ue_id_t> amf_ue_id = {});
+  void schedule_error_indication(ue_index_t ue_index, ngap_cause_t cause, optional<amf_ue_id_t> amf_ue_id = {});
 
-  void on_ue_context_setup_timer_expired(ue_index_t ue_index);
+  /// \brief Callback for the PDU Session Setup Timer expiration. Triggers the release of the UE.
+  void on_pdu_session_setup_timer_expired(ue_index_t ue_index);
 
   ngap_context_t context;
 
@@ -147,6 +149,8 @@ private:
 
   /// Repository of UE Contexts.
   ngap_ue_context_list ue_ctxt_list;
+
+  std::unordered_map<ue_index_t, error_indication_request_t> stored_error_indications;
 
   ngap_cu_cp_ue_creation_notifier&   cu_cp_ue_creation_notifier;
   ngap_cu_cp_du_repository_notifier& cu_cp_du_repository_notifier;

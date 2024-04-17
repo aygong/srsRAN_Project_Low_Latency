@@ -100,7 +100,7 @@ srsran::srs_cu_cp::generate_ue_rrc_context_creation_request(ue_index_t ue_index,
       "5c00b001117aec701061e0007c20408d07810020a2090480ca8000f800000000008370842000088165000048200002069a06aa49880002"
       "00204000400d008013b64b1814400e468acf120000096070820f177e060870000000e25038000040bde802000400000000028201950300"
       "c400");
-  req.du_to_cu_rrc_container = {tmp.begin(), tmp.end()};
+  req.du_to_cu_rrc_container = byte_buffer::create(tmp.begin(), tmp.end()).value();
 
   return req;
 }
@@ -109,7 +109,7 @@ cu_cp_ue_context_release_command srsran::srs_cu_cp::generate_ue_context_release_
 {
   cu_cp_ue_context_release_command ue_context_release_command = {};
   ue_context_release_command.ue_index                         = ue_index;
-  ue_context_release_command.cause                            = cause_radio_network_t::unspecified;
+  ue_context_release_command.cause                            = ngap_cause_radio_network_t::unspecified;
   return ue_context_release_command;
 }
 
@@ -126,16 +126,17 @@ srsran::srs_cu_cp::generate_pdu_session_resource_setup(unsigned num_pdu_sessions
 
     cu_cp_pdu_session_res_setup_item item;
     item.pdu_session_id = pdu_session_id;
-    item.pdu_session_nas_pdu.resize(2);
+    bool ret            = item.pdu_session_nas_pdu.resize(2);
+    (void)ret;
     item.pdu_session_nas_pdu[0] = 0xaa;
     item.pdu_session_nas_pdu[1] = 0xbb;
     item.s_nssai.sst            = 1;
 
     item.pdu_session_aggregate_maximum_bit_rate_dl = 100;
     item.pdu_session_aggregate_maximum_bit_rate_ul = 100;
-    item.ul_ngu_up_tnl_info                        = {transport_layer_address{"127.0.0.1"}, int_to_gtpu_teid(0x1)};
-    item.pdu_session_type                          = "ipv4";
-    item.security_ind                              = {};
+    item.ul_ngu_up_tnl_info = {transport_layer_address::create_from_string("127.0.0.1"), int_to_gtpu_teid(0x1)};
+    item.pdu_session_type   = "ipv4";
+    item.security_ind       = {};
 
     for (unsigned k = 0; k < num_qos_flows; ++k) {
       qos_flow_setup_request_item qos_item;
@@ -166,8 +167,9 @@ cu_cp_pdu_session_resource_release_command srsran::srs_cu_cp::generate_pdu_sessi
   cmd.ue_index = uint_to_ue_index(0);
 
   cu_cp_pdu_session_res_to_release_item_rel_cmd pdu_session_res_to_release_item_rel_cmd;
-  pdu_session_res_to_release_item_rel_cmd.pdu_session_id                             = pdu_session_id;
-  pdu_session_res_to_release_item_rel_cmd.pdu_session_res_release_cmd_transfer.cause = cause_nas_t::unspecified;
+  pdu_session_res_to_release_item_rel_cmd.pdu_session_id = pdu_session_id;
+  pdu_session_res_to_release_item_rel_cmd.pdu_session_res_release_cmd_transfer.cause =
+      ngap_cause_radio_network_t::unspecified;
 
   cmd.pdu_session_res_to_release_list_rel_cmd.emplace(pdu_session_id, pdu_session_res_to_release_item_rel_cmd);
 
@@ -217,7 +219,7 @@ srsran::srs_cu_cp::generate_pdu_session_resource_modification_with_qos_flow_remo
   // Add item to remove inexisting QoS flow.
   cu_cp_qos_flow_with_cause_item release_item;
   release_item.qos_flow_id = flow_id;
-  release_item.cause       = cause_radio_network_t::unspecified;
+  release_item.cause       = ngap_cause_radio_network_t::unspecified;
   transfer.qos_flow_to_release_list.emplace(release_item.qos_flow_id, release_item);
 
   modify_item.transfer = transfer;

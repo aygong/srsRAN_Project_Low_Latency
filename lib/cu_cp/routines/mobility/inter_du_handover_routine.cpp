@@ -123,7 +123,8 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
                                        logger,
                                        false)) {
       logger.warning("ue={}: \"{}\" failed to create UE context at target DU", command.source_ue_index, name());
-      cu_cp_notifier.on_ue_removal_required(target_ue_context_setup_request.ue_index);
+      CORO_AWAIT(cu_cp_notifier.on_ue_removal_required(target_ue_context_setup_request.ue_index));
+      // Note: From this point the UE is removed and only the stored context can be accessed.
       CORO_EARLY_RETURN(response_msg);
     }
   }
@@ -157,7 +158,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
         // Remove target UE context if Bearer Context Modification failed.
         {
           ue_context_release_command.ue_index = target_ue_context_setup_response.ue_index;
-          ue_context_release_command.cause    = cause_radio_network_t::unspecified;
+          ue_context_release_command.cause    = ngap_cause_radio_network_t::unspecified;
           CORO_AWAIT(target_du_processor_notifier.handle_ue_context_release_command(ue_context_release_command));
         }
 
@@ -215,7 +216,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
   // Remove source UE context.
   {
     ue_context_release_command.ue_index = source_ue->get_ue_index();
-    ue_context_release_command.cause    = cause_radio_network_t::unspecified;
+    ue_context_release_command.cause    = ngap_cause_radio_network_t::unspecified;
     CORO_AWAIT(source_du_processor_notifier.handle_ue_context_release_command(ue_context_release_command));
     logger.debug("ue={}: \"{}\" removed source UE context", ue_context_release_command.ue_index, name());
   }

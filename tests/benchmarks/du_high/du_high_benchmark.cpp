@@ -41,8 +41,8 @@
 
 #include "lib/du_high/du_high_executor_strategies.h"
 #include "lib/du_high/du_high_impl.h"
+#include "lib/mac/mac_ul/ul_bsr.h"
 #include "tests/unittests/f1ap/du/f1ap_du_test_helpers.h"
-#include "tests/unittests/mac/mac_test_helpers.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/du_high/du_high_configuration.h"
@@ -309,7 +309,8 @@ public:
                                const up_transport_layer_info& dl_tnl,
                                const up_transport_layer_info& ul_tnl,
                                srs_du::f1u_rx_sdu_notifier&   du_rx,
-                               timer_factory                  timers) override
+                               timer_factory                  timers,
+                               task_executor&                 ue_executor) override
   {
     du_notif_list.push_back(&du_rx);
     bearer_list.emplace_back();
@@ -548,16 +549,16 @@ public:
     report_fatal_error_if_not(bsr_mac_subpdu.append(lbsr_buff_sz), "Failed to allocate PDU");
 
     // Instantiate a DU-high object.
-    cfg.gnb_du_id                  = 1;
-    cfg.gnb_du_name                = fmt::format("srsgnb{}", cfg.gnb_du_id);
-    cfg.du_bind_addr               = fmt::format("127.0.0.{}", cfg.gnb_du_id);
-    cfg.exec_mapper                = &workers.du_high_exec_mapper;
-    cfg.f1c_client                 = &sim_cu_cp;
-    cfg.f1u_gw                     = &sim_cu_up;
-    cfg.phy_adapter                = &sim_phy;
-    cfg.timers                     = &timers;
-    cfg.cells                      = {config_helpers::make_default_du_cell_config(params)};
-    cfg.sched_cfg                  = config_helpers::make_default_scheduler_expert_config();
+    cfg.gnb_du_id    = 1;
+    cfg.gnb_du_name  = fmt::format("srsgnb{}", cfg.gnb_du_id);
+    cfg.du_bind_addr = transport_layer_address::create_from_string(fmt::format("127.0.0.{}", cfg.gnb_du_id));
+    cfg.exec_mapper  = &workers.du_high_exec_mapper;
+    cfg.f1c_client   = &sim_cu_cp;
+    cfg.f1u_gw       = &sim_cu_up;
+    cfg.phy_adapter  = &sim_phy;
+    cfg.timers       = &timers;
+    cfg.cells        = {config_helpers::make_default_du_cell_config(params)};
+    cfg.sched_cfg    = config_helpers::make_default_scheduler_expert_config();
     cfg.sched_cfg.ue.pdsch_nof_rbs = {1, max_nof_rbs_per_dl_grant};
     cfg.mac_cfg                    = mac_expert_config{.configs = {{10000, 10000, 10000}}};
     cfg.qos                        = config_helpers::make_default_du_qos_config_list(1000);
@@ -698,8 +699,11 @@ public:
     mac_rx_data_indication rx_ind;
     rx_ind.sl_rx      = next_sl_tx - tx_rx_delay;
     rx_ind.cell_index = to_du_cell_index(0);
-    rx_ind.pdus.push_back(mac_rx_pdu{
-        du_ue_index_to_rnti(ue_idx), 0, 0, {0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00}});
+    rx_ind.pdus.push_back(
+        mac_rx_pdu{du_ue_index_to_rnti(ue_idx),
+                   0,
+                   0,
+                   byte_buffer::create({0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00}).value()});
     du_hi->get_pdu_handler().handle_rx_data_indication(std::move(rx_ind));
 
     // Wait for UE Context Modification Response to arrive to CU.
@@ -739,16 +743,19 @@ public:
           pdcp_sn_list[bearer_idx] = (pdcp_sn_list[bearer_idx] + 1) % (1U << 18U);
           // We perform a deep-copy of the byte buffer to better simulate a real deployment, where there is stress over
           // the byte buffer pool.
-          byte_buffer pdu_copy = pdcp_pdu.deep_copy();
-          if (pdu_copy.empty()) {
+          auto pdu_copy = pdcp_pdu.deep_copy();
+          if (pdu_copy.is_error()) {
             test_logger.warning("Byte buffer segment pool depleted");
             return;
           }
           if (i == nof_dl_pdus_per_slot - 1 and last_dl_pdu_size != 0) {
             // If it is last DL PDU.
-            pdu_copy.resize(last_dl_pdu_size);
+            if (!pdu_copy.value().resize(last_dl_pdu_size)) {
+              test_logger.warning("Unable to resize PDU to {} bytes", last_dl_pdu_size);
+              return;
+            }
           }
-          du_notif->on_new_sdu(pdcp_tx_pdu{.buf = std::move(pdu_copy), .pdcp_sn = pdcp_sn_list[bearer_idx]});
+          du_notif->on_new_sdu(pdcp_tx_pdu{.buf = std::move(pdu_copy.value()), .pdcp_sn = pdcp_sn_list[bearer_idx]});
         }
       }
     })) {
@@ -998,7 +1005,7 @@ public:
 
   // Construct LBSR MAC subPDU for LCG 1.
   // NOTE: LBSR buffer size is populated in the constructor.
-  byte_buffer bsr_mac_subpdu{0x3e, 0x02, 0x02};
+  byte_buffer bsr_mac_subpdu = byte_buffer::create({0x3e, 0x02, 0x02}).value();
 
   /// Size of the UL Buffer status report to push for UL Tx.
   unsigned ul_bsr_bytes;

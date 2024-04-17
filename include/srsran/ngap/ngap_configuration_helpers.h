@@ -34,13 +34,13 @@ std::map<uint8_t, srs_cu_cp::cu_cp_qos_config> make_default_ngap_qos_config_list
 inline srs_cu_cp::ngap_configuration make_default_ngap_config()
 {
   srs_cu_cp::ngap_configuration cfg{};
-  cfg.gnb_id        = 411;
+  cfg.gnb_id        = {411, 22};
   cfg.ran_node_name = "srsgnb01";
   cfg.plmn          = "00101";
   cfg.tac           = 7;
   s_nssai_t slice_cfg;
-  slice_cfg.sst                = 1;
-  cfg.ue_context_setup_timeout = std::chrono::seconds{2};
+  slice_cfg.sst                 = 1;
+  cfg.pdu_session_setup_timeout = std::chrono::seconds{2};
   cfg.slice_configurations.push_back(slice_cfg);
 
   return cfg;

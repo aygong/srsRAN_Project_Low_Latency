@@ -27,12 +27,14 @@
 #include "srsran/phy/upper/channel_processors/prach_detector_phy_validator.h"
 #include "srsran/ran/band_helper.h"
 #include "srsran/ran/duplex_mode.h"
+#include "srsran/ran/nr_cgi_helpers.h"
 #include "srsran/ran/pdcch/pdcch_type0_css_coreset_config.h"
 #include "srsran/ran/phy_time_unit.h"
 #include "srsran/ran/prach/prach_configuration.h"
 #include "srsran/ran/prach/prach_helper.h"
 #include "srsran/ran/prach/prach_preamble_information.h"
 #include "srsran/rlc/rlc_config.h"
+#include <set>
 
 using namespace srsran;
 
@@ -141,6 +143,13 @@ template <typename T>
   return std::unique(temp_ports.begin(), temp_ports.end()) == temp_ports.end();
 }
 
+static bool validate_transmission_window(std::chrono::duration<double, std::micro> symbol_duration,
+                                         std::chrono::microseconds                 window_start,
+                                         std::chrono::microseconds                 window_end)
+{
+  return ((window_end - window_start) > symbol_duration);
+}
+
 /// Validates the given Open Fronthaul Radio Unit application configuration. Returns true on success, otherwise
 /// false.
 static bool validate_ru_ofh_appconfig(const gnb_appconfig& config)
@@ -150,6 +159,30 @@ static bool validate_ru_ofh_appconfig(const gnb_appconfig& config)
   for (unsigned i = 0, e = config.cells_cfg.size(); i != e; ++i) {
     const ru_ofh_cell_appconfig& ofh_cell = ofh_cfg.cells[i];
     const base_cell_appconfig&   cell_cfg = config.cells_cfg[i].cell;
+
+    const std::chrono::duration<double, std::micro> symbol_duration(
+        (1e3 / (get_nsymb_per_slot(cyclic_prefix::NORMAL) * get_nof_slots_per_subframe(cell_cfg.common_scs))));
+
+    if (!validate_transmission_window(symbol_duration, ofh_cell.cell.T1a_min_cp_dl, ofh_cell.cell.T1a_max_cp_dl)) {
+      fmt::print("Transmission timing window length for DL Control-Plane must be bigger than the symbol duration "
+                 "({:.2f}us).\n",
+                 symbol_duration.count());
+      return false;
+    }
+
+    if (!validate_transmission_window(symbol_duration, ofh_cell.cell.T1a_min_cp_ul, ofh_cell.cell.T1a_max_cp_ul)) {
+      fmt::print("Transmission timing window length for UL Control-Plane must be bigger than the symbol duration "
+                 "({:.2f}us).\n",
+                 symbol_duration.count());
+      return false;
+    }
+
+    if (!validate_transmission_window(symbol_duration, ofh_cell.cell.T1a_min_up, ofh_cell.cell.T1a_max_up)) {
+      fmt::print(
+          "Transmission timing window length for DL User-Plane must be bigger than the symbol duration ({:.2f}us).\n",
+          symbol_duration.count());
+      return false;
+    }
 
     if (!ofh_cell.cell.is_downlink_broadcast_enabled && cell_cfg.nof_antennas_dl != ofh_cell.ru_dl_port_id.size()) {
       fmt::print("RU number of downlink ports={} must match the number of transmission antennas={}\n",
@@ -619,16 +652,80 @@ static bool validate_amf_appconfig(const amf_appconfig& config)
   return true;
 }
 
-/// Validates the given CU-CP configuration. Returns true on success, otherwise false.
-static bool validate_cu_cp_appconfig(const cu_cp_appconfig& config, const sib_appconfig& sib_cfg)
+static bool validate_mobility_appconfig(const gnb_id_t gnb_id, const mobility_appconfig& config)
 {
-  // only check if the ue_context_setup_timout is larger than T310
-  if (config.ue_context_setup_timeout_s * 1000 < sib_cfg.ue_timers_and_constants.t310) {
-    fmt::print("ue_context_setup_timeout_s ({}ms) must be larger than T310 ({}ms)\n",
-               config.ue_context_setup_timeout_s * 1000,
+  // check that report config ids are unique
+  std::map<unsigned, std::string> report_cfg_ids_to_report_type;
+  for (const auto& report_cfg : config.report_configs) {
+    if (report_cfg_ids_to_report_type.find(report_cfg.report_cfg_id) != report_cfg_ids_to_report_type.end()) {
+      fmt::print("Report config ids must be unique\n");
+      return false;
+    }
+    report_cfg_ids_to_report_type.emplace(report_cfg.report_cfg_id, report_cfg.report_type);
+  }
+
+  // check cu_cp_cell_config
+  for (const auto& cell : config.cells) {
+    std::set<nr_cell_id_t> ncis;
+    if (ncis.emplace(cell.nr_cell_id).second == false) {
+      fmt::print("Cells must be unique ({:#x} already present)\n");
+      return false;
+    }
+
+    if (cell.ssb_period.has_value() && cell.ssb_offset.has_value() &&
+        cell.ssb_offset.value() >= cell.ssb_period.value()) {
+      fmt::print("ssb_offset must be smaller than ssb_period\n");
+      return false;
+    }
+
+    // check that for the serving cell only periodic reports are configured
+    if (cell.periodic_report_cfg_id.has_value()) {
+      if (report_cfg_ids_to_report_type.at(cell.periodic_report_cfg_id.value()) != "periodical") {
+        fmt::print("For the serving cell only periodic reports are allowed\n");
+        return false;
+      }
+    }
+
+    // Check if cell is an external managed cell
+    if (config_helpers::get_gnb_id(cell.nr_cell_id, gnb_id.bit_length) != gnb_id) {
+      if (!cell.gnb_id_bit_length.has_value() || !cell.pci.has_value() || !cell.band.has_value() ||
+          !cell.ssb_arfcn.has_value() || !cell.ssb_scs.has_value() || !cell.ssb_period.has_value() ||
+          !cell.ssb_offset.has_value() || !cell.ssb_duration.has_value()) {
+        fmt::print(
+            "For external cells, the gnb_id_bit_length, pci, band, ssb_argcn, ssb_scs, ssb_period, ssb_offset and "
+            "ssb_duration must be configured in the mobility config\n");
+        return false;
+      }
+    } else {
+      if (cell.pci.has_value() || cell.band.has_value() || cell.ssb_arfcn.has_value() || cell.ssb_scs.has_value() ||
+          cell.ssb_period.has_value() || cell.ssb_offset.has_value() || cell.ssb_duration.has_value()) {
+        fmt::print("For cells managed by the CU-CP the gnb_id_bit_length, pci, band, ssb_argcn, ssb_scs, ssb_period, "
+                   "ssb_offset and "
+                   "ssb_duration must not be configured in the mobility config\n");
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+/// Validates the given CU-CP configuration. Returns true on success, otherwise false.
+static bool validate_cu_cp_appconfig(const gnb_id_t gnb_id, const cu_cp_appconfig& config, const sib_appconfig& sib_cfg)
+{
+  // check if the pdu_session_setup_timout is larger than T310
+  if (config.pdu_session_setup_timeout * 1000 < sib_cfg.ue_timers_and_constants.t310) {
+    fmt::print("pdu_session_setup_timeout ({}ms) must be larger than T310 ({}ms)\n",
+               config.pdu_session_setup_timeout * 1000,
                sib_cfg.ue_timers_and_constants.t310);
     return false;
   }
+
+  // validate mobility config
+  if (!validate_mobility_appconfig(gnb_id, config.mobility_config)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -1208,6 +1305,15 @@ static bool validate_expert_execution_appconfig(const gnb_appconfig& config)
     return false;
   }
 
+  if (variant_holds_alternative<ru_sdr_appconfig>(config.ru_cfg)) {
+    auto& sdr_cfg = variant_get<ru_sdr_appconfig>(config.ru_cfg);
+    if ((config.expert_execution_cfg.threads.lower_threads.execution_profile == lower_phy_thread_profile::single) &&
+        (sdr_cfg.expert_cfg.dl_buffer_size_policy != "auto")) {
+      fmt::print("DL buffer size policy must be set to auto when single thread lower PHY profile is used.\n");
+      return false;
+    }
+  }
+
   // Configure more cells for expert execution than the number of cells is an error.
   if (config.expert_execution_cfg.cell_affinities.size() > config.cells_cfg.size()) {
     fmt::print("Using more cells for expert execution '{}' than the number of defined cells '{}'\n",
@@ -1250,7 +1356,7 @@ bool srsran::validate_appconfig(const gnb_appconfig& config)
     return false;
   }
 
-  if (!validate_cu_cp_appconfig(config.cu_cp_cfg, config.cells_cfg.front().cell.sib_cfg)) {
+  if (!validate_cu_cp_appconfig(config.gnb_id, config.cu_cp_cfg, config.cells_cfg.front().cell.sib_cfg)) {
     return false;
   }
 

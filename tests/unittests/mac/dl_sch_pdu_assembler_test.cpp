@@ -20,11 +20,13 @@
  *
  */
 
+#include "lib/mac/mac_dl/cell_dl_harq_buffer_pool.h"
 #include "lib/mac/mac_dl/dl_sch_pdu_assembler.h"
 #include "mac_test_helpers.h"
 #include "srsran/mac/config/mac_config_helpers.h"
 #include "srsran/ran/pdsch/pdsch_constants.h"
 #include "srsran/support/bit_encoding.h"
+#include "srsran/support/executors/manual_task_worker.h"
 #include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
@@ -56,7 +58,7 @@ TEST(mac_dl_sch_pdu, mac_ce_con_res_id_pack)
   pdu.add_ue_con_res_id(conres);
   span<const uint8_t> result = pdu.get();
 
-  byte_buffer expected{0b00111110};
+  byte_buffer expected = byte_buffer::create({0b00111110}).value();
   ASSERT_TRUE(expected.append(conres));
   ASSERT_EQ(result, expected);
 }
@@ -80,7 +82,7 @@ TEST(mac_dl_sch_pdu, mac_sdu_8bit_L_pack)
     ASSERT_TRUE(payload.append(test_rgen::uniform_int<uint8_t>()));
   }
   lcid_t lcid = (lcid_t)test_rgen::uniform_int<unsigned>(0, MAX_NOF_RB_LCIDS);
-  pdu.add_sdu(lcid, byte_buffer_chain{payload.copy()});
+  pdu.add_sdu(lcid, byte_buffer_chain::create(payload.copy()).value());
   span<const uint8_t> result = pdu.get();
 
   byte_buffer expected;
@@ -113,7 +115,7 @@ TEST(mac_dl_sch_pdu, mac_sdu_16bit_L_pack)
     ASSERT_TRUE(payload.append(test_rgen::uniform_int<uint8_t>()));
   }
   lcid_t lcid = (lcid_t)test_rgen::uniform_int<unsigned>(0, MAX_NOF_RB_LCIDS);
-  ASSERT_EQ(pdu.add_sdu(lcid, byte_buffer_chain{payload.copy()}), payload.length() + HEADER_LEN);
+  ASSERT_EQ(pdu.add_sdu(lcid, byte_buffer_chain::create(payload.copy()).value()), payload.length() + HEADER_LEN);
   span<const uint8_t> result = pdu.get();
 
   byte_buffer expected;
@@ -142,7 +144,7 @@ public:
     for (unsigned i = 0; i != nof_bytes; ++i) {
       mac_sdu_buf[i] = test_rgen::uniform_int<uint8_t>();
     }
-    last_sdus.emplace_back(mac_sdu_buf.first(nof_bytes));
+    last_sdus.emplace_back(byte_buffer::create(mac_sdu_buf.first(nof_bytes)).value());
     return nof_bytes;
   }
 
@@ -152,7 +154,11 @@ public:
 class mac_dl_sch_assembler_tester : public testing::Test
 {
 public:
-  mac_dl_sch_assembler_tester() : ue_mng(rnti_table), dl_bearers(2), dl_sch_enc(ue_mng)
+  mac_dl_sch_assembler_tester() :
+    ue_mng(rnti_table),
+    dl_bearers(2),
+    harqs(MAX_NOF_PRBS, pdsch_constants::CODEWORD_MAX_NOF_LAYERS, task_worker),
+    dl_sch_enc(ue_mng, harqs)
   {
     srslog::fetch_basic_logger("MAC", true).set_level(srslog::basic_levels::debug);
     srslog::init();
@@ -171,6 +177,8 @@ public:
 
     rnti_table.add_ue(req.crnti, req.ue_index);
 
+    harqs.allocate_ue_buffers(req.ue_index, MAX_NOF_HARQS);
+
     mac_dl_ue_context u{req};
     ue_mng.add_ue(std::move(u));
   }
@@ -183,6 +191,8 @@ protected:
   du_rnti_table                rnti_table;
   mac_dl_ue_manager            ue_mng;
   std::vector<dummy_dl_bearer> dl_bearers;
+  manual_task_worker           task_worker{16};
+  cell_dl_harq_buffer_pool     harqs;
   dl_sch_pdu_assembler         dl_sch_enc;
 };
 

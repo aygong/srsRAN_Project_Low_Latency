@@ -31,6 +31,12 @@
 namespace srsran {
 namespace srs_cu_cp {
 
+struct error_indication_request_t {
+  ngap_cause_t          cause;
+  optional<ran_ue_id_t> ran_ue_id;
+  optional<amf_ue_id_t> amf_ue_id;
+};
+
 /// \brief Send an Error Indication message to the AMF.
 /// \param[in] ngap_notifier The message notifier to send the message to the AMF.
 /// \param[in] logger The logger to log the message.
@@ -42,7 +48,7 @@ inline void send_error_indication(ngap_message_notifier& ngap_notifier,
                                   srslog::basic_logger&  logger,
                                   optional<ran_ue_id_t>  ran_ue_id = {},
                                   optional<amf_ue_id_t>  amf_ue_id = {},
-                                  optional<cause_t>      cause     = {})
+                                  optional<ngap_cause_t> cause     = {})
 {
   ngap_message ngap_msg = {};
   ngap_msg.pdu.set_init_msg();

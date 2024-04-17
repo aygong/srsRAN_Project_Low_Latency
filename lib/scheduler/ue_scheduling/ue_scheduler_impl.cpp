@@ -30,7 +30,8 @@ ue_scheduler_impl::ue_scheduler_impl(const scheduler_ue_expert_config& expert_cf
                                      scheduler_metrics_handler&        metric_handler,
                                      scheduler_event_logger&           sched_ev_logger) :
   expert_cfg(expert_cfg_),
-  sched_strategy(create_scheduler_strategy(scheduler_strategy_params{"time_rr", &srslog::fetch_basic_logger("SCHED")})),
+  sched_strategy(create_scheduler_strategy(scheduler_strategy_params{"time_rr", &srslog::fetch_basic_logger("SCHED")},
+                                           expert_cfg)),
   ue_alloc(expert_cfg, ue_db, srslog::fetch_basic_logger("SCHED")),
   event_mng(ue_db, metric_handler, sched_ev_logger),
   logger(srslog::fetch_basic_logger("SCHED"))
@@ -41,7 +42,8 @@ void ue_scheduler_impl::add_cell(const ue_scheduler_cell_params& params)
 {
   ue_res_grid_view.add_cell(*params.cell_res_alloc);
   cells[params.cell_index] = std::make_unique<cell>(expert_cfg, params, ue_db);
-  event_mng.add_cell(*params.cell_res_alloc, cells[params.cell_index]->srb0_sched);
+  event_mng.add_cell(
+      *params.cell_res_alloc, cells[params.cell_index]->fallback_sched, cells[params.cell_index]->uci_sched);
   ue_alloc.add_cell(params.cell_index, *params.pdcch_sched, *params.uci_alloc, *params.cell_res_alloc);
 }
 
@@ -163,10 +165,10 @@ void ue_scheduler_impl::run_slot(slot_point slot_tx, du_cell_index_t cell_index)
   ue_alloc.slot_indication();
 
   // Schedule periodic UCI (SR and CSI) before any UL grants.
-  cells[cell_index]->uci_sched.run_slot(*cells[cell_index]->cell_res_alloc, slot_tx);
+  cells[cell_index]->uci_sched.run_slot(*cells[cell_index]->cell_res_alloc);
 
   // Run cell-specific SRB0 scheduler.
-  cells[cell_index]->srb0_sched.run_slot(*cells[cell_index]->cell_res_alloc);
+  cells[cell_index]->fallback_sched.run_slot(*cells[cell_index]->cell_res_alloc);
 
   // Synchronize all carriers. Last thread to reach this synchronization point, runs UE scheduling strategy.
   sync_point.wait(

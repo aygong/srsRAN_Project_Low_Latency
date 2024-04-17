@@ -37,7 +37,7 @@ cell_scheduler::cell_scheduler(const scheduler_expert_config&                  s
   res_grid(cell_cfg),
   event_logger(ev_logger),
   metrics(metrics_handler),
-  result_logger(sched_cfg.log_broadcast_messages, cell_cfg.cell_index),
+  result_logger(sched_cfg.log_broadcast_messages, cell_cfg.pci),
   logger(srslog::fetch_basic_logger("SCHED")),
   ssb_sch(cell_cfg),
   pdcch_sch(cell_cfg),
@@ -112,7 +112,7 @@ void cell_scheduler::run_slot(slot_point sl_tx)
   csi_sch.run_slot(res_grid[0]);
 
   // > Schedule SIB1 and SI-message signalling.
-  sib1_sch.schedule_sib1(res_grid[0], sl_tx);
+  sib1_sch.run_slot(res_grid, sl_tx);
   si_msg_sch.run_slot(res_grid[0]);
 
   // > Schedule PUCCH guardbands.

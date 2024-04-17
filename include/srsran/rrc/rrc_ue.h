@@ -30,6 +30,7 @@
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/cu_cp/cu_cp_ue_messages.h"
 #include "srsran/cu_cp/up_resource_manager.h"
+#include "srsran/ran/rnti.h"
 #include "srsran/rrc/rrc.h"
 #include "srsran/rrc/rrc_ue_config.h"
 #include "srsran/security/security.h"
@@ -72,7 +73,7 @@ public:
   virtual void on_new_dl_ccch(const asn1::rrc_nr::dl_ccch_msg_s& dl_ccch_msg) = 0;
 
   /// \brief Notify about the need to release a UE.
-  virtual void on_ue_release_required(const cause_t& cause) = 0;
+  virtual void on_ue_release_required(const ngap_cause_t& cause) = 0;
 };
 
 struct srb_creation_message {
@@ -111,7 +112,7 @@ public:
   virtual void on_new_dl_dcch(srb_id_t srb_id, const asn1::rrc_nr::dl_dcch_msg_s& dl_dcch_msg) = 0;
 
   /// \brief Notify about the need to release a UE.
-  virtual void on_ue_release_required(const cause_t& cause) = 0;
+  virtual void on_ue_release_required(const ngap_cause_t& cause) = 0;
 };
 
 /// Interface used by the RRC security mode procedure
@@ -337,7 +338,7 @@ public:
 
   /// \brief Notify the CU-CP to completly remove a UE from the CU-CP.
   /// \param[in] ue_index The index of the UE to remove.
-  virtual void on_ue_removal_required(ue_index_t ue_index) = 0;
+  virtual async_task<void> on_ue_removal_required(ue_index_t ue_index) = 0;
 };
 
 /// Interface to notify about measurements
@@ -347,9 +348,11 @@ public:
   virtual ~rrc_ue_measurement_notifier() = default;
 
   /// \brief Retrieve the measurement config (for any UE) connected to the given serving cell.
+  /// \param[in] ue_index The index of the UE to retrieve the measurement config for.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] current_meas_config The current meas config of the UE (if applicable).
-  virtual optional<rrc_meas_cfg> on_measurement_config_request(nr_cell_id_t           nci,
+  virtual optional<rrc_meas_cfg> on_measurement_config_request(ue_index_t             ue_index,
+                                                               nr_cell_id_t           nci,
                                                                optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   /// \brief Submit measurement report for given UE to cell manager.

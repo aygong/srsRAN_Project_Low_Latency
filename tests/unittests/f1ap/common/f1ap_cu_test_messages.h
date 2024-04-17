@@ -31,11 +31,13 @@ namespace srsran {
 namespace srs_cu_cp {
 
 /// \brief Generate a dummy F1AP Served Cell Item.
-asn1::f1ap::gnb_du_served_cells_item_s generate_served_cells_item(unsigned nrcell_id, pci_t nrpci);
+asn1::f1ap::gnb_du_served_cells_item_s generate_served_cells_item(unsigned nrcell_id, pci_t nrpci, unsigned tac = 7);
 
 /// \brief Generates dummy F1AP SETUP REQUEST message.
-f1ap_message
-generate_f1_setup_request(gnb_du_id_t gnb_du_id = int_to_gnb_du_id(0x11), unsigned nrcell_id = 6576, pci_t pci = 0);
+f1ap_message generate_f1_setup_request(gnb_du_id_t gnb_du_id = int_to_gnb_du_id(0x11),
+                                       unsigned    nrcell_id = 6576,
+                                       pci_t       pci       = 0,
+                                       unsigned    tac       = 7);
 
 /// \brief Generates dummy F1AP Initial UL RRC Transfer message without DU to CU container.
 f1ap_message generate_init_ul_rrc_message_transfer_without_du_to_cu_container(gnb_du_ue_f1ap_id_t du_ue_id,
@@ -49,8 +51,8 @@ f1ap_message generate_init_ul_rrc_message_transfer(gnb_du_ue_f1ap_id_t du_ue_id,
 /// \brief Generates dummy F1AP UL RRC TRANSFER message.
 f1ap_message generate_ul_rrc_message_transfer(gnb_cu_ue_f1ap_id_t cu_ue_id,
                                               gnb_du_ue_f1ap_id_t du_ue_id,
-                                              srb_id_t            srb_id        = srb_id_t::srb1,
-                                              byte_buffer         rrc_container = {0x1, 0x2, 0x3});
+                                              srb_id_t            srb_id = srb_id_t::srb1,
+                                              byte_buffer rrc_container = byte_buffer::create({0x1, 0x2, 0x3}).value());
 
 /// \brief Generates dummy F1AP UE CONTEXT RELEASE COMPLETE message.
 f1ap_message generate_ue_context_release_complete(gnb_cu_ue_f1ap_id_t cu_ue_id, gnb_du_ue_f1ap_id_t du_ue_id);

@@ -54,7 +54,7 @@ protected:
     ul_ccch_indication_message ccch_ind{};
     ccch_ind.cell_index = to_du_cell_index(0);
     ccch_ind.tc_rnti    = rnti;
-    ccch_ind.subpdu     = {0, 1, 2, 3, 4, 5};
+    ccch_ind.subpdu     = byte_buffer::create({0, 1, 2, 3, 4, 5}).value();
     return ccch_ind;
   }
 
@@ -108,7 +108,7 @@ protected:
   null_rlc_pcap                          rlc_pcap;
   dummy_ue_resource_configurator_factory cell_res_alloc;
 
-  du_manager_params params{{"srsgnb", 1, 1, {"127.0.0.1"}, cells},
+  du_manager_params params{{"srsgnb", 1, 1, transport_layer_address::create_from_string("127.0.0.1"), cells},
                            {timers, worker, ue_execs, cell_execs},
                            {f1ap_dummy, f1ap_dummy},
                            {f1u_dummy},

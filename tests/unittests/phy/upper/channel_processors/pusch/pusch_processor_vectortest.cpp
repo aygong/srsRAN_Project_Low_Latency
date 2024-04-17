@@ -135,7 +135,7 @@ private:
 
     // Interfacing to a shared external HARQ buffer context repository.
     unsigned nof_cbs                   = MAX_NOF_SEGMENTS;
-    unsigned acc100_ext_harq_buff_size = bbdev_accelerator->get_harq_buff_size().value();
+    uint64_t acc100_ext_harq_buff_size = bbdev_accelerator->get_harq_buff_size_bytes();
     std::shared_ptr<ext_harq_buffer_context_repository> harq_buffer_context =
         create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, false);
     if (!harq_buffer_context) {
@@ -229,9 +229,15 @@ private:
       return nullptr;
     }
 
+    std::shared_ptr<time_alignment_estimator_factory> ta_estimator_factory =
+        create_time_alignment_estimator_dft_factory(dft_factory);
+    if (!ta_estimator_factory) {
+      return nullptr;
+    }
+
     // Create port channel estimator factory.
     std::shared_ptr<port_channel_estimator_factory> port_chan_estimator_factory =
-        create_port_channel_estimator_factory_sw(dft_factory);
+        create_port_channel_estimator_factory_sw(ta_estimator_factory);
     if (!port_chan_estimator_factory) {
       return nullptr;
     }

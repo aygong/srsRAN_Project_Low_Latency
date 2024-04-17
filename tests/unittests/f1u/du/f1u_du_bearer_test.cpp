@@ -29,6 +29,8 @@
 using namespace srsran;
 using namespace srs_du;
 
+namespace {
+
 /// Mocking class of the surrounding layers invoked by the F1-U bearer
 class f1u_du_test_frame : public f1u_rx_sdu_notifier, public f1u_tx_pdu_notifier
 {
@@ -81,13 +83,16 @@ protected:
     f1u_config config = {};
     config.t_notify   = f1u_ul_notif_time_ms;
     drb_id_t drb_id   = drb_id_t::drb1;
-    f1u               = std::make_unique<f1u_bearer_impl>(0,
-                                            drb_id,
-                                            up_transport_layer_info{{"127.0.0.1"}, gtpu_teid_t{dl_teid_next.value()++}},
-                                            config,
-                                            *tester,
-                                            *tester,
-                                            timer_factory{timers, ue_worker});
+    f1u               = std::make_unique<f1u_bearer_impl>(
+        0,
+        drb_id,
+        up_transport_layer_info{transport_layer_address::create_from_string("127.0.0.1"),
+                                gtpu_teid_t{dl_teid_next.value()++}},
+        config,
+        *tester,
+        *tester,
+        timer_factory{timers, ue_worker},
+        ue_worker);
   }
 
   void TearDown() override
@@ -112,6 +117,8 @@ protected:
   const uint32_t f1u_ul_notif_time_ms = 10;
 };
 
+} // namespace
+
 TEST_F(f1u_du_test, create_new_entity)
 {
   EXPECT_TRUE(tester->rx_sdu_list.empty());
@@ -128,11 +135,11 @@ TEST_F(f1u_du_test, rx_discard)
   nru_pdcp_sn_discard_block block1a = {};
   block1a.pdcp_sn_start             = pdcp_sn;
   block1a.block_size                = 1;
-  msg1.dl_user_data.discard_blocks.value().push_back(std::move(block1a));
+  msg1.dl_user_data.discard_blocks.value().push_back(block1a);
   nru_pdcp_sn_discard_block block1b = {};
   block1b.pdcp_sn_start             = pdcp_sn + 3;
   block1b.block_size                = 2;
-  msg1.dl_user_data.discard_blocks.value().push_back(std::move(block1b));
+  msg1.dl_user_data.discard_blocks.value().push_back(block1b);
   f1u->handle_pdu(std::move(msg1));
 
   nru_dl_message msg2              = {};
@@ -140,7 +147,7 @@ TEST_F(f1u_du_test, rx_discard)
   nru_pdcp_sn_discard_block block2 = {};
   block2.pdcp_sn_start             = pdcp_sn + 9;
   block2.block_size                = 1;
-  msg2.dl_user_data.discard_blocks.value().push_back(std::move(block2));
+  msg2.dl_user_data.discard_blocks.value().push_back(block2);
   f1u->handle_pdu(std::move(msg2));
 
   EXPECT_TRUE(tester->rx_sdu_list.empty());
@@ -175,13 +182,13 @@ TEST_F(f1u_du_test, rx_pdcp_pdus)
 
   byte_buffer    rx_pdcp_pdu1 = create_sdu_byte_buffer(pdu_size, pdcp_sn);
   nru_dl_message msg1         = {};
-  msg1.t_pdu                  = rx_pdcp_pdu1.deep_copy();
+  msg1.t_pdu                  = rx_pdcp_pdu1.deep_copy().value();
   msg1.pdcp_sn                = pdcp_sn;
   f1u->handle_pdu(std::move(msg1));
 
   byte_buffer    rx_pdcp_pdu2 = create_sdu_byte_buffer(pdu_size, pdcp_sn + 1);
   nru_dl_message msg2         = {};
-  msg2.t_pdu                  = rx_pdcp_pdu2.deep_copy();
+  msg2.t_pdu                  = rx_pdcp_pdu2.deep_copy().value();
   msg2.pdcp_sn                = pdcp_sn + 1;
   f1u->handle_pdu(std::move(msg2));
 
@@ -209,23 +216,27 @@ TEST_F(f1u_du_test, tx_pdcp_pdus)
   constexpr uint32_t pdcp_sn  = 123;
 
   byte_buffer tx_pdcp_pdu1 = create_sdu_byte_buffer(pdu_size, pdcp_sn);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu1.deep_copy()});
+  auto        chain1       = byte_buffer_chain::create(tx_pdcp_pdu1.deep_copy().value());
+  ASSERT_FALSE(chain1.is_error());
+  f1u->handle_sdu(std::move(chain1.value()));
 
   byte_buffer tx_pdcp_pdu2 = create_sdu_byte_buffer(pdu_size, pdcp_sn + 1);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu2.deep_copy()});
+  auto        chain2       = byte_buffer_chain::create(tx_pdcp_pdu2.deep_copy().value());
+  ASSERT_FALSE(chain2.is_error());
+  f1u->handle_sdu(std::move(chain2.value()));
 
   EXPECT_TRUE(tester->rx_discard_sdu_list.empty());
   EXPECT_TRUE(tester->rx_sdu_list.empty());
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu1);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu1);
   EXPECT_FALSE(tester->tx_msg_list.front().data_delivery_status.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
 
   tester->tx_msg_list.pop_front();
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu2);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu2);
   EXPECT_FALSE(tester->tx_msg_list.front().data_delivery_status.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
 
@@ -244,16 +255,20 @@ TEST_F(f1u_du_test, tx_pdcp_pdus_with_transmit_notification)
   f1u->handle_transmit_notification(highest_pdcp_sn + 1);
 
   byte_buffer tx_pdcp_pdu1 = create_sdu_byte_buffer(pdu_size, pdcp_sn);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu1.deep_copy()});
+  auto        chain1       = byte_buffer_chain::create(tx_pdcp_pdu1.deep_copy().value());
+  ASSERT_FALSE(chain1.is_error());
+  f1u->handle_sdu(std::move(chain1.value()));
 
   byte_buffer tx_pdcp_pdu2 = create_sdu_byte_buffer(pdu_size, pdcp_sn + 1);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu2.deep_copy()});
+  auto        chain2       = byte_buffer_chain::create(tx_pdcp_pdu2.deep_copy().value());
+  ASSERT_FALSE(chain2.is_error());
+  f1u->handle_sdu(std::move(chain2.value()));
 
   EXPECT_TRUE(tester->rx_discard_sdu_list.empty());
   EXPECT_TRUE(tester->rx_sdu_list.empty());
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu1);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu1);
   ASSERT_TRUE(tester->tx_msg_list.front().data_delivery_status.has_value());
   {
     nru_dl_data_delivery_status& status = tester->tx_msg_list.front().data_delivery_status.value();
@@ -271,7 +286,7 @@ TEST_F(f1u_du_test, tx_pdcp_pdus_with_transmit_notification)
   tester->tx_msg_list.pop_front();
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu2);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu2);
   EXPECT_FALSE(tester->tx_msg_list.front().data_delivery_status.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
 
@@ -297,16 +312,20 @@ TEST_F(f1u_du_test, tx_pdcp_pdus_with_delivery_notification)
   EXPECT_TRUE(tester->tx_msg_list.empty());
 
   byte_buffer tx_pdcp_pdu1 = create_sdu_byte_buffer(pdu_size, pdcp_sn);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu1.deep_copy()});
+  auto        chain1       = byte_buffer_chain::create(tx_pdcp_pdu1.deep_copy().value());
+  ASSERT_FALSE(chain1.is_error());
+  f1u->handle_sdu(std::move(chain1.value()));
 
   byte_buffer tx_pdcp_pdu2 = create_sdu_byte_buffer(pdu_size, pdcp_sn + 1);
-  f1u->handle_sdu(byte_buffer_chain{tx_pdcp_pdu2.deep_copy()});
+  auto        chain2       = byte_buffer_chain::create(tx_pdcp_pdu2.deep_copy().value());
+  ASSERT_FALSE(chain2.is_error());
+  f1u->handle_sdu(std::move(chain2.value()));
 
   EXPECT_TRUE(tester->rx_discard_sdu_list.empty());
   EXPECT_TRUE(tester->rx_sdu_list.empty());
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu1);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu1);
   ASSERT_TRUE(tester->tx_msg_list.front().data_delivery_status.has_value());
   {
     nru_dl_data_delivery_status& status = tester->tx_msg_list.front().data_delivery_status.value();
@@ -324,7 +343,7 @@ TEST_F(f1u_du_test, tx_pdcp_pdus_with_delivery_notification)
   tester->tx_msg_list.pop_front();
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_EQ(tester->tx_msg_list.front().t_pdu, tx_pdcp_pdu2);
+  EXPECT_EQ(tester->tx_msg_list.front().t_pdu.value(), tx_pdcp_pdu2);
   EXPECT_FALSE(tester->tx_msg_list.front().data_delivery_status.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
 
@@ -344,7 +363,7 @@ TEST_F(f1u_du_test, tx_pdcp_pdus_with_delivery_notification)
   }
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_TRUE(tester->tx_msg_list.front().t_pdu.empty());
+  EXPECT_FALSE(tester->tx_msg_list.front().t_pdu.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
   ASSERT_TRUE(tester->tx_msg_list.front().data_delivery_status.has_value());
   {
@@ -379,7 +398,7 @@ TEST_F(f1u_du_test, tx_transmit_notification)
   }
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_TRUE(tester->tx_msg_list.front().t_pdu.empty());
+  EXPECT_FALSE(tester->tx_msg_list.front().t_pdu.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
   ASSERT_TRUE(tester->tx_msg_list.front().data_delivery_status.has_value());
   {
@@ -414,7 +433,7 @@ TEST_F(f1u_du_test, tx_delivery_notification)
   }
 
   ASSERT_FALSE(tester->tx_msg_list.empty());
-  EXPECT_TRUE(tester->tx_msg_list.front().t_pdu.empty());
+  EXPECT_FALSE(tester->tx_msg_list.front().t_pdu.has_value());
   EXPECT_FALSE(tester->tx_msg_list.front().assistance_information.has_value());
   ASSERT_TRUE(tester->tx_msg_list.front().data_delivery_status.has_value());
   {

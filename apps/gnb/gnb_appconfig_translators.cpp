@@ -50,29 +50,9 @@ static constexpr cyclic_prefix cp = cyclic_prefix::NORMAL;
 srs_cu_cp::rrc_ssb_mtc srsran::generate_rrc_ssb_mtc(unsigned period, unsigned offset, unsigned duration)
 {
   srs_cu_cp::rrc_ssb_mtc ssb_mtc;
-  switch (period) {
-    case 5:
-      ssb_mtc.periodicity_and_offset.sf5.emplace() = offset;
-      break;
-    case 10:
-      ssb_mtc.periodicity_and_offset.sf10.emplace() = offset;
-      break;
-    case 20:
-      ssb_mtc.periodicity_and_offset.sf20.emplace() = offset;
-      break;
-    case 40:
-      ssb_mtc.periodicity_and_offset.sf40.emplace() = offset;
-      break;
-    case 80:
-      ssb_mtc.periodicity_and_offset.sf80.emplace() = offset;
-      break;
-    case 160:
-      ssb_mtc.periodicity_and_offset.sf160.emplace() = offset;
-      break;
-    default:
-      report_error("Invalid SSB periodicity {}\n", period);
-  }
-  ssb_mtc.dur = duration;
+  ssb_mtc.periodicity_and_offset.periodicity = (srs_cu_cp::rrc_periodicity_and_offset::periodicity_t)period;
+  ssb_mtc.periodicity_and_offset.offset      = offset;
+  ssb_mtc.dur                                = duration;
 
   return ssb_mtc;
 }
@@ -88,7 +68,8 @@ srsran::sctp_network_gateway_config srsran::generate_ngap_nw_config(const gnb_ap
   } else {
     out_cfg.bind_address = config.amf_cfg.n2_bind_addr;
   }
-  out_cfg.ppid = NGAP_PPID;
+  out_cfg.bind_interface = config.amf_cfg.n2_bind_interface;
+  out_cfg.ppid           = NGAP_PPID;
 
   if (config.amf_cfg.sctp_rto_initial >= 0) {
     out_cfg.rto_initial = config.amf_cfg.sctp_rto_initial;
@@ -105,6 +86,7 @@ srsran::sctp_network_gateway_config srsran::generate_ngap_nw_config(const gnb_ap
   if (config.amf_cfg.sctp_max_init_timeo >= 0) {
     out_cfg.max_init_timeo = config.amf_cfg.sctp_max_init_timeo;
   }
+  out_cfg.nodelay = config.amf_cfg.sctp_nodelay;
 
   return out_cfg;
 }
@@ -113,13 +95,17 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const gnb_appconfig
 {
   const base_cell_appconfig& cell = config.cells_cfg.front().cell;
 
-  srs_cu_cp::cu_cp_configuration out_cfg   = config_helpers::make_default_cu_cp_config();
+  srs_cu_cp::cu_cp_configuration out_cfg = config_helpers::make_default_cu_cp_config();
+  out_cfg.max_nof_dus                    = config.cu_cp_cfg.max_nof_dus;
+  out_cfg.max_nof_cu_ups                 = config.cu_cp_cfg.max_nof_cu_ups;
+
   out_cfg.ngap_config.gnb_id               = config.gnb_id;
   out_cfg.ngap_config.ran_node_name        = config.ran_node_name;
   out_cfg.ngap_config.plmn                 = cell.plmn;
   out_cfg.ngap_config.tac                  = cell.tac;
   out_cfg.ngap_config.slice_configurations = config.slice_cfg;
 
+  out_cfg.rrc_config.gnb_id                         = config.gnb_id;
   out_cfg.rrc_config.force_reestablishment_fallback = config.cu_cp_cfg.rrc_config.force_reestablishment_fallback;
   out_cfg.rrc_config.rrc_procedure_timeout_ms       = config.cu_cp_cfg.rrc_config.rrc_procedure_timeout_ms;
   out_cfg.rrc_config.int_algo_pref_list             = generate_preferred_integrity_algorithms_list(config);
@@ -136,29 +122,46 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const gnb_appconfig
                  config.cu_cp_cfg.security_config.confidentiality_protection);
   }
 
-  out_cfg.ue_config.inactivity_timer           = std::chrono::seconds{config.cu_cp_cfg.inactivity_timer};
-  out_cfg.ue_config.max_nof_supported_ues      = config.cu_cp_cfg.max_nof_dus * srsran::srs_cu_cp::MAX_NOF_UES_PER_DU;
-  out_cfg.ngap_config.ue_context_setup_timeout = std::chrono::seconds{config.cu_cp_cfg.ue_context_setup_timeout_s};
+  out_cfg.ue_config.inactivity_timer            = std::chrono::seconds{config.cu_cp_cfg.inactivity_timer};
+  out_cfg.ue_config.max_nof_supported_ues       = config.cu_cp_cfg.max_nof_dus * srsran::srs_cu_cp::MAX_NOF_UES_PER_DU;
+  out_cfg.ngap_config.pdu_session_setup_timeout = std::chrono::seconds{config.cu_cp_cfg.pdu_session_setup_timeout};
   out_cfg.statistics_report_period = std::chrono::seconds{config.metrics_cfg.cu_cp_statistics_report_period};
 
   out_cfg.mobility_config.mobility_manager_config.trigger_handover_from_measurements =
       config.cu_cp_cfg.mobility_config.trigger_handover_from_measurements;
 
+  // F1AP-CU config.
+  out_cfg.f1ap_config.ue_context_setup_timeout =
+      std::chrono::milliseconds{config.cu_cp_cfg.f1ap_config.ue_context_setup_timeout};
+  out_cfg.f1ap_config.json_log_enabled = config.log_cfg.f1ap_json_enabled;
+
   // Convert appconfig's cell list into cell manager type.
   for (const auto& app_cfg_item : config.cu_cp_cfg.mobility_config.cells) {
     srs_cu_cp::cell_meas_config meas_cfg_item;
-    meas_cfg_item.serving_cell_cfg.nci       = app_cfg_item.nr_cell_id;
-    meas_cfg_item.serving_cell_cfg.gnb_id    = app_cfg_item.gnb_id;
+    meas_cfg_item.serving_cell_cfg.nci = app_cfg_item.nr_cell_id;
+    if (app_cfg_item.periodic_report_cfg_id.has_value()) {
+      meas_cfg_item.periodic_report_cfg_id =
+          srs_cu_cp::uint_to_report_cfg_id(app_cfg_item.periodic_report_cfg_id.value());
+    }
+
+    if (app_cfg_item.gnb_id_bit_length.has_value()) {
+      meas_cfg_item.serving_cell_cfg.gnb_id =
+          config_helpers::get_gnb_id(app_cfg_item.nr_cell_id, app_cfg_item.gnb_id_bit_length.value());
+    }
+    meas_cfg_item.serving_cell_cfg.pci       = app_cfg_item.pci;
     meas_cfg_item.serving_cell_cfg.band      = app_cfg_item.band;
     meas_cfg_item.serving_cell_cfg.ssb_arfcn = app_cfg_item.ssb_arfcn;
     if (app_cfg_item.ssb_scs.has_value()) {
       meas_cfg_item.serving_cell_cfg.ssb_scs.emplace() =
           to_subcarrier_spacing(std::to_string(app_cfg_item.ssb_scs.value()));
     }
-    if (app_cfg_item.periodic_report_cfg_id.has_value()) {
-      meas_cfg_item.periodic_report_cfg_id =
-          srs_cu_cp::uint_to_report_cfg_id(app_cfg_item.periodic_report_cfg_id.value());
+    if (app_cfg_item.ssb_duration.has_value() && app_cfg_item.ssb_offset.has_value() &&
+        app_cfg_item.ssb_period.has_value()) {
+      // Add MTC config.
+      meas_cfg_item.serving_cell_cfg.ssb_mtc.emplace() = generate_rrc_ssb_mtc(
+          app_cfg_item.ssb_period.value(), app_cfg_item.ssb_offset.value(), app_cfg_item.ssb_duration.value());
     }
+
     for (const auto& ncell : app_cfg_item.ncells) {
       srs_cu_cp::neighbor_cell_meas_config ncell_meas_cfg;
       ncell_meas_cfg.nci = ncell.nr_cell_id;
@@ -167,12 +170,6 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const gnb_appconfig
       }
 
       meas_cfg_item.ncells.push_back(ncell_meas_cfg);
-    }
-    if (app_cfg_item.ssb_duration.has_value() && app_cfg_item.ssb_offset.has_value() &&
-        app_cfg_item.ssb_period.has_value()) {
-      // Add MTC config.
-      meas_cfg_item.serving_cell_cfg.ssb_mtc.emplace() = generate_rrc_ssb_mtc(
-          app_cfg_item.ssb_period.value(), app_cfg_item.ssb_offset.value(), app_cfg_item.ssb_duration.value());
     }
 
     // Store config.
@@ -281,8 +278,9 @@ srs_cu_up::cu_up_configuration srsran::generate_cu_up_config(const gnb_appconfig
   } else {
     out_cfg.net_cfg.n3_bind_addr = config.amf_cfg.n3_bind_addr;
   }
-  out_cfg.net_cfg.n3_rx_max_mmsg = config.amf_cfg.udp_rx_max_msgs;
-  out_cfg.net_cfg.f1u_bind_addr  = config.amf_cfg.bind_addr; // FIXME: check if this can be removed for co-located case
+  out_cfg.net_cfg.n3_bind_interface = config.amf_cfg.n3_bind_interface;
+  out_cfg.net_cfg.n3_rx_max_mmsg    = config.amf_cfg.udp_rx_max_msgs;
+  out_cfg.net_cfg.f1u_bind_addr = config.amf_cfg.bind_addr; // FIXME: check if this can be removed for co-located case
   return out_cfg;
 }
 
@@ -438,7 +436,11 @@ static sib19_info create_sib19_info(const gnb_appconfig& config)
     variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).position_x /= 1.3;
     variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).position_y /= 1.3;
     variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).position_z /= 1.3;
+    variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).velocity_vx /= 0.06;
+    variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).velocity_vy /= 0.06;
+    variant_get<ecef_coordinates_t>(sib19.ephemeris_info.value()).velocity_vz /= 0.06;
   } else if (variant_holds_alternative<orbital_coordinates_t>(sib19.ephemeris_info.value())) {
+    variant_get<orbital_coordinates_t>(sib19.ephemeris_info.value()).semi_major_axis -= 6500000;
     variant_get<orbital_coordinates_t>(sib19.ephemeris_info.value()).semi_major_axis /= 0.004249;
     variant_get<orbital_coordinates_t>(sib19.ephemeris_info.value()).eccentricity /= 0.00000001431;
     variant_get<orbital_coordinates_t>(sib19.ephemeris_info.value()).periapsis /= 0.00000002341;
@@ -536,7 +538,7 @@ std::vector<du_cell_config> srsran::generate_du_cell_config(const gnb_appconfig&
 
     // Set the rest of the parameters.
     out_cell.nr_cgi.plmn      = base_cell.plmn;
-    out_cell.nr_cgi.nci       = config_helpers::make_nr_cell_identity(config.gnb_id, config.gnb_id_bit_length, cell_id);
+    out_cell.nr_cgi.nci       = config_helpers::make_nr_cell_identity(config.gnb_id, cell_id);
     out_cell.tac              = base_cell.tac;
     out_cell.searchspace0_idx = param.search_space0_index;
 
@@ -1223,19 +1225,33 @@ static void generate_low_phy_config(lower_phy_configuration&           out_cfg,
     out_cfg.time_alignment_calibration = 0;
   }
 
-  // Select buffer size policy.
+  // Select RX buffer size policy.
   if (ru_cfg.device_driver == "zmq") {
-    out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::half_slot;
     out_cfg.baseband_rx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::half_slot;
   } else if (low_phy_threads_cfg.execution_profile == lower_phy_thread_profile::single) {
     // For single executor, the same executor processes uplink and downlink. In this case, the processing is blocked
     // by the signal reception. The buffers must be smaller than a slot duration considering the downlink baseband
     // samples must arrive to the baseband device before the transmission time passes.
-    out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::single_packet;
     out_cfg.baseband_rx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::single_packet;
   } else {
-    out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::slot;
     out_cfg.baseband_rx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::single_packet;
+  }
+
+  // Select TX buffer size policy.
+  if (ru_cfg.expert_cfg.dl_buffer_size_policy == "auto") {
+    if (ru_cfg.device_driver == "zmq") {
+      out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::half_slot;
+    } else if (low_phy_threads_cfg.execution_profile == lower_phy_thread_profile::single) {
+      // For single executor, the same executor processes uplink and downlink. In this case, the processing is blocked
+      // by the signal reception. The buffers must be smaller than a slot duration considering the downlink baseband
+      // samples must arrive to the baseband device before the transmission time passes.
+      out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::single_packet;
+    } else {
+      out_cfg.baseband_tx_buffer_size_policy = lower_phy_baseband_buffer_size_policy::slot;
+    }
+  } else {
+    // Manual selection of the TX buffer size policy.
+    out_cfg.baseband_tx_buffer_size_policy = to_buffer_size_policy(ru_cfg.expert_cfg.dl_buffer_size_policy);
   }
 
   // Get lower PHY system time throttling.
@@ -1441,6 +1457,40 @@ static bool parse_mac_address(const std::string& mac_str, span<uint8_t> mac)
   return true;
 }
 
+/// Converts reception window timing parameters from microseconds to number of symbols given the symbol duration.
+static ofh::rx_window_timing_parameters
+rx_timing_window_params_us_to_symbols(std::chrono::microseconds                Ta4_max,
+                                      std::chrono::microseconds                Ta4_min,
+                                      std::chrono::duration<double, std::nano> symbol_duration)
+{
+  ofh::rx_window_timing_parameters rx_window_timing_params;
+  rx_window_timing_params.sym_start = std::ceil(Ta4_min / symbol_duration);
+  rx_window_timing_params.sym_end   = std::ceil(Ta4_max / symbol_duration);
+
+  return rx_window_timing_params;
+}
+
+/// Converts transmission window timing parameters from microseconds to number of symbols given the symbol duration.
+static ofh::tx_window_timing_parameters
+tx_timing_window_params_us_to_symbols(std::chrono::microseconds                T1a_max_cp_dl,
+                                      std::chrono::microseconds                T1a_min_cp_dl,
+                                      std::chrono::microseconds                T1a_max_cp_ul,
+                                      std::chrono::microseconds                T1a_min_cp_ul,
+                                      std::chrono::microseconds                T1a_max_up,
+                                      std::chrono::microseconds                T1a_min_up,
+                                      std::chrono::duration<double, std::nano> symbol_duration)
+{
+  ofh::tx_window_timing_parameters tx_window_timing_params;
+  tx_window_timing_params.sym_cp_dl_start = std::floor(T1a_max_cp_dl / symbol_duration);
+  tx_window_timing_params.sym_cp_dl_end   = std::ceil(T1a_min_cp_dl / symbol_duration);
+  tx_window_timing_params.sym_cp_ul_start = std::floor(T1a_max_cp_ul / symbol_duration);
+  tx_window_timing_params.sym_cp_ul_end   = std::ceil(T1a_min_cp_ul / symbol_duration);
+  tx_window_timing_params.sym_up_dl_start = std::floor(T1a_max_up / symbol_duration);
+  tx_window_timing_params.sym_up_dl_end   = std::ceil(T1a_min_up / symbol_duration);
+
+  return tx_window_timing_params;
+}
+
 static void
 generate_ru_ofh_config(ru_ofh_configuration& out_cfg, const gnb_appconfig& config, span<const du_cell_config> du_cells)
 {
@@ -1474,6 +1524,9 @@ generate_ru_ofh_config(ru_ofh_configuration& out_cfg, const gnb_appconfig& confi
       srsran_terminate("Invalid Radio Unit MAC address");
     }
 
+    std::chrono::duration<double, std::nano> symbol_duration(
+        (1e6 / (get_nsymb_per_slot(cyclic_prefix::NORMAL) * get_nof_slots_per_subframe(cell.common_scs))));
+
     sector_cfg.cp                                  = cyclic_prefix::NORMAL;
     sector_cfg.scs                                 = cell.common_scs;
     sector_cfg.bw                                  = cell.channel_bw_mhz;
@@ -1481,26 +1534,27 @@ generate_ru_ofh_config(ru_ofh_configuration& out_cfg, const gnb_appconfig& confi
     sector_cfg.ru_operating_bw                     = cell_cfg.cell.ru_operating_bw;
     sector_cfg.is_uplink_static_comp_hdr_enabled   = cell_cfg.cell.is_uplink_static_comp_hdr_enabled;
     sector_cfg.is_downlink_static_comp_hdr_enabled = cell_cfg.cell.is_downlink_static_comp_hdr_enabled;
-    sector_cfg.tx_window_timing_params             = {std::chrono::microseconds(cell_cfg.cell.T1a_max_cp_dl),
-                                                      std::chrono::microseconds(cell_cfg.cell.T1a_min_cp_dl),
-                                                      std::chrono::microseconds(cell_cfg.cell.T1a_max_cp_ul),
-                                                      std::chrono::microseconds(cell_cfg.cell.T1a_min_cp_ul),
-                                                      std::chrono::microseconds(cell_cfg.cell.T1a_max_up),
-                                                      std::chrono::microseconds(cell_cfg.cell.T1a_min_up)};
-    sector_cfg.rx_window_timing_params             = {std::chrono::microseconds(cell_cfg.cell.Ta4_max),
-                                                      std::chrono::microseconds(cell_cfg.cell.Ta4_min)};
-    sector_cfg.is_prach_control_plane_enabled      = cell_cfg.cell.is_prach_control_plane_enabled;
-    sector_cfg.is_downlink_broadcast_enabled       = cell_cfg.cell.is_downlink_broadcast_enabled;
-    sector_cfg.ignore_ecpri_payload_size_field     = cell_cfg.cell.ignore_ecpri_payload_size_field;
-    sector_cfg.ignore_ecpri_seq_id_field           = cell_cfg.cell.ignore_ecpri_seq_id_field;
-    sector_cfg.warn_unreceived_ru_frames           = cell_cfg.cell.warn_unreceived_ru_frames;
-    sector_cfg.ul_compression_params               = {ofh::to_compression_type(cell_cfg.cell.compression_method_ul),
-                                                      cell_cfg.cell.compression_bitwidth_ul};
-    sector_cfg.dl_compression_params               = {ofh::to_compression_type(cell_cfg.cell.compression_method_dl),
-                                                      cell_cfg.cell.compression_bitwidth_dl};
-    sector_cfg.prach_compression_params            = {ofh::to_compression_type(cell_cfg.cell.compression_method_prach),
-                                                      cell_cfg.cell.compression_bitwidth_prach};
-    sector_cfg.iq_scaling                          = cell_cfg.cell.iq_scaling;
+    sector_cfg.tx_window_timing_params             = tx_timing_window_params_us_to_symbols(cell_cfg.cell.T1a_max_cp_dl,
+                                                                               cell_cfg.cell.T1a_min_cp_dl,
+                                                                               cell_cfg.cell.T1a_max_cp_ul,
+                                                                               cell_cfg.cell.T1a_min_cp_ul,
+                                                                               cell_cfg.cell.T1a_max_up,
+                                                                               cell_cfg.cell.T1a_min_up,
+                                                                               symbol_duration);
+    sector_cfg.rx_window_timing_params =
+        rx_timing_window_params_us_to_symbols(cell_cfg.cell.Ta4_max, cell_cfg.cell.Ta4_min, symbol_duration);
+    sector_cfg.is_prach_control_plane_enabled  = cell_cfg.cell.is_prach_control_plane_enabled;
+    sector_cfg.is_downlink_broadcast_enabled   = cell_cfg.cell.is_downlink_broadcast_enabled;
+    sector_cfg.ignore_ecpri_payload_size_field = cell_cfg.cell.ignore_ecpri_payload_size_field;
+    sector_cfg.ignore_ecpri_seq_id_field       = cell_cfg.cell.ignore_ecpri_seq_id_field;
+    sector_cfg.warn_unreceived_ru_frames       = cell_cfg.cell.warn_unreceived_ru_frames;
+    sector_cfg.ul_compression_params           = {ofh::to_compression_type(cell_cfg.cell.compression_method_ul),
+                                                  cell_cfg.cell.compression_bitwidth_ul};
+    sector_cfg.dl_compression_params           = {ofh::to_compression_type(cell_cfg.cell.compression_method_dl),
+                                                  cell_cfg.cell.compression_bitwidth_dl};
+    sector_cfg.prach_compression_params        = {ofh::to_compression_type(cell_cfg.cell.compression_method_prach),
+                                                  cell_cfg.cell.compression_bitwidth_prach};
+    sector_cfg.iq_scaling                      = cell_cfg.cell.iq_scaling;
 
     sector_cfg.tci = cell_cfg.vlan_tag;
     sector_cfg.prach_eaxc.assign(cell_cfg.ru_prach_port_id.begin(), cell_cfg.ru_prach_port_id.end());
@@ -1744,6 +1798,7 @@ scheduler_expert_config srsran::generate_scheduler_expert_config(const gnb_appco
 
   // Logging and tracing.
   out_cfg.log_broadcast_messages = config.log_cfg.broadcast_enabled;
+  out_cfg.metrics_report_period  = std::chrono::milliseconds{config.metrics_cfg.stdout_metrics_period};
 
   const error_type<std::string> error = is_scheduler_expert_config_valid(out_cfg);
   if (!error) {

@@ -52,6 +52,8 @@ protected:
     std::map<five_qi_t, srs_cu_up::cu_up_qos_config> qos;
     qos[uint_to_five_qi(9)] = {};
 
+    manual_task_worker teid_worker{128};
+
     pdu_session_mng = std::make_unique<pdu_session_manager_impl>(MIN_UE_INDEX,
                                                                  qos,
                                                                  security_info,
@@ -60,10 +62,15 @@ protected:
                                                                  logger,
                                                                  ue_inactivity_timer,
                                                                  timers_factory,
+                                                                 timers_factory,
+                                                                 timers_factory,
                                                                  *f1u_gw,
                                                                  *f1u_allocator,
                                                                  *gtpu_tx_notifier,
                                                                  *gtpu_rx_demux,
+                                                                 teid_worker,
+                                                                 teid_worker,
+                                                                 teid_worker,
                                                                  gtpu_pcap);
   }
 
@@ -103,9 +110,11 @@ generate_pdu_session_res_to_setup_item(pdu_session_id_t psi, drb_id_t drb_id, qo
   pdu_session_setup_item.security_ind.confidentiality_protection_ind =
       confidentiality_protection_indication_t::not_needed;
   pdu_session_setup_item.pdu_session_res_dl_ambr = 330000000;
-  pdu_session_setup_item.ng_ul_up_tnl_info.tp_address.from_bitstring("01111111000000000000000000000001");
+  pdu_session_setup_item.ng_ul_up_tnl_info.tp_address =
+      transport_layer_address::create_from_bitstring("01111111000000000000000000000001");
   pdu_session_setup_item.ng_ul_up_tnl_info.gtp_teid = int_to_gtpu_teid(0x12345678);
-  pdu_session_setup_item.ng_ul_up_tnl_info          = {transport_layer_address{"0.0.0.0"}, int_to_gtpu_teid(0)};
+  pdu_session_setup_item.ng_ul_up_tnl_info          = {transport_layer_address::create_from_string("0.0.0.0"),
+                                                       int_to_gtpu_teid(0)};
 
   e1ap_drb_to_setup_item_ng_ran drb_to_setup_item;
   drb_to_setup_item.drb_id                      = drb_id;

@@ -59,74 +59,137 @@ bool gtpu_write_header(byte_buffer& pdu, const gtpu_header& header, gtpu_tunnel_
 
   byte_buffer hdr_buf;
   bit_encoder encoder{hdr_buf};
+  bool        pack_ok = true;
 
   // Flags
-  encoder.pack(header.flags.version, 3);
-  encoder.pack(header.flags.protocol_type, 1);
-  encoder.pack(0, 1);                               // Reserved
-  encoder.pack(header.ext_list.empty() ? 0 : 1, 1); // E
-  encoder.pack(header.flags.seq_number ? 1 : 0, 1); // S
-  encoder.pack(header.flags.n_pdu ? 1 : 0, 1);      // PN
+  pack_ok &= encoder.pack(header.flags.version, 3);
+  pack_ok &= encoder.pack(header.flags.protocol_type, 1);
+  pack_ok &= encoder.pack(0, 1);                               // Reserved
+  pack_ok &= encoder.pack(header.ext_list.empty() ? 0 : 1, 1); // E
+  pack_ok &= encoder.pack(header.flags.seq_number ? 1 : 0, 1); // S
+  pack_ok &= encoder.pack(header.flags.n_pdu ? 1 : 0, 1);      // PN
 
   // Message type
-  encoder.pack(header.message_type, 8);
+  pack_ok &= encoder.pack(header.message_type, 8);
 
   // Length
   uint16_t length = gtpu_get_length(header, pdu);
-  encoder.pack(length, 16);
+  pack_ok &= encoder.pack(length, 16);
 
   // TEID
-  encoder.pack(header.teid.value(), 32);
+  pack_ok &= encoder.pack(header.teid.value(), 32);
 
   // Optional header fields
   if ((not header.ext_list.empty()) || header.flags.seq_number || header.flags.n_pdu) {
     // Sequence Number
-    encoder.pack(header.seq_number, 16);
+    pack_ok &= encoder.pack(header.seq_number, 16);
 
     // N-PDU
-    encoder.pack(header.n_pdu, 8);
+    pack_ok &= encoder.pack(header.n_pdu, 8);
 
     // Next Extension Header Type
     if (header.ext_list.empty()) {
-      encoder.pack(static_cast<uint8_t>(gtpu_extension_header_type::no_more_extension_headers), 8);
+      pack_ok &= encoder.pack(static_cast<uint8_t>(gtpu_extension_header_type::no_more_extension_headers), 8);
     } else {
-      encoder.pack(static_cast<uint8_t>(header.ext_list[0].extension_header_type), 8);
+      pack_ok &= encoder.pack(static_cast<uint8_t>(header.ext_list[0].extension_header_type), 8);
     }
+  }
+
+  if (!pack_ok) {
+    logger.log_error("Failed to pack GTP-U header. teid={} hdr_len={}", header.teid, hdr_buf.length());
+    return false;
   }
 
   // Write header extensions
-  for (unsigned i = 0; i < header.ext_list.size(); ++i) {
+  for (unsigned i = 0; i < header.ext_list.size() && pack_ok; ++i) {
     if (i == (header.ext_list.size() - 1)) {
-      gtpu_write_ext_header(encoder, header.ext_list[i], gtpu_extension_header_type::no_more_extension_headers, logger);
+      pack_ok &= gtpu_write_ext_header(
+          encoder, header.ext_list[i], gtpu_extension_header_type::no_more_extension_headers, logger);
     } else {
-      gtpu_write_ext_header(encoder, header.ext_list[i], header.ext_list[i + 1].extension_header_type, logger);
+      pack_ok &=
+          gtpu_write_ext_header(encoder, header.ext_list[i], header.ext_list[i + 1].extension_header_type, logger);
     }
   }
 
-  pdu.prepend(std::move(hdr_buf));
+  if (!pack_ok) {
+    logger.log_error("Failed to pack GTP-U extension header. teid={} hdr_len={}", header.teid, hdr_buf.length());
+    return false;
+  }
+
+  pack_ok = pdu.prepend(std::move(hdr_buf));
+  if (!pack_ok) {
+    logger.log_error(
+        "Failed to pack GTP-U payload. teid={} hdr_len={} pdu_len={}", header.teid, hdr_buf.length(), pdu.length());
+    return false;
+  }
+
   return true;
 }
 
-void gtpu_write_ie_recovery(byte_buffer& pdu, gtpu_ie_recovery& ie_recovery, gtpu_tunnel_logger& logger)
+bool gtpu_write_ie_recovery(byte_buffer& pdu, gtpu_ie_recovery& ie_recovery, gtpu_tunnel_logger& logger)
 {
   logger.log_debug("Writing IE recovery. restart_counter={}", ie_recovery.restart_counter);
   bit_encoder enc{pdu};
-  enc.pack(static_cast<uint8_t>(gtpu_information_element_type::recovery), 8); // type
-  enc.pack(ie_recovery.restart_counter, 8);                                   // restart counter
+  bool        pack_ok = true;
+  pack_ok &= enc.pack(static_cast<uint8_t>(gtpu_information_element_type::recovery), 8); // type
+  pack_ok &= enc.pack(ie_recovery.restart_counter, 8);                                   // restart counter
+  return pack_ok;
 }
 
-void gtpu_write_ie_private_extension(byte_buffer&               pdu,
+bool gtpu_write_ie_private_extension(byte_buffer&               pdu,
                                      gtpu_ie_private_extension& ie_priv_ext,
                                      gtpu_tunnel_logger&        logger)
 {
   logger.log_debug("Writing IE private extension.");
   bit_encoder enc{pdu};
-  enc.pack(static_cast<uint8_t>(gtpu_information_element_type::private_extension), 8); // type
-  enc.pack(static_cast<uint16_t>(ie_priv_ext.extension_value.size() + 2), 16);         // length
-  enc.pack(ie_priv_ext.extension_identifier, 16);                                      // ext. identifier
-  for (const uint8_t& v : ie_priv_ext.extension_value) {                               // ext. value
-    enc.pack(v, 8);
+  bool        pack_ok = true;
+  pack_ok &= enc.pack(static_cast<uint8_t>(gtpu_information_element_type::private_extension), 8); // type
+  pack_ok &= enc.pack(static_cast<uint16_t>(ie_priv_ext.extension_value.size() + 2), 16);         // length
+  pack_ok &= enc.pack(ie_priv_ext.extension_identifier, 16);                                      // ext. identifier
+  for (const uint8_t& v : ie_priv_ext.extension_value) {                                          // ext. value
+    pack_ok &= enc.pack(v, 8);
   }
+  return pack_ok;
+}
+
+bool gtpu_read_ie_type(gtpu_information_element_type& ie_type, bit_decoder& dec, srslog::basic_logger& logger)
+{
+  bool read_ok = true;
+  read_ok &= dec.unpack(reinterpret_cast<std::underlying_type_t<gtpu_information_element_type>&>(ie_type), 8);
+  return read_ok;
+}
+
+bool gtpu_read_ie_teid_i(gtpu_ie_teid_i& ie, bit_decoder& dec, srslog::basic_logger& logger)
+{
+  bool read_ok = true;
+  read_ok &= dec.unpack(ie.teid_i, 32);
+  return read_ok;
+}
+
+bool gtpu_read_ie_gtpu_peer_address(gtpu_ie_gtpu_peer_address& ie, bit_decoder& dec, srslog::basic_logger& logger)
+{
+  bool     read_ok = true;
+  uint16_t length  = 0;
+  read_ok &= dec.unpack(length, 16);
+  if (!read_ok) {
+    logger.warning("Failed to read IE GTP-U peer address: Cannot read length.");
+    return false;
+  }
+  switch (length) {
+    case 4:
+      ie.gtpu_peer_address = gtpu_ie_gtpu_peer_address::ipv4_addr_t{};
+      read_ok &= dec.unpack_bytes(variant_get<gtpu_ie_gtpu_peer_address::ipv4_addr_t>(ie.gtpu_peer_address));
+      break;
+    case 16:
+      ie.gtpu_peer_address = gtpu_ie_gtpu_peer_address::ipv6_addr_t{};
+      read_ok &= dec.unpack_bytes(variant_get<gtpu_ie_gtpu_peer_address::ipv6_addr_t>(ie.gtpu_peer_address));
+      break;
+    default:
+      logger.warning("Failed to read IE GTP-U peer address: Invalid length={}.", length);
+      return false;
+      break;
+  }
+  return read_ok;
 }
 
 bool gtpu_read_teid(uint32_t& teid, const byte_buffer& pdu, srslog::basic_logger& logger)
@@ -287,17 +350,17 @@ bool gtpu_write_ext_header(bit_encoder&                 encoder,
   uint8_t payload = 1 + ext.container.length() + 1;
   srsran_assert(payload % 4 == 0, "Invalid GTP-U extension size. payload={}", payload);
 
-  uint8_t length = payload / 4;
-
+  uint8_t length  = payload / 4;
+  bool    pack_ok = true;
   // Pack length
-  encoder.pack(length, 8);
+  pack_ok &= encoder.pack(length, 8);
 
   // Pack container
-  encoder.pack_bytes(ext.container);
+  pack_ok &= encoder.pack_bytes(ext.container);
 
   // Pack next header extension type
-  encoder.pack(static_cast<uint8_t>(next_extension_header_type), 8);
-  return true;
+  pack_ok &= encoder.pack(static_cast<uint8_t>(next_extension_header_type), 8);
+  return pack_ok;
 }
 
 void gtpu_unpack_ext_header_type(bit_decoder& decoder, gtpu_extension_header_type& type)
@@ -377,10 +440,39 @@ bool gtpu_extension_header_comprehension_check(const gtpu_extension_header_type&
   return comp_not_needed;
 }
 
-byte_buffer gtpu_extract_t_pdu(gtpu_dissected_pdu&& dissected_pdu)
+byte_buffer gtpu_extract_msg(gtpu_dissected_pdu&& dissected_pdu)
 {
   dissected_pdu.buf.trim_head(dissected_pdu.hdr_len);
   return std::move(dissected_pdu.buf);
+}
+
+bool gtpu_read_msg_error_indication(gtpu_msg_error_indication& error_indication,
+                                    const byte_buffer&         pdu,
+                                    srslog::basic_logger&      logger)
+{
+  bool                          read_ok = true;
+  bit_decoder                   decoder = bit_decoder{pdu};
+  gtpu_information_element_type ie_type = {};
+
+  // Read TEID I
+  read_ok &= gtpu_read_ie_type(ie_type, decoder, logger);
+  if (ie_type != gtpu_information_element_type::tunnel_endpoint_identifier_data_i) {
+    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", ie_type);
+    return false;
+  }
+  read_ok &= gtpu_read_ie_teid_i(error_indication.teid_i, decoder, logger);
+
+  // Read GTP-U peer address
+  read_ok &= gtpu_read_ie_type(ie_type, decoder, logger);
+  if (ie_type != gtpu_information_element_type::gsn_address) {
+    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", ie_type);
+    return false;
+  }
+  read_ok &= gtpu_read_ie_gtpu_peer_address(error_indication.gtpu_peer_address, decoder, logger);
+
+  // TODO: Read optional private extension
+
+  return read_ok;
 }
 
 uint16_t gtpu_get_length(const gtpu_header& header, const byte_buffer& sdu)

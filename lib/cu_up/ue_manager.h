@@ -26,6 +26,7 @@
 #include "srsran/adt/slotted_array.h"
 #include "srsran/f1u/cu_up/f1u_gateway.h"
 #include "srsran/gtpu/gtpu_teid_pool.h"
+#include "srsran/support/async/fifo_async_task_scheduler.h"
 #include "srsran/support/timers.h"
 
 namespace srsran {
@@ -43,8 +44,8 @@ public:
                       gtpu_tunnel_tx_upper_layer_notifier& gtpu_tx_notifier_,
                       gtpu_demux_ctrl&                     gtpu_rx_demux_,
                       gtpu_teid_pool&                      f1u_teid_allocator_,
+                      cu_up_executor_pool&                 exec_pool_,
                       dlt_pcap&                            gtpu_pcap_,
-                      task_executor&                       ue_exec_,
                       srslog::basic_logger&                logger_);
 
   using ue_db_t = slotted_array<std::unique_ptr<ue_context>, MAX_NOF_UES>;
@@ -67,11 +68,13 @@ private:
   gtpu_tunnel_tx_upper_layer_notifier& gtpu_tx_notifier;
   gtpu_demux_ctrl&                     gtpu_rx_demux;
   gtpu_teid_pool&                      f1u_teid_allocator;
+  cu_up_executor_pool&                 exec_pool;
   dlt_pcap&                            gtpu_pcap;
   timer_manager&                       timers;
   ue_db_t                              ue_db;
-  task_executor&                       ue_exec;
   srslog::basic_logger&                logger;
+
+  fifo_async_task_scheduler task_sched;
 };
 
 } // namespace srs_cu_up

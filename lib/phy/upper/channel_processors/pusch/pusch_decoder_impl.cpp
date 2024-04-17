@@ -91,6 +91,12 @@ pusch_decoder_buffer& pusch_decoder_impl::new_data(span<uint8_t>                
                                                    pusch_decoder_notifier&             notifier,
                                                    const pusch_decoder::configuration& cfg)
 {
+  internal_states previous_state = current_state.exchange(internal_states::collecting);
+  srsran_assert(previous_state == internal_states::idle,
+                "Invalid state. It was expected to be {} but it was {}.",
+                to_string(internal_states::idle),
+                to_string(previous_state));
+
   transport_block  = transport_block_;
   unique_rm_buffer = std::move(unique_rm_buffer_);
   result_notifier  = &notifier;
@@ -133,6 +139,12 @@ pusch_decoder_buffer& pusch_decoder_impl::new_data(span<uint8_t>                
 
 span<log_likelihood_ratio> pusch_decoder_impl::get_next_block_view(unsigned block_size)
 {
+  internal_states state = current_state.load();
+  srsran_assert(state == internal_states::collecting,
+                "Invalid state. It was expected to be {} but it was {}.",
+                to_string(internal_states::collecting),
+                state);
+
   // Makes sure the block size does not overflow the buffer.
   srsran_assert(softbits_count + block_size <= softbits_buffer.size(),
                 "The sum of current buffer number of elements (i.e., {}) and the block size (i.e., {}), exceeds the "
@@ -146,6 +158,12 @@ span<log_likelihood_ratio> pusch_decoder_impl::get_next_block_view(unsigned bloc
 
 void pusch_decoder_impl::set_nof_softbits(units::bits nof_softbits)
 {
+  internal_states state = current_state.load();
+  srsran_assert(state == internal_states::collecting,
+                "Invalid state. It was expected to be {} but it was {}.",
+                to_string(internal_states::collecting),
+                to_string(state));
+
   nof_ulsch_softbits.emplace(nof_softbits);
 
   unsigned modulation_order = get_bits_per_symbol(current_config.mod);
@@ -188,6 +206,12 @@ void pusch_decoder_impl::set_nof_softbits(units::bits nof_softbits)
 
 void pusch_decoder_impl::on_new_softbits(span<const log_likelihood_ratio> softbits)
 {
+  internal_states state = current_state.load();
+  srsran_assert(state == internal_states::collecting,
+                "Invalid state. It was expected to be {} but it was {}.",
+                to_string(internal_states::collecting),
+                state);
+
   span<log_likelihood_ratio> block = get_next_block_view(softbits.size());
 
   // Copy only if the soft bits do not match.
@@ -213,6 +237,7 @@ void pusch_decoder_impl::on_new_softbits(span<const log_likelihood_ratio> softbi
 
 void pusch_decoder_impl::on_end_softbits()
 {
+  // Verify the number of bits match with the configured one.
   srsran_assert(!nof_ulsch_softbits.has_value() || (nof_ulsch_softbits.value() == units::bits(softbits_count)),
                 "The number of UL-SCH softbits, i.e., {}, does not match the expected value, i.e., {}.",
                 softbits_count,
@@ -231,8 +256,31 @@ void pusch_decoder_impl::on_end_softbits()
                   "The number of provided softbits (i.e. {}), does not match the expected number (i.e. {}).",
                   softbits_count,
                   nof_ulsch_softbits->value());
+
+    // Try to transition from collecting to decoding.
+    internal_states expected_state = internal_states::collecting;
+    if (!current_state.compare_exchange_strong(expected_state, internal_states::decoding)) {
+      // If the previous state was not collecting, the only valid state is decoded.
+      internal_states state = current_state.load();
+      srsran_assert(state == internal_states::decoded,
+                    "Invalid state. It was expected to be {} but it was {}.",
+                    to_string(internal_states::decoded),
+                    to_string(state));
+
+      // In this case, all the codeblocks have already been decoded. Notify the completion.
+      join_and_notify();
+    }
+
+    // All codeblocks have already been forked. There is nothing else to do.
     return;
   }
+
+  // Transition to decoding.
+  internal_states previous_state = current_state.exchange(internal_states::decoding);
+  srsran_assert(previous_state == internal_states::collecting,
+                "Invalid state. It was expected to be {} but it was {}.",
+                to_string(internal_states::collecting),
+                to_string(previous_state));
 
   srsran_assert(!nof_ulsch_softbits.has_value(),
                 "The number of CW softbits has been provided and not all CB decoding tasks have been dispatched.");
@@ -260,31 +308,31 @@ void pusch_decoder_impl::on_end_softbits()
 
 void pusch_decoder_impl::fork_codeblock_task(unsigned cb_id)
 {
-  span<const log_likelihood_ratio> cb_llrs = codeblock_llrs[cb_id].first;
-  const codeblock_metadata&        cb_meta = codeblock_llrs[cb_id].second;
-  srsran_assert(cb_llrs.size() == cb_meta.cb_specific.rm_length, "Wrong rate-matched codeblock length.");
+  auto cb_process_task = [this, cb_id]() {
+    span<const log_likelihood_ratio> cb_llrs = codeblock_llrs[cb_id].first;
+    const codeblock_metadata&        cb_meta = codeblock_llrs[cb_id].second;
+    srsran_assert(cb_llrs.size() == cb_meta.cb_specific.rm_length, "Wrong rate-matched codeblock length.");
 
-  // Get codeblock length, without rate matching, the message length and the number of data bits (no CRC, no filler
-  // bits - may contain zero-padding).
-  unsigned cb_length = 0, msg_length = 0, nof_data_bits = 0;
-  std::tie(cb_length, msg_length, nof_data_bits) = get_cblk_bit_breakdown(cb_meta);
+    // Get codeblock length, without rate matching, the message length and the number of data bits (no CRC, no filler
+    // bits - may contain zero-padding).
+    unsigned cb_length = 0, msg_length = 0, nof_data_bits = 0;
+    std::tie(cb_length, msg_length, nof_data_bits) = get_cblk_bit_breakdown(cb_meta);
 
-  // Get data bits from previous transmissions, if any.
-  // Messages are written on a dedicated buffer associated to the softbuffer. By doing this, we keep the decoded
-  // message in memory and we don't need to compute it again if there is a retransmission.
-  bit_buffer message = unique_rm_buffer->get_codeblock_data_bits(cb_id, msg_length);
+    // Get data bits from previous transmissions, if any.
+    // Messages are written on a dedicated buffer associated to the softbuffer. By doing this, we keep the decoded
+    // message in memory and we don't need to compute it again if there is a retransmission.
+    bit_buffer message = unique_rm_buffer->get_codeblock_data_bits(cb_id, msg_length);
 
-  // Get the LLRs from previous transmissions, if any, or a clean buffer.
-  span<log_likelihood_ratio> rm_buffer = unique_rm_buffer->get_codeblock_soft_bits(cb_id, cb_length);
+    // Get the LLRs from previous transmissions, if any, or a clean buffer.
+    span<log_likelihood_ratio> rm_buffer = unique_rm_buffer->get_codeblock_soft_bits(cb_id, cb_length);
 
-  span<bool> cb_crcs = unique_rm_buffer->get_codeblocks_crc();
+    span<bool> cb_crcs = unique_rm_buffer->get_codeblocks_crc();
 
-  // Code block processing task.
-  auto cb_process_task = [this, cb_meta, rm_buffer, cb_llrs, &cb_crc = cb_crcs[cb_id], message]() {
+    // Code block processing task.
     trace_point tp = l1_tracer.now();
 
     // Check current CRC status.
-    if (cb_crc) {
+    if (cb_crcs[cb_id]) {
       // Dematch the new LLRs and combine them with the ones from previous transmissions. We do this everytime,
       // including when the CRC for the codeblock is OK (from previous retransmissions), because we may need to
       // decode it again if, eventually, we find out that the CRC of the entire transport block is KO.
@@ -308,7 +356,7 @@ void pusch_decoder_impl::fork_codeblock_task(unsigned cb_id)
 
     if (nof_iters.has_value()) {
       // If successful decoding, flag the CRC, record number of iterations and copy bits to the TB buffer.
-      cb_crc = true;
+      cb_crcs[cb_id] = true;
       cb_stats.push_blocking(nof_iters.value());
     } else {
       cb_stats.push_blocking(current_config.nof_ldpc_iterations);
@@ -335,6 +383,12 @@ void pusch_decoder_impl::fork_codeblock_task(unsigned cb_id)
 
 void pusch_decoder_impl::join_and_notify()
 {
+  // Transition to decoded if the current state is collecting. In this case, skip notifying.
+  internal_states expected_state_collecting = internal_states::collecting;
+  if (current_state.compare_exchange_strong(expected_state_collecting, internal_states::decoded)) {
+    return;
+  }
+
   unsigned   nof_cbs = codeblock_llrs.size();
   span<bool> cb_crcs = unique_rm_buffer->get_codeblocks_crc();
 
@@ -385,6 +439,14 @@ void pusch_decoder_impl::join_and_notify()
 
   // Finally report decoding result.
   result_notifier->on_sch_data(stats);
+
+  // Transition back to idle.
+  internal_states previous_state = current_state.exchange(internal_states::idle);
+  srsran_assert((previous_state == internal_states::decoding) || (previous_state == internal_states::decoded),
+                "Invalid state. It expected to be {} or {} but it was {}.",
+                to_string(internal_states::decoding),
+                to_string(internal_states::decoded),
+                to_string(previous_state));
 }
 
 unsigned pusch_decoder_impl::concatenate_codeblocks()

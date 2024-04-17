@@ -37,7 +37,6 @@ from retina.protocol.base_pb2 import (
     Empty,
     Metrics,
     PingRequest,
-    PingResponse,
     PLMN,
     StartInfo,
     StopResponse,
@@ -54,9 +53,9 @@ from retina.protocol.ue_pb2_grpc import UEStub
 
 RF_MAX_TIMEOUT: int = 3 * 60  # Time enough in RF when loading a new image in the sdr
 UE_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
-GNB_STARTUP_TIMEOUT: int = 5  # GNB delay (we wait x seconds and check it's still alive). UE later and has a big timeout
+GNB_STARTUP_TIMEOUT: int = 2  # GNB delay (we wait x seconds and check it's still alive). UE later and has a big timeout
 FIVEGC_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
-ATTACH_TIMEOUT: int = 5 * 60
+ATTACH_TIMEOUT: int = 1 * 60
 
 
 # pylint: disable=too-many-arguments,too-many-locals
@@ -257,11 +256,11 @@ def ping_start(
             PingRequest(address=ue_attached_info.ipv4_gateway, count=ping_count)
         )
         ue_to_fivegc.add_done_callback(
-            lambda _task, _msg=f"[{ue_attached_info.ipv4}] UE -> 5GC": _print_ping_result(_msg, _task.result())
+            lambda _task, _msg=f"[{ue_attached_info.ipv4}] UE -> 5GC": _print_ping_result(_msg, _task)
         )
         fivegc_to_ue: grpc.Future = fivegc.Ping.future(PingRequest(address=ue_attached_info.ipv4, count=ping_count))
         fivegc_to_ue.add_done_callback(
-            lambda _task, _msg=f"[{ue_attached_info.ipv4}] 5GC -> UE": _print_ping_result(_msg, _task.result())
+            lambda _task, _msg=f"[{ue_attached_info.ipv4}] 5GC -> UE": _print_ping_result(_msg, _task)
         )
         ping_task_array.append(ue_to_fivegc)
         ping_task_array.append(fivegc_to_ue)
@@ -282,14 +281,20 @@ def ping_wait_until_finish(ping_task_array: List[grpc.Future]) -> None:
         pytest.fail("Ping. Some packages got lost.")
 
 
-def _print_ping_result(msg: str, result: PingResponse):
+def _print_ping_result(msg: str, task: grpc.Future):
     """
     Print ping result
     """
     log_fn = logging.info
-    if not result.status:
+    try:
+        result = task.result()
+        if not result.status:
+            log_fn = logging.error
+    except (grpc.RpcError, grpc.FutureCancelledError, grpc.FutureTimeoutError) as err:
         log_fn = logging.error
-    log_fn("Ping %s: %s", msg, result)
+        result = ErrorReportedByAgent(err)
+    finally:
+        log_fn("Ping %s: %s", msg, result)
 
 
 def iperf_parallel(
@@ -373,8 +378,8 @@ def iperf_sequentially(
             logging.warning(
                 "Iperf %s [%s %s] failed due to %s",
                 ue_attached_info.ipv4,
-                _iperf_proto_to_str(iperf_request.proto),
-                _iperf_dir_to_str(iperf_request.direction),
+                _iperf_proto_to_str(protocol),
+                _iperf_dir_to_str(direction),
                 ErrorReportedByAgent(err).details,
             )
         sleep(sleep_between_retries)
@@ -409,8 +414,8 @@ def iperf_start(
     logging.info(
         "Iperf %s [%s %s] started",
         ue_attached_info.ipv4,
-        _iperf_proto_to_str(iperf_request.proto),
-        _iperf_dir_to_str(iperf_request.direction),
+        _iperf_proto_to_str(protocol),
+        _iperf_dir_to_str(direction),
     )
 
     return (task, iperf_request)
@@ -627,9 +632,8 @@ def ue_reestablishment(
     """
     Reestablishment an array of UEs from already running gnb and 5gc
     """
-    for index, ue_stub in enumerate(ue_array):
-        name = f"UE_{index+1}"
-        logging.info("Reestablishment %s", name)
+    for ue_stub in ue_array:
+        logging.info("Reestablishment UE [%s]", id(ue_stub))
         ue_stub.Reestablishment(Empty())
 
 

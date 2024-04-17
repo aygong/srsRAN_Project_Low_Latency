@@ -22,7 +22,7 @@
 
 #include "lib/scheduler/scheduler_impl.h"
 #include "lib/scheduler/ue_scheduling/ue_cell_grid_allocator.h"
-#include "lib/scheduler/ue_scheduling/ue_srb0_scheduler.h"
+#include "lib/scheduler/ue_scheduling/ue_fallback_scheduler.h"
 #include "test_utils/dummy_test_components.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "tests/unittests/scheduler/test_utils/scheduler_test_suite.h"
@@ -241,9 +241,9 @@ protected:
         variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
             ue_creation_req.cfg.cells.value()[0].serv_cell_cfg.csi_meas_cfg->csi_report_cfg_list[0].report_cfg_type)
             .report_slot_period);
-    if (params.tdd_ul_dl_cfg_common.has_value()) {
+    if (bench->cell_cfg.tdd_cfg_common.has_value()) {
       optional<unsigned> slot_offset =
-          find_next_tdd_full_ul_slot(params.tdd_ul_dl_cfg_common.value(), last_csi_report_offset + 1);
+          find_next_tdd_full_ul_slot(bench->cell_cfg.tdd_cfg_common.value(), last_csi_report_offset + 1);
       srsran_assert(slot_offset.has_value(), "Unable to find a valid CSI report slot offset UE={}", ue_index);
       srsran_assert(slot_offset.value() < csi_report_period_slots,
                     "Unable to find a valid CSI report slot offset UE={}",
@@ -492,6 +492,7 @@ protected:
       }
       case pucch_format::FORMAT_2: {
         uci_indication::uci_pdu::uci_pucch_f2_or_f3_or_f4_pdu pucch_pdu{};
+        pucch_pdu.sr_info.resize(sr_nof_bits_to_uint(pucch.format_2.sr_bits));
         pucch_pdu.sr_info.fill(0, sr_nof_bits_to_uint(pucch.format_2.sr_bits), true);
         // Auto ACK harqs.
         pucch_pdu.harqs.resize(pucch.format_2.harq_ack_nof_bits, mac_harq_ack_report_status::ack);
@@ -577,7 +578,7 @@ struct multiple_ue_test_params {
 class multiple_ue_sched_tester : public scheduler_impl_tester, public ::testing::TestWithParam<multiple_ue_test_params>
 {
 public:
-  multiple_ue_sched_tester() : params{GetParam()} {};
+  multiple_ue_sched_tester() : params{GetParam()} {}
 
 protected:
   multiple_ue_test_params params;

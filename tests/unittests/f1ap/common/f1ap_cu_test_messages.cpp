@@ -30,14 +30,15 @@ using namespace srsran;
 using namespace srs_cu_cp;
 using namespace asn1::f1ap;
 
-asn1::f1ap::gnb_du_served_cells_item_s srsran::srs_cu_cp::generate_served_cells_item(unsigned nrcell_id, pci_t nrpci)
+asn1::f1ap::gnb_du_served_cells_item_s
+srsran::srs_cu_cp::generate_served_cells_item(unsigned nrcell_id, pci_t nrpci, unsigned tac)
 {
   asn1::f1ap::gnb_du_served_cells_item_s served_cells_item;
   served_cells_item.served_cell_info.nr_cgi.plmn_id.from_string("00f110");
   served_cells_item.served_cell_info.nr_cgi.nr_cell_id.from_number(nrcell_id);
   served_cells_item.served_cell_info.nr_pci              = nrpci;
   served_cells_item.served_cell_info.five_gs_tac_present = true;
-  served_cells_item.served_cell_info.five_gs_tac.from_number(7);
+  served_cells_item.served_cell_info.five_gs_tac.from_number(tac);
 
   asn1::f1ap::served_plmns_item_s served_plmn;
   served_plmn.plmn_id.from_string("00f110");
@@ -65,7 +66,8 @@ asn1::f1ap::gnb_du_served_cells_item_s srsran::srs_cu_cp::generate_served_cells_
   return served_cells_item;
 }
 
-f1ap_message srsran::srs_cu_cp::generate_f1_setup_request(gnb_du_id_t gnb_du_id, unsigned nrcell_id, pci_t pci)
+f1ap_message
+srsran::srs_cu_cp::generate_f1_setup_request(gnb_du_id_t gnb_du_id, unsigned nrcell_id, pci_t pci, unsigned tac)
 {
   f1ap_message msg;
   msg.pdu.set_init_msg();
@@ -81,7 +83,7 @@ f1ap_message srsran::srs_cu_cp::generate_f1_setup_request(gnb_du_id_t gnb_du_id,
   setup_req->gnb_du_served_cells_list.resize(1);
   setup_req->gnb_du_served_cells_list[0].load_info_obj(ASN1_F1AP_ID_GNB_DU_SERVED_CELLS_ITEM);
   setup_req->gnb_du_served_cells_list[0].value().gnb_du_served_cells_item() =
-      generate_served_cells_item(nrcell_id, pci);
+      generate_served_cells_item(nrcell_id, pci, tac);
 
   return msg;
 }
@@ -346,7 +348,8 @@ f1ap_ue_context_modification_request srsran::srs_cu_cp::generate_ue_context_modi
   drbs_to_be_setup_mod_item.qos_info.flows_mapped_to_drb_list.emplace(uint_to_qos_flow_id(1), flows_mapped_to_drb_item);
 
   // ul up tnl info to be setup list
-  up_transport_layer_info ul_up_tnl_info_item = {transport_layer_address{"127.0.0.1"}, int_to_gtpu_teid(1)};
+  up_transport_layer_info ul_up_tnl_info_item = {transport_layer_address::create_from_string("127.0.0.1"),
+                                                 int_to_gtpu_teid(1)};
   drbs_to_be_setup_mod_item.ul_up_tnl_info_to_be_setup_list.push_back(ul_up_tnl_info_item);
 
   // rlc mode

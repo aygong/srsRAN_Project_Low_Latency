@@ -41,6 +41,7 @@
 
 #include "adapters/e1ap_gateway_local_connector.h"
 #include "adapters/f1c_gateway_local_connector.h"
+#include "srsran/gtpu/ngu_gateway.h"
 #include "srsran/support/backtrace.h"
 #include "srsran/support/config_parsers.h"
 
@@ -122,7 +123,7 @@ static void configure_ru_generic_executors_and_notifiers(ru_generic_configuratio
 
   for (unsigned i = 0, e = config.lower_phy_config.size(); i != e; ++i) {
     lower_phy_configuration& low_phy_cfg = config.lower_phy_config[i];
-    low_phy_cfg.logger                   = &srslog::fetch_basic_logger("Low-PHY#" + std::to_string(i));
+    low_phy_cfg.logger                   = &srslog::fetch_basic_logger("PHY");
     low_phy_cfg.tx_task_executor         = workers.lower_phy_tx_exec[i];
     low_phy_cfg.rx_task_executor         = workers.lower_phy_rx_exec[i];
     low_phy_cfg.dl_task_executor         = workers.lower_phy_dl_exec[i];
@@ -333,6 +334,9 @@ int main(int argc, char** argv)
   // Log build info
   gnb_logger.info("Built in {} mode using {}", get_build_mode(), get_build_info());
 
+  // Log CPU architecture.
+  cpu_architecture_info::get().print_cpu_info(gnb_logger);
+
   // Check and log included CPU features and check support by current CPU
   if (cpu_supports_included_features()) {
     gnb_logger.debug("Required CPU features: {}", get_cpu_feature_info());
@@ -479,15 +483,27 @@ int main(int argc, char** argv)
   srsran::srs_cu_up::cu_up_configuration cu_up_cfg = generate_cu_up_config(gnb_cfg);
   cu_up_cfg.ctrl_executor                          = workers.cu_up_ctrl_exec;
   cu_up_cfg.cu_up_e2_exec                          = workers.cu_up_e2_exec;
-  cu_up_cfg.dl_executor                            = workers.cu_up_dl_exec;
-  cu_up_cfg.ul_executor                            = workers.cu_up_ul_exec;
-  cu_up_cfg.io_ul_executor                         = workers.cu_up_ul_exec; // Optionally select separate exec for UL IO
-  cu_up_cfg.e1ap.e1ap_conn_client                  = &e1ap_gw;
-  cu_up_cfg.f1u_gateway                            = f1u_conn->get_f1u_cu_up_gateway();
-  cu_up_cfg.epoll_broker                           = epoll_broker.get();
-  cu_up_cfg.gtpu_pcap                              = gtpu_p.get();
-  cu_up_cfg.timers                                 = cu_timers;
-  cu_up_cfg.qos                                    = generate_cu_up_qos_config(gnb_cfg);
+  cu_up_cfg.ue_exec_pool                           = workers.cu_up_exec_mapper.get();
+  cu_up_cfg.io_ul_executor        = workers.cu_up_io_ul_exec; // Optionally select separate exec for UL IO
+  cu_up_cfg.e1ap.e1ap_conn_client = &e1ap_gw;
+  cu_up_cfg.f1u_gateway           = f1u_conn->get_f1u_cu_up_gateway();
+  cu_up_cfg.gtpu_pcap             = gtpu_p.get();
+  cu_up_cfg.timers                = cu_timers;
+  cu_up_cfg.qos                   = generate_cu_up_qos_config(gnb_cfg);
+
+  // Create NG-U gateway.
+  std::unique_ptr<srs_cu_up::ngu_gateway> ngu_gw;
+  if (not gnb_cfg.amf_cfg.no_core) {
+    udp_network_gateway_config ngu_gw_config = {};
+    ngu_gw_config.bind_address               = cu_up_cfg.net_cfg.n3_bind_addr;
+    ngu_gw_config.bind_port                  = cu_up_cfg.net_cfg.n3_bind_port;
+    ngu_gw_config.bind_interface             = cu_up_cfg.net_cfg.n3_bind_interface;
+    ngu_gw_config.rx_max_mmsg                = cu_up_cfg.net_cfg.n3_rx_max_mmsg;
+    ngu_gw = srs_cu_up::create_udp_ngu_gateway(ngu_gw_config, *epoll_broker, *workers.cu_up_io_ul_exec);
+  } else {
+    ngu_gw = srs_cu_up::create_no_core_ngu_gateway();
+  }
+  cu_up_cfg.ngu_gw = ngu_gw.get();
 
   // create and start CU-UP
   std::unique_ptr<srsran::srs_cu_up::cu_up_interface> cu_up_obj = create_cu_up(cu_up_cfg);
@@ -519,6 +535,9 @@ int main(int argc, char** argv)
         variant_get<ru_generic_configuration>(ru_cfg.config), gnb_cfg.log_cfg, workers, ru_ul_adapt, ru_timing_adapt);
 
     ru_object = create_generic_ru(variant_get<ru_generic_configuration>(ru_cfg.config));
+
+    // Set the generic RU controller for the GNB console.
+    console.set_ru_controller(ru_object->get_controller());
   } else {
     ru_dummy_dependencies ru_dependencies;
     configure_ru_dummy_executors_and_notifiers(variant_get<ru_dummy_configuration>(ru_cfg.config),

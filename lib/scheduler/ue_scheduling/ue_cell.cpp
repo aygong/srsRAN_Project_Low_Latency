@@ -96,7 +96,7 @@ grant_prbs_mcs ue_cell::required_dl_prbs(const pdsch_time_domain_resource_alloca
       pdsch_cfg = get_pdsch_config_f1_0_tc_rnti(cell_cfg, pdsch_td_cfg);
       break;
     case dci_dl_rnti_config_type::c_rnti_f1_0:
-      pdsch_cfg = get_pdsch_config_f1_0_c_rnti(cfg(), pdsch_td_cfg);
+      pdsch_cfg = get_pdsch_config_f1_0_c_rnti(cell_cfg, &cfg(), pdsch_td_cfg);
       break;
     case dci_dl_rnti_config_type::c_rnti_f1_1:
       pdsch_cfg = get_pdsch_config_f1_1_c_rnti(cfg(), pdsch_td_cfg, channel_state_manager().get_nof_dl_layers());
@@ -265,7 +265,9 @@ ue_cell::get_active_dl_search_spaces(slot_point                        pdcch_slo
                   "Invalid required dci-rnti parameter");
     for (const search_space_configuration& ss :
          ue_cfg->cell_cfg_common.dl_cfg_common.init_dl_bwp.pdcch_common.search_spaces) {
-      active_search_spaces.push_back(&ue_cfg->search_space(ss.get_id()));
+      if (pdcch_helper::is_pdcch_monitoring_active(pdcch_slot, ss)) {
+        active_search_spaces.push_back(&ue_cfg->search_space(ss.get_id()));
+      }
     }
     return active_search_spaces;
   }
@@ -303,6 +305,10 @@ ue_cell::get_active_dl_search_spaces(slot_point                        pdcch_slo
           (not is_ss_for_ra and not is_ss_for_paging and not is_type3_css)) {
         return false;
       }
+    }
+
+    if (not pdcch_helper::is_pdcch_monitoring_active(pdcch_slot, *ss.cfg)) {
+      return false;
     }
 
     if (ss.get_pdcch_candidates(get_aggregation_level(channel_state_manager().get_wideband_cqi(), ss, true), pdcch_slot)
@@ -330,7 +336,9 @@ ue_cell::get_active_ul_search_spaces(slot_point                        pdcch_slo
                   "Invalid required dci-rnti parameter");
     for (const search_space_configuration& ss :
          ue_cfg->cell_cfg_common.dl_cfg_common.init_dl_bwp.pdcch_common.search_spaces) {
-      active_search_spaces.push_back(&ue_cfg->search_space(ss.get_id()));
+      if (pdcch_helper::is_pdcch_monitoring_active(pdcch_slot, ss)) {
+        active_search_spaces.push_back(&ue_cfg->search_space(ss.get_id()));
+      }
     }
     return active_search_spaces;
   }
@@ -368,6 +376,10 @@ ue_cell::get_active_ul_search_spaces(slot_point                        pdcch_slo
           (not is_ss_for_ra and not is_ss_for_paging and not is_type3_css)) {
         return false;
       }
+    }
+
+    if (not pdcch_helper::is_pdcch_monitoring_active(pdcch_slot, *ss.cfg)) {
+      return false;
     }
 
     if (ss.get_pdcch_candidates(get_aggregation_level(channel_state_manager().get_wideband_cqi(), ss, false),

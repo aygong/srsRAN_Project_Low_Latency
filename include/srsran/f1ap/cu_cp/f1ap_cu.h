@@ -54,7 +54,7 @@ public:
 
 struct f1ap_ue_context_release_command {
   ue_index_t         ue_index = ue_index_t::invalid;
-  cause_t            cause;
+  f1ap_cause_t       cause;
   byte_buffer        rrc_release_pdu;
   optional<srb_id_t> srb_id;
 };
@@ -197,17 +197,6 @@ public:
   /// \brief Remove the context of an UE.
   /// \param[in] ue_index The index of the UE to remove.
   virtual void remove_ue_context(ue_index_t ue_index) = 0;
-};
-
-/// Interface to notify about necessary UE removals.
-class f1ap_ue_removal_notifier
-{
-public:
-  virtual ~f1ap_ue_removal_notifier() = default;
-
-  /// \brief Notify the CU-CP to completly remove a UE from the CU-CP.
-  /// \param[in] ue_index The index of the UE to remove.
-  virtual void on_ue_removal_required(ue_index_t ue_index) = 0;
 };
 
 /// Combined entry point for F1AP handling.

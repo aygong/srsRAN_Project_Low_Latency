@@ -123,6 +123,14 @@ optional<unsigned> pucch_allocator_impl::alloc_common_pucch_harq_ack_ue(cell_res
     return nullopt;
   }
 
+  if (has_common_pucch_f1_grant(tcrnti, pucch_slot_alloc.slot)) {
+    logger.debug("tc-rnti={}: PUCCH common not allocated for slot={}. Cause: a grant for this UE already exists in the "
+                 "same slot",
+                 tcrnti,
+                 pucch_slot_alloc.slot);
+    return nullopt;
+  }
+
   // Get the PUCCH resources, either from default tables.
   optional<pucch_res_alloc_cfg> pucch_res = alloc_pucch_common_res_harq(pucch_slot_alloc, dci_info.ctx);
 
@@ -179,6 +187,16 @@ optional<unsigned> pucch_allocator_impl::alloc_ded_pucch_harq_ack_ue(cell_resour
 
   // Retrieve the existing PUCCH grants.
   const existing_pucch_grants existing_grants = get_existing_pucch_grants(pucchs, crnti, pucch_slot_alloc.slot);
+
+  // [Implementation-defined] Multiplexing of common and dedicated PUCCH grants are not yet supported.
+  if (existing_grants.format1_harq_common_grant != nullptr) {
+    logger.debug(
+        "rnti={}: PUCCH HARQ-ACK for slot={} not allocated. Cause: Multiplexing of common and dedicated PUCCH grants "
+        "are not supported",
+        crnti,
+        pucch_slot_alloc.slot);
+    return nullopt;
+  }
 
   const unsigned harq_ack_bits_increment = 1;
 
@@ -855,7 +873,7 @@ void pucch_allocator_impl::remove_pucch_format1_from_grants(cell_slot_resource_a
   auto* it_harq = std::find_if(pucchs.begin(), pucchs.end(), [crnti, sl_tx, this](pucch_info& pucch) {
     return pucch.crnti == crnti and pucch.format == pucch_format::FORMAT_1 and
            pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0 and
-           not is_pucch_f1_grant_common(crnti, sl_tx);
+           not has_common_pucch_f1_grant(crnti, sl_tx);
   });
 
   if (it_harq != pucchs.end()) {
@@ -1143,7 +1161,7 @@ pucch_allocator_impl::get_existing_pucch_grants(static_vector<pucch_info, MAX_PU
   return grants;
 }
 
-bool pucch_allocator_impl::is_pucch_f1_grant_common(rnti_t rnti, slot_point sl_tx) const
+bool pucch_allocator_impl::has_common_pucch_f1_grant(rnti_t rnti, slot_point sl_tx) const
 {
   return std::find(pucch_common_alloc_grid[sl_tx.to_uint()].begin(),
                    pucch_common_alloc_grid[sl_tx.to_uint()].end(),

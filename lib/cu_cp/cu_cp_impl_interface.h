@@ -238,9 +238,11 @@ public:
   virtual ~cu_cp_measurement_handler() = default;
 
   /// \brief Handle a measurement config request (for any UE) connected to the given serving cell.
+  /// \param[in] ue_index The index of the UE to update the measurement config for.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] current_meas_config The current meas config of the UE (if applicable).
-  virtual optional<rrc_meas_cfg> handle_measurement_config_request(nr_cell_id_t           nci,
+  virtual optional<rrc_meas_cfg> handle_measurement_config_request(ue_index_t             ue_index,
+                                                                   nr_cell_id_t           nci,
                                                                    optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   /// \brief Handle a measurement report for given UE.
@@ -256,10 +258,7 @@ public:
   /// \brief Handle a request to update the measurement related parameters for the given cell id.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] serv_cell_cfg_ The serving cell meas config to update.
-  /// \param[in] ncells_ Optional neigbor cells to replace the current neighbor cells with.
-  virtual void handle_cell_config_update_request(nr_cell_id_t                           nci,
-                                                 const serving_cell_meas_config&        serv_cell_cfg,
-                                                 std::vector<neighbor_cell_meas_config> ncells = {}) = 0;
+  virtual bool handle_cell_config_update_request(nr_cell_id_t nci, const serving_cell_meas_config& serv_cell_cfg) = 0;
 };
 
 /// Interface to request handover.
@@ -282,7 +281,7 @@ public:
 
   /// \brief Completly remove a UE from the CU-CP.
   /// \param[in] ue_index The index of the UE to remove.
-  virtual void handle_ue_removal_request(ue_index_t ue_index) = 0;
+  virtual async_task<void> handle_ue_removal_request(ue_index_t ue_index) = 0;
 };
 
 class cu_cp_impl_interface : public cu_cp_e1ap_handler,

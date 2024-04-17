@@ -39,14 +39,14 @@ ngap_test::ngap_test() : ngap_ue_task_scheduler(timers, ctrl_worker)
   ngap_logger.set_level(srslog::basic_levels::debug);
   srslog::init();
 
-  cfg.gnb_id        = 411;
+  cfg.gnb_id        = {411, 22};
   cfg.ran_node_name = "srsgnb01";
   cfg.plmn          = "00101";
   cfg.tac           = 7;
   s_nssai_t slice_cfg;
   slice_cfg.sst = 1;
   cfg.slice_configurations.push_back(slice_cfg);
-  cfg.ue_context_setup_timeout = std::chrono::seconds(2);
+  cfg.pdu_session_setup_timeout = std::chrono::seconds(2);
 
   ngap = create_ngap(
       cfg, ngap_ue_creation_notifier, cu_cp_paging_notifier, ngap_ue_task_scheduler, ue_mng, msg_notifier, ctrl_worker);

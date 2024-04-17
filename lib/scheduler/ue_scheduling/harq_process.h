@@ -133,7 +133,9 @@ public:
   /// (implementation-defined).
   constexpr static unsigned DEFAULT_ACK_TIMEOUT_SLOTS = 256U;
 
-  constexpr static unsigned SHORT_ACK_TIMEOUT_DTX = 4U;
+  /// \brief Timeout value to use when the HARQ has been ACKed/NACKed, but it is expecting another PUCCH before being
+  /// cleared (implementation-defined).
+  constexpr static unsigned SHORT_ACK_TIMEOUT_DTX = 8U;
 
   /// Maximum number of Transport Blocks as per TS38.321, 5.3.2.1 and 5.4.2.1.
   constexpr static size_t MAX_NOF_TBS = IsDownlink ? 2 : 1;
@@ -280,6 +282,7 @@ public:
     std::array<optional<tb_params>, base_type::MAX_NOF_TBS> tb;
     cqi_value                                               cqi;
     unsigned                                                nof_layers;
+    bool                                                    is_fallback{false};
   };
 
   struct dl_ack_info_result {
@@ -321,7 +324,8 @@ public:
               unsigned   max_harq_nof_retxs,
               uint8_t    harq_bit_idx,
               cqi_value  cqi,
-              unsigned   nof_layers);
+              unsigned   nof_layers,
+              bool       is_fallback = false);
 
   /// \brief Called on every TB retransmission, when only one TB is active. This function assumes that the HARQ TB is
   /// in pending new_retx state.

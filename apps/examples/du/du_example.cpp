@@ -241,7 +241,7 @@ public:
               0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x14, 0x10, 0x0c, 0xa8, 0x18, 0x06, 0x20, 0x00};
 
           // Unpack the pre-canned Msg4, that contains the DL-CCCH RRC setup message.
-          byte_buffer                 msg4_pdu(span<const uint8_t>{msg4, sizeof(msg4)});
+          byte_buffer                 msg4_pdu = byte_buffer::create(span<const uint8_t>{msg4, sizeof(msg4)}).value();
           asn1::cbit_ref              r_bref{msg4_pdu};
           asn1::rrc_nr::dl_ccch_msg_s msg4_rrc;
           msg4_rrc.unpack(r_bref);
@@ -259,7 +259,10 @@ public:
 
           // Store the packed RRC setup message in the RRC container field of the F1 DL RRC Message that is sent to the
           // DU.
-          resp->rrc_container.resize(msg4_pdu.length());
+          if (!resp->rrc_container.resize(msg4_pdu.length())) {
+            du_logger.warning("Unable to resize RRC PDU to {} bytes", msg4_pdu.length());
+            return;
+          }
           std::copy(msg4_pdu.begin(), msg4_pdu.end(), resp->rrc_container.begin());
         } else if (msg.pdu.init_msg().value.type().value ==
                    asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types_opts::f1_setup_request) {

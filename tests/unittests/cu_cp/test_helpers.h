@@ -110,7 +110,7 @@ public:
     }
   }
 
-  void on_ue_removal_required(ue_index_t ue_index) override
+  async_task<void> on_ue_removal_required(ue_index_t ue_index) override
   {
     logger.info("ue={}: Received a UE removal request", ue_index);
 
@@ -125,6 +125,11 @@ public:
         rrc_removal_handler->remove_ue(ue_index);
       }
     }
+
+    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN();
+    });
   }
 
   async_task<bool> on_ue_transfer_required(ue_index_t ue_index, ue_index_t old_ue_index) override
@@ -212,7 +217,7 @@ public:
       // add one UP transport item
       e1ap_up_params_item up_item;
       up_item.cell_group_id = 0;
-      up_item.up_tnl_info   = {transport_layer_address{"127.0.0.1"}, int_to_gtpu_teid(0x1)};
+      up_item.up_tnl_info   = {transport_layer_address::create_from_string("127.0.0.1"), int_to_gtpu_teid(0x1)};
       drb_item.ul_up_transport_params.push_back(up_item);
       res_setup_item.drb_setup_list_ng_ran.emplace(drb_id, drb_item);
 
