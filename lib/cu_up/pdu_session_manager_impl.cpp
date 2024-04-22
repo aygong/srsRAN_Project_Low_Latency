@@ -50,6 +50,7 @@ pdu_session_manager_impl::pdu_session_manager_impl(ue_index_t                   
                                                    task_executor&                       ue_dl_exec_,
                                                    task_executor&                       ue_ul_exec_,
                                                    task_executor&                       ue_ctrl_exec_,
+                                                   task_executor&                       crypto_exec_,
                                                    dlt_pcap&                            gtpu_pcap_) :
   ue_index(ue_index_),
   qos_cfg(std::move(qos_cfg_)),
@@ -67,6 +68,7 @@ pdu_session_manager_impl::pdu_session_manager_impl(ue_index_t                   
   ue_dl_exec(ue_dl_exec_),
   ue_ul_exec(ue_ul_exec_),
   ue_ctrl_exec(ue_ctrl_exec_),
+  crypto_exec(crypto_exec_),
   gtpu_pcap(gtpu_pcap_),
   f1u_gw(f1u_gw_)
 {
@@ -156,7 +158,7 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
   pdcp_msg.ue_index                             = ue_index;
   pdcp_msg.rb_id                                = drb_to_setup.drb_id;
   pdcp_msg.config                               = make_pdcp_drb_config(drb_to_setup.pdcp_cfg, new_session.security_ind);
-  pdcp_msg.config.custom                        = qos_cfg.at(five_qi).pdcp_custom;
+  pdcp_msg.config.custom                        = qos_cfg.at(five_qi).pdcp_custom_cfg;
   pdcp_msg.tx_lower                             = &new_drb->pdcp_to_f1u_adapter;
   pdcp_msg.tx_upper_cn                          = &new_drb->pdcp_tx_to_e1ap_adapter;
   pdcp_msg.rx_upper_dn                          = &new_drb->pdcp_to_sdap_adapter;
@@ -164,6 +166,9 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
   pdcp_msg.ue_dl_timer_factory                  = ue_dl_timer_factory;
   pdcp_msg.ue_ul_timer_factory                  = ue_ul_timer_factory;
   pdcp_msg.ue_ctrl_timer_factory                = ue_ctrl_timer_factory;
+  pdcp_msg.ue_dl_executor                       = &ue_dl_exec;
+  pdcp_msg.ue_ul_executor                       = &ue_ul_exec;
+  pdcp_msg.crypto_executor                      = &crypto_exec;
   new_drb->pdcp                                 = srsran::create_pdcp_entity(pdcp_msg);
 
   security::sec_128_as_config sec_128 = security::truncate_config(security_info);
@@ -195,6 +200,8 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
   new_drb->pdcp_rx_to_e1ap_adapter.connect_e1ap(); // TODO: pass actual E1AP handler
 
   // Create  F1-U bearer
+  new_drb->f1u_cfg = qos_cfg.at(five_qi).f1u_cfg;
+
   expected<gtpu_teid_t> ret = f1u_teid_allocator.request_teid();
   if (not ret.has_value()) {
     logger.log_error("Could not allocate ul_teid");
@@ -207,6 +214,7 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
 
   new_drb->f1u          = f1u_gw.create_cu_bearer(ue_index,
                                          drb_to_setup.drb_id,
+                                         new_drb->f1u_cfg,
                                          f1u_ul_tunnel_addr,
                                          new_drb->f1u_to_pdcp_adapter,
                                          new_drb->f1u_to_pdcp_adapter,
@@ -391,6 +399,7 @@ pdu_session_manager_impl::modify_pdu_session(const e1ap_pdu_session_res_to_modif
       // create new F1-U and connect it. This will automatically disconnect the old F1-U.
       drb->f1u = f1u_gw.create_cu_bearer(ue_index,
                                          drb->drb_id,
+                                         drb->f1u_cfg, // reuse previous F1-U config
                                          f1u_ul_tunnel_addr,
                                          drb->f1u_to_pdcp_adapter,
                                          drb->f1u_to_pdcp_adapter,

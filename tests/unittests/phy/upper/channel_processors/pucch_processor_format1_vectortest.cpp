@@ -185,11 +185,17 @@ TEST_P(PucchProcessorFormat1Fixture, FromVector)
 
     // Check channel state information.
     // Time alignment shouldn't exceed plus minus 3 us.
-    ASSERT_NEAR(result.csi.get_time_alignment().to_seconds(), 0, 3e-6);
+    optional<phy_time_unit> time_aligment = result.csi.get_time_alignment();
+    ASSERT_TRUE(time_aligment.has_value());
+    ASSERT_NEAR(time_aligment.value().to_seconds(), 0, 3e-6);
     // EPRE depends on the number of entries.
-    ASSERT_NEAR(result.csi.get_epre_dB(), convert_power_to_dB(param.entries.size()), 0.09);
+    optional<float> epre_dB = result.csi.get_epre_dB();
+    ASSERT_TRUE(epre_dB.has_value());
+    ASSERT_NEAR(epre_dB.value(), convert_power_to_dB(param.entries.size()), 0.09);
     // SINR should be larger than -5 dB.
-    ASSERT_GT(result.csi.get_sinr_dB(), -5.0) << "Entry configuration: " << entry.config;
+    optional<float> sinr_dB = result.csi.get_sinr_dB();
+    ASSERT_TRUE(sinr_dB.has_value());
+    ASSERT_GT(sinr_dB.value(), -5.0) << "Entry configuration: " << entry.config;
 
     // The message shall be valid.
     ASSERT_EQ(result.message.get_status(), uci_status::valid);
@@ -230,9 +236,13 @@ TEST_P(PucchProcessorFormat1Fixture, FromVectorFalseCs)
 
   // Check channel state information.
   // EPRE depends on the number of entries.
-  ASSERT_NEAR(result.csi.get_epre_dB(), convert_power_to_dB(param.entries.size()), 0.9);
+  optional<float> epre_dB = result.csi.get_epre_dB();
+  ASSERT_TRUE(epre_dB.has_value());
+  ASSERT_NEAR(epre_dB.value(), convert_power_to_dB(param.entries.size()), 0.09);
   // SINR should be less than -25 dB.
-  ASSERT_LT(result.csi.get_sinr_dB(), -25.0);
+  optional<float> sinr_dB = result.csi.get_sinr_dB();
+  ASSERT_TRUE(sinr_dB.has_value());
+  ASSERT_LT(sinr_dB.value(), -25.0);
 
   // The message shall be valid.
   ASSERT_EQ(result.message.get_status(), uci_status::invalid);

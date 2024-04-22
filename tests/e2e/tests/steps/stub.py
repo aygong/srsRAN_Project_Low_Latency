@@ -21,8 +21,8 @@
 """
 Steps related with stubs / resources
 """
-
 import logging
+import time
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from time import sleep
@@ -30,20 +30,13 @@ from typing import Dict, Generator, List, Optional, Sequence, Tuple
 
 import grpc
 import pytest
+from google.protobuf.empty_pb2 import Empty
+from google.protobuf.text_format import MessageToString
+from google.protobuf.wrappers_pb2 import StringValue, UInt32Value
 from retina.client.exception import ErrorReportedByAgent
 from retina.launcher.artifacts import RetinaTestData
 from retina.protocol import RanStub
-from retina.protocol.base_pb2 import (
-    Empty,
-    Metrics,
-    PingRequest,
-    PLMN,
-    StartInfo,
-    StopResponse,
-    String,
-    UEDefinition,
-    UInteger,
-)
+from retina.protocol.base_pb2 import Metrics, PingRequest, PLMN, StartInfo, StopResponse, UEDefinition
 from retina.protocol.fivegc_pb2 import FiveGCStartInfo, IPerfResponse
 from retina.protocol.fivegc_pb2_grpc import FiveGCStub
 from retina.protocol.gnb_pb2 import GNBStartInfo
@@ -55,7 +48,7 @@ RF_MAX_TIMEOUT: int = 3 * 60  # Time enough in RF when loading a new image in th
 UE_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
 GNB_STARTUP_TIMEOUT: int = 2  # GNB delay (we wait x seconds and check it's still alive). UE later and has a big timeout
 FIVEGC_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
-ATTACH_TIMEOUT: int = 1 * 60
+ATTACH_TIMEOUT: int = 90
 
 
 # pylint: disable=too-many-arguments,too-many-locals
@@ -188,7 +181,7 @@ def ue_start_and_attach(
 
     # Attach in parallel
     ue_attach_task_dict: Dict[UEStub, grpc.Future] = {
-        ue_stub: ue_stub.WaitUntilAttached.future(UInteger(value=attach_timeout)) for ue_stub in ue_array
+        ue_stub: ue_stub.WaitUntilAttached.future(UInt32Value(value=attach_timeout)) for ue_stub in ue_array
     }
     for ue_stub, task in ue_attach_task_dict.items():
         task.add_done_callback(lambda _task, _ue_stub=ue_stub: _log_attached_ue(_task, _ue_stub))
@@ -228,8 +221,8 @@ def _log_attached_ue(future: grpc.Future, ue_stub: UEStub):
         logging.info(
             "UE [%s] attached: \n%s%s ",
             id(ue_stub),
-            ue_stub.GetDefinition(Empty()).subscriber,
-            future.result(),
+            MessageToString(ue_stub.GetDefinition(Empty()).subscriber, indent=2),
+            MessageToString(future.result(), indent=2),
         )
 
 
@@ -269,12 +262,18 @@ def ping_start(
     return ping_task_array
 
 
-def ping_wait_until_finish(ping_task_array: List[grpc.Future]) -> None:
+def ping_wait_until_finish(ping_task_array: List[grpc.Future], task_no_check_index=-1) -> None:
     """
     Wait until the requested ping has finished.
     """
     ping_success = True
+    index = -1
     for ping_task in ping_task_array:
+        if ping_task_array.index(ping_task) % 2 == 0:
+            index += 1
+
+        if index == task_no_check_index:
+            continue
         ping_success &= ping_task.result().status
 
     if not ping_success:
@@ -294,7 +293,7 @@ def _print_ping_result(msg: str, task: grpc.Future):
         log_fn = logging.error
         result = ErrorReportedByAgent(err)
     finally:
-        log_fn("Ping %s: %s", msg, result)
+        log_fn("Ping %s: %s", msg, MessageToString(result, indent=2))
 
 
 def iperf_parallel(
@@ -401,7 +400,7 @@ def iperf_start(
     """
 
     iperf_request = IPerfRequest(
-        server=fivegc.StartIPerfService(String(value=ue_attached_info.ipv4_gateway)),
+        server=fivegc.StartIPerfService(StringValue(value=ue_attached_info.ipv4_gateway)),
         duration=duration,
         direction=direction,
         proto=protocol,
@@ -445,7 +444,7 @@ def iperf_wait_until_finish(
         ue_attached_info.ipv4,
         _iperf_proto_to_str(iperf_request.proto),
         _iperf_dir_to_str(iperf_request.direction),
-        iperf_data,
+        MessageToString(iperf_data, indent=2),
     )
 
     # Assertion
@@ -599,7 +598,7 @@ def _stop_stub(
     error_msg = ""
 
     with suppress(grpc.RpcError):
-        stop_info: StopResponse = stub.Stop(UInteger(value=timeout))
+        stop_info: StopResponse = stub.Stop(UInt32Value(value=timeout))
 
         if stop_info.exit_code:
             retina_data.download_artifacts = True
@@ -627,34 +626,29 @@ def _stop_stub(
 
 
 def ue_reestablishment(
-    ue_array: Sequence[UEStub],
+    ue_stub: UEStub,
+    reestablishment_interval: int,
 ):
     """
-    Reestablishment an array of UEs from already running gnb and 5gc
+    Reestablishment one UE from already running gnb and 5gc
     """
-    for ue_stub in ue_array:
-        logging.info("Reestablishment UE [%s]", id(ue_stub))
-        ue_stub.Reestablishment(Empty())
+    logging.info("Reestablishment UE [%s]", id(ue_stub))
+    init_time = time.time()
+    ue_stub.Reestablishment(Empty())
+    time_to_reestablish_sec = time.time() - init_time
+
+    msg = f"Reestablishment UE [{id(ue_stub)}] finished in {time_to_reestablish_sec} seconds"
+    if time_to_reestablish_sec >= reestablishment_interval:
+        logging.error(msg)
 
 
 def _get_metrics(stub: RanStub, name: str, fail_if_kos: bool = False) -> str:
-    error_msg = ""
-
     if fail_if_kos:
         with suppress(grpc.RpcError):
             metrics: Metrics = stub.GetMetrics(Empty())
 
-            if metrics.nof_kos or metrics.nof_retx:
-                error_msg = f"{name} has:"
+            for ue_info in metrics.ue_array:
+                if ue_info.nof_kos or ue_info.nof_retx:
+                    return f"{name} has KOs and/or retrxs"
 
-            if metrics.nof_kos:
-                kos_msg = f" {metrics.nof_kos} KOs"
-                error_msg += kos_msg + "."
-                logging.error("%s has%s", name, kos_msg)
-
-            if metrics.nof_retx:
-                retrx_msg = f" {metrics.nof_retx} retrxs"
-                error_msg += retrx_msg + "."
-                logging.error("%s has%s", name, retrx_msg)
-
-    return error_msg
+    return ""

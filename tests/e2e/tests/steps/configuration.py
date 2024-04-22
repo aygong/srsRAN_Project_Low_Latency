@@ -33,6 +33,7 @@ from retina.launcher.public import MetricServerInfo
 
 
 # pylint: disable=too-many-arguments
+# pylint: disable=too-many-locals
 def configure_test_parameters(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -46,6 +47,8 @@ def configure_test_parameters(
     common_search_space_enable: bool = False,
     prach_config_index: int = -1,
     log_ip_level="",
+    enable_channel_noise: bool = False,
+    enable_qos_reestablishment: bool = False,
 ):
     """
     Configure test parameters
@@ -61,6 +64,7 @@ def configure_test_parameters(
                 "bandwidth": bandwidth,
                 "global_timing_advance": global_timing_advance,
                 "log_ip_level": log_ip_level,
+                "enable_channel_noise": enable_channel_noise,
             },
         },
         "gnb": {
@@ -72,6 +76,8 @@ def configure_test_parameters(
                 "time_alignment_calibration": time_alignment_calibration,
                 "common_search_space_enable": common_search_space_enable,
                 "prach_config_index": prach_config_index,
+                "enable_channel_noise": enable_channel_noise,
+                "enable_qos_reestablishment": enable_qos_reestablishment,
             },
         },
     }

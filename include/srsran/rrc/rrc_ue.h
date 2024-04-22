@@ -183,6 +183,9 @@ public:
 
   /// \brief Get UE timer factory.
   virtual timer_factory get_timer_factory() = 0;
+
+  /// \brief Get executor.
+  virtual task_executor& get_executor() = 0;
 };
 
 /// Interface to notify about NAS messages.
@@ -253,7 +256,7 @@ public:
   /// \returns The release context of the UE.  If SRB1 is not created yet, a RrcReject message is contained in the
   /// release context, see section 5.3.15 in TS 38.331. Otherwise, a RrcRelease message is contained in the release
   /// context.
-  virtual rrc_ue_release_context get_rrc_ue_release_context() = 0;
+  virtual rrc_ue_release_context get_rrc_ue_release_context(bool requires_rrc_msg) = 0;
 
   /// \brief Retrieve RRC context of a UE to perform mobility (handover, reestablishment).
   /// \return Transfer context including UP context, security, SRBs, HO preparation, etc.
@@ -305,7 +308,7 @@ public:
 };
 
 /// Struct containing all information needed from the old RRC UE for Reestablishment.
-struct rrc_reestablishment_ue_context_t {
+struct rrc_ue_reestablishment_context_response {
   ue_index_t                          ue_index = ue_index_t::invalid;
   security::security_context          sec_context;
   optional<asn1::rrc_nr::ue_nr_cap_s> capabilities;
@@ -328,7 +331,7 @@ public:
   /// \param[in] old_c_rnti The old C-RNTI contained in the RRC Reestablishment Request.
   /// \param[in] ue_index The new UE index of the UE that sent the Reestablishment Request.
   /// \returns The RRC Reestablishment UE context for the old UE.
-  virtual rrc_reestablishment_ue_context_t
+  virtual rrc_ue_reestablishment_context_response
   on_rrc_reestablishment_request(pci_t old_pci, rnti_t old_c_rnti, ue_index_t ue_index) = 0;
 
   /// \brief Notify the CU-CP to transfer and remove ue contexts.
@@ -366,7 +369,7 @@ public:
 
   /// \brief Get the RRC Reestablishment UE context to transfer it to new UE.
   /// \returns The RRC Reestablishment UE Context.
-  virtual rrc_reestablishment_ue_context_t get_context() = 0;
+  virtual rrc_ue_reestablishment_context_response get_context() = 0;
 };
 
 /// Combined entry point for the RRC UE handling.

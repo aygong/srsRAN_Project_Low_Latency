@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "gnb_os_sched_affinity_manager.h"
+#include "../services/os_sched_affinity_manager.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/optional.h"
 #include "srsran/adt/variant.h"
@@ -212,7 +212,7 @@ struct pdsch_appconfig {
   /// retransmission is cancelled.
   uint8_t harq_la_ri_drop_threshold{1};
   /// Position for additional DM-RS in DL, see Tables 7.4.1.1.2-3 and 7.4.1.1.2-4 in TS 38.211.
-  uint8_t dmrs_add_pos{1};
+  unsigned dmrs_add_pos{2};
 };
 
 /// PUSCH application configuration.
@@ -270,7 +270,7 @@ struct pusch_appconfig {
   /// Maximum CQI offset that the OLLA algorithm can apply to the reported CQI.
   float olla_max_snr_offset{5.0};
   /// Position for additional DM-RS in UL (see TS 38.211, clause 6.4.1.1.3).
-  uint8_t dmrs_add_pos{2};
+  unsigned dmrs_add_pos{2};
 };
 
 struct pucch_appconfig {
@@ -320,7 +320,9 @@ struct pucch_appconfig {
   bool f2_intraslot_freq_hopping = false;
   /// Max code rate.
   max_pucch_code_rate max_code_rate = max_pucch_code_rate::dot_35;
-  /// Minimum k1 value (distance in slots between PDSCH and HARQ-ACK) that the gNB can use. Values: {1, ..., 15}.
+  /// Minimum k1 value (distance in slots between PDSCH and HARQ-ACK) that the gNB can use. Values: {1, ..., 7}.
+  /// [Implementation-defined] As min_k1 is used for both common and dedicated PUCCH configuration, and in the UE
+  /// fallback scheduler only allow max k1 = 7, we restrict min_k1 to 7.
   unsigned min_k1 = 4;
 
   /// Maximum number of consecutive undecoded PUCCH Format 2 for CSI before an RLF is reported.
@@ -740,8 +742,8 @@ struct f1ap_cu_appconfig {
 struct cu_cp_appconfig {
   uint16_t           max_nof_dus               = 6;
   uint16_t           max_nof_cu_ups            = 6;
-  int                inactivity_timer          = 5; // in seconds
-  unsigned           pdu_session_setup_timeout = 3; // in seconds (must be larger than T310)
+  int                inactivity_timer          = 120; // in seconds
+  unsigned           pdu_session_setup_timeout = 3;   // in seconds (must be larger than T310)
   mobility_appconfig mobility_config;
   rrc_appconfig      rrc_config;
   security_appconfig security_config;
@@ -752,6 +754,10 @@ struct cu_up_appconfig {
   unsigned gtpu_queue_size          = 2048;
   unsigned gtpu_reordering_timer_ms = 0;
   bool     warn_on_drop             = false;
+};
+
+struct du_appconfig {
+  bool warn_on_drop = false;
 };
 
 /// Configuration of logging functionalities.
@@ -1066,8 +1072,10 @@ struct ru_ofh_cell_appconfig {
   std::string ru_mac_address = "70:b3:d5:e1:5b:06";
   /// Distributed Unit MAC address.
   std::string du_mac_address = "00:11:22:33:00:77";
-  /// V-LAN Tag control information field.
-  uint16_t vlan_tag = 1U;
+  /// V-LAN Tag control information field for C-Plane.
+  uint16_t vlan_tag_cp = 1U;
+  /// V-LAN Tag control information field for U-Plane.
+  uint16_t vlan_tag_up = 1U;
   /// RU PRACH port.
   std::vector<unsigned> ru_prach_port_id = {4, 5};
   /// RU Downlink port.
@@ -1107,23 +1115,15 @@ struct buffer_pool_appconfig {
 /// CPU affinities configuration for the cell.
 struct cpu_affinities_cell_appconfig {
   /// L1 uplink CPU affinity mask.
-  gnb_os_sched_affinity_config l1_ul_cpu_cfg = {gnb_sched_affinity_mask_types::l1_ul,
-                                                {},
-                                                gnb_sched_affinity_mask_policy::mask};
+  os_sched_affinity_config l1_ul_cpu_cfg = {sched_affinity_mask_types::l1_ul, {}, sched_affinity_mask_policy::mask};
   /// L1 downlink workers CPU affinity mask.
-  gnb_os_sched_affinity_config l1_dl_cpu_cfg = {gnb_sched_affinity_mask_types::l1_dl,
-                                                {},
-                                                gnb_sched_affinity_mask_policy::mask};
+  os_sched_affinity_config l1_dl_cpu_cfg = {sched_affinity_mask_types::l1_dl, {}, sched_affinity_mask_policy::mask};
 
   /// L2 workers CPU affinity mask.
-  gnb_os_sched_affinity_config l2_cell_cpu_cfg = {gnb_sched_affinity_mask_types::l2_cell,
-                                                  {},
-                                                  gnb_sched_affinity_mask_policy::mask};
+  os_sched_affinity_config l2_cell_cpu_cfg = {sched_affinity_mask_types::l2_cell, {}, sched_affinity_mask_policy::mask};
 
   /// Radio Unit workers CPU affinity mask.
-  gnb_os_sched_affinity_config ru_cpu_cfg = {gnb_sched_affinity_mask_types::ru,
-                                             {},
-                                             gnb_sched_affinity_mask_policy::mask};
+  os_sched_affinity_config ru_cpu_cfg = {sched_affinity_mask_types::ru, {}, sched_affinity_mask_policy::mask};
 };
 
 /// CPU affinities configuration for the gNB app.
@@ -1131,9 +1131,9 @@ struct cpu_affinities_appconfig {
   /// CPUs isolation.
   optional<os_sched_affinity_bitmask> isolated_cpus;
   /// Low priority workers CPU affinity mask.
-  gnb_os_sched_affinity_config low_priority_cpu_cfg = {gnb_sched_affinity_mask_types::low_priority,
-                                                       {},
-                                                       gnb_sched_affinity_mask_policy::mask};
+  os_sched_affinity_config low_priority_cpu_cfg = {sched_affinity_mask_types::low_priority,
+                                                   {},
+                                                   sched_affinity_mask_policy::mask};
 };
 
 /// Non real time thread configuration for the gNB.
@@ -1260,8 +1260,10 @@ struct gnb_appconfig {
   amf_appconfig amf_cfg;
   /// CU-CP configuration.
   cu_cp_appconfig cu_cp_cfg;
-  /// CU-CP configuration.
+  /// CU-UP configuration.
   cu_up_appconfig cu_up_cfg;
+  /// DU configuration.
+  du_appconfig du_cfg;
   /// F1AP configuration.
   f1ap_cu_appconfig f1ap_cfg;
   /// \brief E2 configuration.

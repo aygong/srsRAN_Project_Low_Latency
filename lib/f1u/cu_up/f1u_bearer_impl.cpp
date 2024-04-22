@@ -28,6 +28,7 @@ using namespace srs_cu_up;
 f1u_bearer_impl::f1u_bearer_impl(uint32_t                       ue_index,
                                  drb_id_t                       drb_id_,
                                  const up_transport_layer_info& ul_tnl_info_,
+                                 const f1u_config&              config,
                                  f1u_tx_pdu_notifier&           tx_pdu_notifier_,
                                  f1u_rx_delivery_notifier&      rx_delivery_notifier_,
                                  f1u_rx_sdu_notifier&           rx_sdu_notifier_,
@@ -36,6 +37,7 @@ f1u_bearer_impl::f1u_bearer_impl(uint32_t                       ue_index,
                                  task_executor&                 ul_exec_,
                                  f1u_bearer_disconnector&       disconnector_) :
   logger("CU-F1-U", {ue_index, drb_id_, ul_tnl_info_}),
+  cfg(config),
   tx_pdu_notifier(tx_pdu_notifier_),
   rx_delivery_notifier(rx_delivery_notifier_),
   rx_sdu_notifier(rx_sdu_notifier_),
@@ -54,7 +56,11 @@ void f1u_bearer_impl::handle_pdu(nru_ul_message msg)
   auto fn = [this, m = std::move(msg)]() mutable { handle_pdu_impl(std::move(m)); };
 
   if (not ul_exec.defer(std::move(fn))) {
-    logger.log_warning("Dropped F1-U PDU, queue is full.");
+    if (!cfg.warn_on_drop) {
+      logger.log_info("Dropped F1-U PDU, queue is full.");
+    } else {
+      logger.log_warning("Dropped F1-U PDU, queue is full.");
+    }
   }
 }
 
@@ -102,6 +108,11 @@ void f1u_bearer_impl::handle_pdu_impl(nru_ul_message msg)
 
 void f1u_bearer_impl::handle_sdu(pdcp_tx_pdu sdu)
 {
+  if (stopped) {
+    logger.log_info("Dropped SDU. Bearer is stopped. pdcp_sn={} size={}", sdu.pdcp_sn, sdu.buf.length());
+    return;
+  }
+
   logger.log_debug("F1-U bearer received SDU with pdcp_sn={}, size={}", sdu.pdcp_sn, sdu.buf.length());
   nru_dl_message msg = {};
 
@@ -120,6 +131,11 @@ void f1u_bearer_impl::handle_sdu(pdcp_tx_pdu sdu)
 
 void f1u_bearer_impl::discard_sdu(uint32_t pdcp_sn)
 {
+  if (stopped) {
+    logger.log_info("Dropped discard command. Bearer is stopped. pdcp_sn={}", pdcp_sn);
+    return;
+  }
+
   // start backoff timer
   if (!dl_notif_timer.is_running()) {
     dl_notif_timer.run();

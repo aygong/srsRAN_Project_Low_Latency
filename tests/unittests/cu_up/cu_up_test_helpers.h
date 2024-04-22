@@ -51,6 +51,7 @@ class dummy_cu_up_executor_pool final : public srs_cu_up::cu_up_executor_pool
     task_executor& ctrl_executor() override { return *exec; }
     task_executor& ul_pdu_executor() override { return *exec; }
     task_executor& dl_pdu_executor() override { return *exec; }
+    task_executor& crypto_executor() override { return *exec; }
 
     async_task<void> stop() override
     {
@@ -244,6 +245,7 @@ public:
 
   std::unique_ptr<srs_cu_up::f1u_bearer> create_cu_bearer(uint32_t                             ue_index,
                                                           drb_id_t                             drb_id,
+                                                          const srs_cu_up::f1u_config&         config,
                                                           const up_transport_layer_info&       ul_up_tnl_info,
                                                           srs_cu_up::f1u_rx_delivery_notifier& cu_delivery,
                                                           srs_cu_up::f1u_rx_sdu_notifier&      cu_rx,

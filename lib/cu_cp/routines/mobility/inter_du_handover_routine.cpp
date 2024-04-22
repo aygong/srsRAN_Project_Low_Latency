@@ -176,11 +176,12 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
       if (!fill_rrc_reconfig_args(rrc_reconfig_args,
                                   target_ue_context_setup_request.srbs_to_be_setup_list,
                                   next_config.pdu_sessions_to_setup_list,
+                                  {} /* No DRB to be removed */,
                                   target_ue_context_setup_response.du_to_cu_rrc_info,
                                   {} /* No NAS PDUs required */,
                                   target_ue->get_rrc_ue_notifier().generate_meas_config(source_rrc_context.meas_cfg),
                                   true, /* Reestablish SRBs */
-                                  false /* do not reestablish DRBs */,
+                                  true /* Reestablish DRBs */,
                                   true, /* Update keys */
                                   logger)) {
         logger.warning("ue={}: \"{}\" Failed to fill RrcReconfiguration", command.source_ue_index, name());
@@ -215,8 +216,9 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
   // Remove source UE context.
   {
-    ue_context_release_command.ue_index = source_ue->get_ue_index();
-    ue_context_release_command.cause    = ngap_cause_radio_network_t::unspecified;
+    ue_context_release_command.ue_index             = source_ue->get_ue_index();
+    ue_context_release_command.cause                = ngap_cause_radio_network_t::unspecified;
+    ue_context_release_command.requires_rrc_release = false;
     CORO_AWAIT(source_du_processor_notifier.handle_ue_context_release_command(ue_context_release_command));
     logger.debug("ue={}: \"{}\" removed source UE context", ue_context_release_command.ue_index, name());
   }

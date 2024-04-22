@@ -235,12 +235,6 @@ void f1ap_cu_impl::handle_initial_ul_rrc_message(const init_ul_rrc_msg_transfer_
     return;
   }
 
-  logger.debug("du_ue_f1ap_id={} nci={} crnti={} plmn={}: Received InitialULRRCMessageTransfer",
-               du_ue_id,
-               cgi.nci,
-               crnti,
-               cgi.plmn);
-
   if (msg->sul_access_ind_present) {
     logger.debug("du_ue_f1ap_id={}: Ignoring SUL access indicator", du_ue_id);
   }
@@ -307,14 +301,13 @@ void f1ap_cu_impl::handle_initial_ul_rrc_message(const init_ul_rrc_msg_transfer_
 void f1ap_cu_impl::handle_ul_rrc_message(const ul_rrc_msg_transfer_s& msg)
 {
   if (!ue_ctxt_list.contains(int_to_gnb_cu_ue_f1ap_id(msg->gnb_cu_ue_f1ap_id))) {
-    logger.warning("cu_ue_f1ap_id={} du_ue_f1ap_id={}: Dropping UlRrcMessageTransfer. UE context does not exist",
+    logger.warning("cu_ue_f1ap_id={} du_ue_f1ap_id={}: Dropping ULRRCMessageTransfer. UE context does not exist",
                    msg->gnb_cu_ue_f1ap_id,
                    msg->gnb_du_ue_f1ap_id);
     return;
   }
 
   f1ap_ue_context& ue_ctxt = ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(msg->gnb_cu_ue_f1ap_id)];
-  ue_ctxt.logger.log_debug("Received UlRrcMessageTransfer");
 
   // Notify upper layers about reception
   ue_ctxt.rrc_notifier->on_ul_dcch_pdu(int_to_srb_id(msg->srb_id), msg->rrc_container.copy());
@@ -356,18 +349,24 @@ void f1ap_cu_impl::handle_ue_context_release_request(const asn1::f1ap::ue_contex
 
 void f1ap_cu_impl::handle_successful_outcome(const asn1::f1ap::successful_outcome_s& outcome)
 {
+  optional<gnb_cu_ue_f1ap_id_t> cu_ue_id = get_gnb_cu_ue_f1ap_id(outcome);
+  if (cu_ue_id.has_value()) {
+    if (not ue_ctxt_list.contains(*cu_ue_id)) {
+      logger.warning("cu_ue={}: Discarding received \"{}\". Cause: UE was not found.",
+                     *cu_ue_id,
+                     outcome.value.type().to_string());
+    }
+  }
+
   switch (outcome.value.type().value) {
     case asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_release_complete: {
-      ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(outcome.value.ue_context_release_complete()->gnb_cu_ue_f1ap_id)]
-          .ev_mng.context_release_complete.set(outcome.value.ue_context_release_complete());
+      ue_ctxt_list[*cu_ue_id].ev_mng.context_release_complete.set(outcome.value.ue_context_release_complete());
     } break;
     case asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_setup_resp: {
-      ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(outcome.value.ue_context_setup_resp()->gnb_cu_ue_f1ap_id)]
-          .ev_mng.context_setup_outcome.set(outcome.value.ue_context_setup_resp());
+      ue_ctxt_list[*cu_ue_id].ev_mng.context_setup_outcome.set(outcome.value.ue_context_setup_resp());
     } break;
     case asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_mod_resp: {
-      ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(outcome.value.ue_context_mod_resp()->gnb_cu_ue_f1ap_id)]
-          .ev_mng.context_modification_outcome.set(outcome.value.ue_context_mod_resp());
+      ue_ctxt_list[*cu_ue_id].ev_mng.context_modification_outcome.set(outcome.value.ue_context_mod_resp());
     } break;
     default:
       logger.warning("Successful outcome of type {} is not supported", outcome.value.type().to_string());
@@ -376,14 +375,21 @@ void f1ap_cu_impl::handle_successful_outcome(const asn1::f1ap::successful_outcom
 
 void f1ap_cu_impl::handle_unsuccessful_outcome(const asn1::f1ap::unsuccessful_outcome_s& outcome)
 {
+  optional<gnb_cu_ue_f1ap_id_t> cu_ue_id = get_gnb_cu_ue_f1ap_id(outcome);
+  if (cu_ue_id.has_value()) {
+    if (not ue_ctxt_list.contains(*cu_ue_id)) {
+      logger.warning("cu_ue={}: Discarding received \"{}\". Cause: UE was not found.",
+                     *cu_ue_id,
+                     outcome.value.type().to_string());
+    }
+  }
+
   switch (outcome.value.type().value) {
     case asn1::f1ap::f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::ue_context_setup_fail: {
-      ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(outcome.value.ue_context_setup_fail()->gnb_cu_ue_f1ap_id)]
-          .ev_mng.context_setup_outcome.set(outcome.value.ue_context_setup_fail());
+      ue_ctxt_list[*cu_ue_id].ev_mng.context_setup_outcome.set(outcome.value.ue_context_setup_fail());
     } break;
     case asn1::f1ap::f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::ue_context_mod_fail: {
-      ue_ctxt_list[int_to_gnb_cu_ue_f1ap_id(outcome.value.ue_context_mod_fail()->gnb_cu_ue_f1ap_id)]
-          .ev_mng.context_modification_outcome.set(outcome.value.ue_context_mod_fail());
+      ue_ctxt_list[*cu_ue_id].ev_mng.context_modification_outcome.set(outcome.value.ue_context_mod_fail());
     } break;
     default:
       logger.warning("Unsuccessful outcome of type {} is not supported", outcome.value.type().to_string());
@@ -416,16 +422,16 @@ static auto log_pdu_helper(srslog::basic_logger&         logger,
       make_formattable([is_rx, du_id, du_ue_id, cu_ue_id, ue_idx, msg_name = get_message_type_str(pdu)](auto& ctx) {
         fmt::format_to(ctx.out(), "{} PDU", is_rx ? "Rx" : "Tx");
         if (du_id != srsran::gnb_du_id_t::invalid) {
-          fmt::format_to(ctx.out(), " GNB-DU-ID={}", du_id);
+          fmt::format_to(ctx.out(), " du_id={}", du_id);
         }
         if (ue_idx != ue_index_t::invalid) {
           fmt::format_to(ctx.out(), " ue={}", ue_idx);
         }
         if (du_ue_id.has_value()) {
-          fmt::format_to(ctx.out(), " GNB-DU-UE-F1AP-ID={}", du_ue_id.value());
+          fmt::format_to(ctx.out(), " du_ue_id={}", du_ue_id.value());
         }
         if (cu_ue_id.has_value()) {
-          fmt::format_to(ctx.out(), " GNB-CU-UE-F1AP-ID={}", cu_ue_id.value());
+          fmt::format_to(ctx.out(), " cu_ue_id={}", cu_ue_id.value());
         }
         return fmt::format_to(ctx.out(), ": {}", msg_name);
       });

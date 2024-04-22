@@ -193,11 +193,18 @@ void phy_to_fapi_results_event_translator::notify_pusch_uci_indication(const ul_
   static constexpr float MIN_UL_SINR_VALUE = -65.534;
   static constexpr float MAX_UL_SINR_VALUE = 65.534;
 
-  builder_pdu.set_metrics_parameters(clamp(csi_info.get_sinr_dB(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE),
-                                     {},
-                                     result.csi.get_time_alignment().to_seconds() * 1e9,
-                                     {},
-                                     {});
+  optional<float> sinr_dB = csi_info.get_sinr_dB();
+  if (sinr_dB.has_value()) {
+    sinr_dB = clamp(sinr_dB.value(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE);
+  }
+
+  optional<int>           timing_advance_offset_ns;
+  optional<phy_time_unit> timing_advance = result.csi.get_time_alignment();
+  if (timing_advance.has_value()) {
+    timing_advance_offset_ns = static_cast<int>(timing_advance.value().to_seconds() * 1e9);
+  }
+
+  builder_pdu.set_metrics_parameters(sinr_dB, {}, timing_advance_offset_ns, {}, {});
 
   unsigned uci_length = get_uci_payload_length(result);
 
@@ -258,6 +265,29 @@ void phy_to_fapi_results_event_translator::notify_crc_indication(const ul_pusch_
   static constexpr float MIN_UL_SINR_VALUE = -65.534;
   static constexpr float MAX_UL_SINR_VALUE = 65.534;
 
+  // NOTE: Clamp values defined in SCF-222 v4.0 Section 3.4.8 Table CRC.indication message body.
+  static constexpr float MIN_UL_RSRP_VALUE_DBFS = -128.0F;
+  static constexpr float MAX_UL_RSRP_VALUE_DBFS = 0.0F;
+
+  // Extract the SINR which is optional and clamp it if available.
+  optional<float> sinr_dB = result.csi.get_sinr_dB();
+  if (sinr_dB.has_value()) {
+    sinr_dB = clamp(sinr_dB.value(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE);
+  }
+
+  // Extract time in advance.
+  optional<int>           timing_advance_offset_ns;
+  optional<phy_time_unit> timing_advance = result.csi.get_time_alignment();
+  if (timing_advance.has_value()) {
+    timing_advance_offset_ns = static_cast<int>(timing_advance.value().to_seconds() * 1e9);
+  }
+
+  // Extract the RSRP which is optional and clamp it if available.
+  optional<float> rsrp = result.csi.get_rsrp_dB();
+  if (rsrp.has_value()) {
+    rsrp = clamp(rsrp.value(), MIN_UL_RSRP_VALUE_DBFS, MAX_UL_RSRP_VALUE_DBFS);
+  }
+
   builder.add_pdu(handle,
                   result.rnti,
                   optional<uint8_t>(),
@@ -265,11 +295,12 @@ void phy_to_fapi_results_event_translator::notify_crc_indication(const ul_pusch_
                   result.decoder_result.tb_crc_ok,
                   num_cb,
                   {},
-                  clamp(result.csi.get_sinr_dB(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE),
+                  sinr_dB,
                   {},
-                  result.csi.get_time_alignment().to_seconds() * 1e9,
+                  timing_advance_offset_ns,
                   {},
-                  {});
+                  rsrp,
+                  false);
 
   error_type<fapi::validator_report> validation_result = validate_crc_indication(msg);
   if (!validation_result) {
@@ -357,11 +388,20 @@ static void add_format_0_1_pucch_pdu(fapi::uci_indication_message_builder& build
   static constexpr float MIN_UL_SINR_VALUE = -65.534;
   static constexpr float MAX_UL_SINR_VALUE = 65.534;
 
-  builder_format01.set_metrics_parameters(clamp(csi_info.get_sinr_dB(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE),
-                                          {},
-                                          result.processor_result.csi.get_time_alignment().to_seconds() * 1e9,
-                                          {},
-                                          {});
+  // Extract the SINR which is optional and clamp it if available.
+  optional<float> sinr_dB = csi_info.get_sinr_dB();
+  if (sinr_dB.has_value()) {
+    sinr_dB = clamp(sinr_dB.value(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE);
+  }
+
+  // Extract time in advance.
+  optional<int>           timing_advance_offset_ns;
+  optional<phy_time_unit> timing_advance = result.processor_result.csi.get_time_alignment();
+  if (timing_advance.has_value()) {
+    timing_advance_offset_ns = static_cast<int>(timing_advance.value().to_seconds() * 1e9);
+  }
+
+  builder_format01.set_metrics_parameters(sinr_dB, {}, timing_advance_offset_ns, {}, {});
 
   // Fill SR parameters.
   fill_format_0_1_sr(builder_format01, result);
@@ -454,12 +494,20 @@ static void add_format_2_pucch_pdu(fapi::uci_indication_message_builder& builder
   static constexpr float MIN_UL_SINR_VALUE = -65.534;
   static constexpr float MAX_UL_SINR_VALUE = 65.534;
 
-  builder_format234.set_metrics_parameters(
-      clamp(csi_info.get_sinr_dB(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE),
-      {},
-      optional<int>(result.processor_result.csi.get_time_alignment().to_seconds() * 1e9),
-      {},
-      {});
+  // Extract the SINR which is optional and clamp it if available.
+  optional<float> sinr_dB = csi_info.get_sinr_dB();
+  if (sinr_dB.has_value()) {
+    sinr_dB = clamp(sinr_dB.value(), MIN_UL_SINR_VALUE, MAX_UL_SINR_VALUE);
+  }
+
+  // Extract time in advance.
+  optional<int>           timing_advance_offset_ns;
+  optional<phy_time_unit> timing_advance = result.processor_result.csi.get_time_alignment();
+  if (timing_advance.has_value()) {
+    timing_advance_offset_ns = static_cast<int>(timing_advance.value().to_seconds() * 1e9);
+  }
+
+  builder_format234.set_metrics_parameters(sinr_dB, {}, timing_advance_offset_ns, {}, {});
 
   // Fill SR parameters.
   fill_format_2_3_4_sr(builder_format234, result.processor_result.message);
@@ -498,4 +546,9 @@ void phy_to_fapi_results_event_translator::on_new_pucch_results(const ul_pucch_r
   }
 
   data_notifier.get().on_uci_indication(msg);
+}
+
+void phy_to_fapi_results_event_translator::on_new_srs_results(const ul_srs_results& result)
+{
+  // TBD.
 }

@@ -37,6 +37,7 @@ public:
   f1u_rx_pdu_handler&      get_rx_pdu_handler() override { return *this; }
   f1u_tx_delivery_handler& get_tx_delivery_handler() override { return *this; }
   f1u_tx_sdu_handler&      get_tx_sdu_handler() override { return *this; }
+  void                     stop() override {}
 
   void handle_pdu(nru_dl_message msg) override {}
   void handle_transmit_notification(uint32_t highest_pdcp_sn) override {}
@@ -48,8 +49,9 @@ public:
 class cu_up_simulator : public f1u_du_gateway
 {
 public:
-  f1u_dummy_bearer             bearer;
-  srs_du::f1u_rx_sdu_notifier* du_notif = nullptr;
+  f1u_dummy_bearer                          bearer;
+  std::vector<srs_du::f1u_rx_sdu_notifier*> created_du_notifs;
+  std::vector<up_transport_layer_info>      registered_dl_tnls;
 
   optional<uint32_t> last_ue_idx;
   optional<drb_id_t> last_drb_id;
@@ -63,13 +65,23 @@ public:
                                timer_factory                  timers,
                                task_executor&                 ue_executor) override
   {
-    du_notif    = &du_rx;
+    created_du_notifs.push_back(&du_rx);
+    registered_dl_tnls.push_back(dl_tnl);
     last_ue_idx = ue_index;
     last_drb_id = drb_id;
     return &bearer;
   }
 
-  void remove_du_bearer(const up_transport_layer_info& dl_tnl) override { du_notif = nullptr; }
+  void remove_du_bearer(const up_transport_layer_info& dl_tnl) override
+  {
+    for (unsigned i = 0; i != registered_dl_tnls.size(); ++i) {
+      if (dl_tnl == registered_dl_tnls[i]) {
+        registered_dl_tnls.erase(registered_dl_tnls.begin() + i);
+        created_du_notifs.erase(created_du_notifs.begin() + i);
+        break;
+      }
+    }
+  }
 };
 
 } // namespace srs_du

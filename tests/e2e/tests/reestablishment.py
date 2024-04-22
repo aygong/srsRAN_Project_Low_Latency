@@ -19,7 +19,7 @@
 #
 
 """
-Ping / Reestablishment Tests
+Ping + Reestablishment Tests
 """
 import logging
 import time
@@ -38,10 +38,12 @@ from .steps.stub import ping_start, ping_wait_until_finish, start_network, stop,
 
 
 @mark.parametrize(
-    "band, common_scs, bandwidth, always_download_artifacts",
+    "band, common_scs, bandwidth, enable_channel_noise, always_download_artifacts",
     (
-        param(3, 15, 50, True, id="band:%s-scs:%s-bandwidth:%s-artifacts:%s"),
-        param(41, 30, 50, False, id="band:%s-scs:%s-bandwidth:%s-artifacts:%s"),
+        param(3, 15, 50, False, True, id="band:%s-scs:%s-bandwidth:%s-noise:%s-artifacts:%s"),
+        param(41, 30, 50, False, False, id="band:%s-scs:%s-bandwidth:%s-noise:%s-artifacts:%s"),
+        param(3, 15, 50, True, True, id="band:%s-scs:%s-bandwidth:%s-noise:%s-artifacts:%s"),
+        param(41, 30, 50, True, False, id="band:%s-scs:%s-bandwidth:%s-noise:%s-artifacts:%s"),
     ),
 )
 @mark.zmq
@@ -50,26 +52,27 @@ from .steps.stub import ping_start, ping_wait_until_finish, start_network, stop,
 def test_zmq_reestablishment(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
-    ue: UEStub,  # pylint: disable=invalid-name
+    ue_8: UEStub,
     fivegc: FiveGCStub,
     gnb: GNBStub,
     band: int,
     common_scs: int,
     bandwidth: int,
+    enable_channel_noise: bool,
     always_download_artifacts: bool,
 ):
     """
-    ZMQ Attach / reestablishment
+    ZMQ Ping + Reestablishment
     """
 
-    test_duration_sec = 15 * 60
-    reestablishment_interval = 30  # seconds
-    reestablishment_count = int(test_duration_sec / reestablishment_interval)
+    test_duration_per_ue_sec = 50
+    reestablishment_interval = 10  # seconds
+    reestablishment_count = int(test_duration_per_ue_sec / reestablishment_interval)
 
     _ping_and_reestablishment_multi_ues(
         retina_manager=retina_manager,
         retina_data=retina_data,
-        ue_array=(ue,),
+        ue_array=ue_8,
         gnb=gnb,
         fivegc=fivegc,
         band=band,
@@ -79,9 +82,10 @@ def test_zmq_reestablishment(
         global_timing_advance=0,
         time_alignment_calibration=0,
         always_download_artifacts=always_download_artifacts,
+        enable_channel_noise=enable_channel_noise,
         reestablishment_count=reestablishment_count,
         reestablishment_interval=reestablishment_interval,
-        ping_count=test_duration_sec,
+        ping_count=test_duration_per_ue_sec,
         warning_as_errors=True,
     )
 
@@ -100,6 +104,7 @@ def _ping_and_reestablishment_multi_ues(
     global_timing_advance: int,
     time_alignment_calibration: Union[int, str],
     always_download_artifacts: bool,
+    enable_channel_noise: bool,
     ping_count: int,
     warning_as_errors: bool = True,
     reestablishment_count: int = 1,
@@ -116,6 +121,8 @@ def _ping_and_reestablishment_multi_ues(
         sample_rate=sample_rate,
         global_timing_advance=global_timing_advance,
         time_alignment_calibration=time_alignment_calibration,
+        enable_channel_noise=enable_channel_noise,
+        enable_qos_reestablishment=True,
     )
 
     configure_artifacts(
@@ -127,14 +134,20 @@ def _ping_and_reestablishment_multi_ues(
 
     ue_attach_info_dict = ue_start_and_attach(ue_array, gnb, fivegc)
 
-    logging.info("Starting Pings in background")
-    ping_task_array = ping_start(ue_attach_info_dict, fivegc, ping_count)
-    logging.info("Pings running for %s UEs", len(ue_array))
+    for index, ue_stub in enumerate(ue_array):
+        # Start pings and reestablishment
+        logging.info("Starting Pings and reestablishment in background")
+        ping_task_array = ping_start(ue_attach_info_dict, fivegc, ping_count)
 
-    for _ in range(reestablishment_count):
-        ue_reestablishment(ue_array)
-        time.sleep(reestablishment_interval)
+        for _ in range(reestablishment_count):
+            ue_reestablishment(ue_stub, reestablishment_interval)
+            time.sleep(reestablishment_interval)
 
-    ping_wait_until_finish(ping_task_array)
+        ping_wait_until_finish(ping_task_array, index)
+
+    ping_count_end = 20
+    # Start ping in end and wait
+    logging.info("Starting Pings after completed reestablishments")
+    ping_wait_until_finish(ping_start(ue_attach_info_dict, fivegc, ping_count_end))
 
     stop(ue_array, gnb, fivegc, retina_data, warning_as_errors=warning_as_errors)

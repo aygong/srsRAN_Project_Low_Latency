@@ -459,7 +459,7 @@ static void configure_cli11_cu_cp_args(CLI::App& app, cu_cp_appconfig& cu_cp_par
 
   app.add_option("--pdu_session_setup_timeout",
                  cu_cp_params.pdu_session_setup_timeout,
-                 "Timeout for the setup of a PDU session after an InitialUeMessage was sent to the core, in "
+                 "Timeout for the setup of a PDU session after an InitialUEMessage was sent to the core, in "
                  "seconds. The timeout must be larger than T310. If the value is reached, the UE will be released")
       ->capture_default_str();
 
@@ -485,7 +485,15 @@ static void configure_cli11_cu_up_args(CLI::App& app, cu_up_appconfig& cu_up_par
       ->capture_default_str();
   app.add_option("--warn_on_drop",
                  cu_up_params.warn_on_drop,
-                 "Log a warning for dropped packets in GTP-U and PDCP due to full queues")
+                 "Log a warning for dropped packets in GTP-U, SDAP, PDCP and F1-U due to full queues")
+      ->capture_default_str();
+}
+
+static void configure_cli11_du_args(CLI::App& app, du_appconfig& du_params)
+{
+  app.add_option("--warn_on_drop",
+                 du_params.warn_on_drop,
+                 "Log a warning for dropped packets in F1-U, RLC and MAC due to full queues")
       ->capture_default_str();
 }
 
@@ -1900,7 +1908,7 @@ static void configure_cli11_ru_ofh_base_cell_args(CLI::App& app, ru_ofh_base_cel
       ->capture_default_str();
   app.add_option("--iq_scaling", config.iq_scaling, "IQ scaling factor")
       ->capture_default_str()
-      ->check(CLI::Range(0.0, 10.0));
+      ->check(CLI::Range(0.0, 20.0));
 
   // Callback function for validating that both compression method and bitwidth parameters were specified.
   auto validate_compression_input = [](CLI::App& cli_app, const std::string& direction) {
@@ -1936,7 +1944,12 @@ static void configure_cli11_ru_ofh_cells_args(CLI::App& app, ru_ofh_cell_appconf
       ->check(CLI::Range(1500, 9600));
   app.add_option("--ru_mac_addr", config.ru_mac_address, "Radio Unit MAC address")->capture_default_str();
   app.add_option("--du_mac_addr", config.du_mac_address, "Distributed Unit MAC address")->capture_default_str();
-  app.add_option("--vlan_tag", config.vlan_tag, "V-LAN identifier")->capture_default_str()->check(CLI::Range(1, 4094));
+  app.add_option("--vlan_tag_cp", config.vlan_tag_cp, "C-Plane V-LAN identifier")
+      ->capture_default_str()
+      ->check(CLI::Range(1, 4094));
+  app.add_option("--vlan_tag_up", config.vlan_tag_up, "U-Plane V-LAN identifier")
+      ->capture_default_str()
+      ->check(CLI::Range(1, 4094));
   app.add_option("--prach_port_id", config.ru_prach_port_id, "RU PRACH port identifier")->capture_default_str();
   app.add_option("--dl_port_id", config.ru_dl_port_id, "RU downlink port identifier")->capture_default_str();
   app.add_option("--ul_port_id", config.ru_ul_port_id, "RU uplink port identifier")->capture_default_str();
@@ -2105,7 +2118,7 @@ static void configure_cli11_cell_affinity_args(CLI::App& app, cpu_affinities_cel
       "--l1_dl_pinning",
       [&config](const std::string& value) {
         config.l1_dl_cpu_cfg.pinning_policy = to_affinity_mask_policy(value);
-        if (config.l1_dl_cpu_cfg.pinning_policy == gnb_sched_affinity_mask_policy::last) {
+        if (config.l1_dl_cpu_cfg.pinning_policy == sched_affinity_mask_policy::last) {
           report_error("Incorrect value={} used in {} property", value, "l1_dl_pinning");
         }
       },
@@ -2115,7 +2128,7 @@ static void configure_cli11_cell_affinity_args(CLI::App& app, cpu_affinities_cel
       "--l1_ul_pinning",
       [&config](const std::string& value) {
         config.l1_ul_cpu_cfg.pinning_policy = to_affinity_mask_policy(value);
-        if (config.l1_ul_cpu_cfg.pinning_policy == gnb_sched_affinity_mask_policy::last) {
+        if (config.l1_ul_cpu_cfg.pinning_policy == sched_affinity_mask_policy::last) {
           report_error("Incorrect value={} used in {} property", value, "l1_ul_pinning");
         }
       },
@@ -2125,7 +2138,7 @@ static void configure_cli11_cell_affinity_args(CLI::App& app, cpu_affinities_cel
       "--l2_cell_pinning",
       [&config](const std::string& value) {
         config.l2_cell_cpu_cfg.pinning_policy = to_affinity_mask_policy(value);
-        if (config.l2_cell_cpu_cfg.pinning_policy == gnb_sched_affinity_mask_policy::last) {
+        if (config.l2_cell_cpu_cfg.pinning_policy == sched_affinity_mask_policy::last) {
           report_error("Incorrect value={} used in {} property", value, "l2_cell_pinning");
         }
       },
@@ -2135,7 +2148,7 @@ static void configure_cli11_cell_affinity_args(CLI::App& app, cpu_affinities_cel
       "--ru_pinning",
       [&config](const std::string& value) {
         config.ru_cpu_cfg.pinning_policy = to_affinity_mask_policy(value);
-        if (config.ru_cpu_cfg.pinning_policy == gnb_sched_affinity_mask_policy::last) {
+        if (config.ru_cpu_cfg.pinning_policy == sched_affinity_mask_policy::last) {
           report_error("Incorrect value={} used in {} property", value, "ru_pinning");
         }
       },
@@ -2237,7 +2250,7 @@ static void configure_cli11_cpu_affinities_args(CLI::App& app, cpu_affinities_ap
       "--low_priority_pinning",
       [&config](const std::string& value) {
         config.low_priority_cpu_cfg.pinning_policy = to_affinity_mask_policy(value);
-        if (config.low_priority_cpu_cfg.pinning_policy == gnb_sched_affinity_mask_policy::last) {
+        if (config.low_priority_cpu_cfg.pinning_policy == sched_affinity_mask_policy::last) {
           report_error("Incorrect value={} used in {} property", value, "low_priority_pinning");
         }
       },
@@ -2487,6 +2500,10 @@ void srsran::configure_cli11_with_gnb_appconfig_schema(CLI::App& app, gnb_parsed
   // CU-UP section.
   CLI::App* cu_up_subcmd = app.add_subcommand("cu_up", "CU-CP parameters")->configurable();
   configure_cli11_cu_up_args(*cu_up_subcmd, gnb_cfg.cu_up_cfg);
+
+  // DU section.
+  CLI::App* du_subcmd = app.add_subcommand("du", "DU parameters")->configurable();
+  configure_cli11_du_args(*du_subcmd, gnb_cfg.du_cfg);
 
   // NTN section.
   CLI::App*                    ntn_subcmd = app.add_subcommand("ntn", "NTN parameters")->configurable();

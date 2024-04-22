@@ -27,11 +27,12 @@ import tempfile
 from pathlib import Path
 from time import sleep
 
+from google.protobuf.empty_pb2 import Empty
 from pytest import mark, param
 from retina.client.manager import RetinaTestManager
 from retina.launcher.artifacts import RetinaTestData
 from retina.launcher.utils import configure_artifacts
-from retina.protocol.base_pb2 import Empty, FiveGCDefinition, GNBDefinition, PLMN, StartInfo, UEDefinition
+from retina.protocol.base_pb2 import FiveGCDefinition, GNBDefinition, PLMN, StartInfo, UEDefinition
 from retina.protocol.fivegc_pb2 import FiveGCStartInfo
 from retina.protocol.fivegc_pb2_grpc import FiveGCStub
 from retina.protocol.gnb_pb2 import GNBStartInfo
@@ -165,7 +166,7 @@ def test_ru_not_crash(
     Run gnb with sanitizers in test mode ru dummy.
     It ignores warnings and KOs, so it will fail if the gnb+sanitizer fails
     """
-    _test_ru(retina_manager, retina_data, gnb, warning_as_errors=False, fail_if_kos=True)
+    _test_ru(retina_manager, retina_data, gnb, warning_as_errors=False, fail_if_kos=False)
 
 
 # pylint: disable=too-many-arguments

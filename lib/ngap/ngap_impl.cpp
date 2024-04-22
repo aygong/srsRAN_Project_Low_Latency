@@ -114,7 +114,7 @@ async_task<ngap_ng_setup_result> ngap_impl::handle_ng_setup_request(const ngap_n
 void ngap_impl::handle_initial_ue_message(const cu_cp_initial_ue_message& msg)
 {
   if (ue_ctxt_list.contains(msg.ue_index)) {
-    logger.warning("ue={}: Dropping InitialUeMessage. UE context already exist", msg.ue_index);
+    logger.warning("ue={}: Dropping InitialUEMessage. UE context already exist", msg.ue_index);
     return;
   }
 
@@ -156,7 +156,7 @@ void ngap_impl::handle_initial_ue_message(const cu_cp_initial_ue_message& msg)
   });
   ue_ctxt.pdu_session_setup_timer.run();
 
-  ue_ctxt.logger.log_debug("Sending InitialUeMessage (PDU session timeout={}ms)",
+  ue_ctxt.logger.log_debug("Sending InitialUEMessage (PDU session timeout={}ms)",
                            ue_ctxt.pdu_session_setup_timer.duration().count());
 
   // Forward message to AMF
@@ -456,7 +456,6 @@ void ngap_impl::handle_pdu_session_resource_setup_request(const asn1::ngap::pdu_
                                                               ue->get_rrc_ue_pdu_notifier(),
                                                               ue->get_du_processor_control_notifier(),
                                                               ngap_notifier,
-                                                              get_ngap_control_message_handler(),
                                                               ue_ctxt.logger));
 }
 
@@ -554,20 +553,6 @@ void ngap_impl::handle_pdu_session_resource_release_command(const asn1::ngap::pd
                 ue_ctxt.ue_ids.amf_ue_id);
 
   ue_ctxt.logger.log_info("Received PduSessionResourceReleaseCommand");
-
-  // Handle optional NAS PDU
-  if (command->nas_pdu_present) {
-    byte_buffer nas_pdu;
-    if (!nas_pdu.resize(command->nas_pdu.size())) {
-      ue_ctxt.logger.log_warning("Unable to resize the storage for the PduSessionResourceReleaseCommand PDU");
-      schedule_error_indication(ue_ctxt.ue_ids.ue_index, ngap_cause_radio_network_t::unspecified);
-      return;
-    }
-    std::copy(command->nas_pdu.begin(), command->nas_pdu.end(), nas_pdu.begin());
-    ue_ctxt.logger.log_debug(nas_pdu.begin(), nas_pdu.end(), "DlNasTransport PDU ({} B)", nas_pdu.length());
-
-    ue->get_rrc_ue_pdu_notifier().on_new_pdu(std::move(nas_pdu));
-  }
 
   // Convert to common type
   cu_cp_pdu_session_resource_release_command msg;
@@ -810,7 +795,7 @@ void ngap_impl::handle_unsuccessful_outcome(const unsuccessful_outcome_s& outcom
 async_task<bool> ngap_impl::handle_ue_context_release_request(const cu_cp_ue_context_release_request& msg)
 {
   if (!ue_ctxt_list.contains(msg.ue_index)) {
-    logger.warning("ue={}: Dropping UeContextReleaseRequest. UE context does not exist", msg.ue_index);
+    logger.info("ue={}: Ignoring UEContextReleaseRequest. Cause: UE has no NGAP context", msg.ue_index);
     return launch_async([](coro_context<async_task<bool>>& ctx) {
       CORO_BEGIN(ctx);
       CORO_RETURN(false);
@@ -830,8 +815,9 @@ async_task<bool> ngap_impl::handle_ue_context_release_request(const cu_cp_ue_con
     });
   }
 
-  if (ue_ctxt.release_requested) {
-    ue_ctxt.logger.log_debug("Ignoring UeContextReleaseRequest. Request already pending");
+  if (ue_ctxt.release_requested or ue_ctxt.release_scheduled) {
+    ue_ctxt.logger.log_debug("Ignoring UeContextReleaseRequest. Cause: Release {} already pending",
+                             ue_ctxt.release_scheduled ? "command" : "request");
     return launch_async([](coro_context<async_task<bool>>& ctx) {
       CORO_BEGIN(ctx);
       CORO_RETURN(true);
