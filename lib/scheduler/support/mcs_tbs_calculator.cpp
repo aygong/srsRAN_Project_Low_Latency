@@ -23,7 +23,6 @@
 #include "mcs_tbs_calculator.h"
 #include "dmrs_helpers.h"
 #include "sch_pdu_builder.h"
-#include "srsran/adt/variant.h"
 #include "srsran/ran/pdsch/dlsch_info.h"
 #include "srsran/ran/pusch/pusch_mcs.h"
 #include "srsran/ran/pusch/ulsch_info.h"
@@ -32,7 +31,7 @@
 
 using namespace srsran;
 
-constexpr unsigned NOF_BITS_PER_BYTE = 8U;
+static constexpr unsigned NOF_BITS_PER_BYTE = 8U;
 
 // Helper that generates the ulsch_configuration object necessary to compute the Effective Code Rate.
 static ulsch_configuration build_ulsch_info(const pusch_config_params&   pusch_cfg,
@@ -79,31 +78,31 @@ static ulsch_configuration build_ulsch_info(const pusch_config_params&   pusch_c
   // Use \c betaOffsetACK-Index1 for up to 2 bits HARQ-ACK reporting.
   else if (pusch_cfg.nof_harq_ack_bits < 3) {
     ulsch_info.beta_offset_harq_ack =
-        beta_harq_ack_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                       .ul_config.value()
-                                                                                       .init_ul_bwp.pusch_cfg.value()
-                                                                                       .uci_cfg.value()
-                                                                                       .beta_offsets_cfg.value())
+        beta_harq_ack_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                                    .ul_config.value()
+                                                                                    .init_ul_bwp.pusch_cfg.value()
+                                                                                    .uci_cfg.value()
+                                                                                    .beta_offsets_cfg.value())
                                    .beta_offset_ack_idx_1.value());
   }
   // Use \c betaOffsetACK-Index1 for up to 11 bits HARQ-ACK reporting.
   else if (pusch_cfg.nof_harq_ack_bits < 12) {
     ulsch_info.beta_offset_harq_ack =
-        beta_harq_ack_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                       .ul_config.value()
-                                                                                       .init_ul_bwp.pusch_cfg.value()
-                                                                                       .uci_cfg.value()
-                                                                                       .beta_offsets_cfg.value())
+        beta_harq_ack_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                                    .ul_config.value()
+                                                                                    .init_ul_bwp.pusch_cfg.value()
+                                                                                    .uci_cfg.value()
+                                                                                    .beta_offsets_cfg.value())
                                    .beta_offset_ack_idx_2.value());
   }
   // Use \c betaOffsetACK-Index1 for more than 11 bits HARQ-ACK reporting.
   else {
     ulsch_info.beta_offset_harq_ack =
-        beta_harq_ack_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                       .ul_config.value()
-                                                                                       .init_ul_bwp.pusch_cfg.value()
-                                                                                       .uci_cfg.value()
-                                                                                       .beta_offsets_cfg.value())
+        beta_harq_ack_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                                    .ul_config.value()
+                                                                                    .init_ul_bwp.pusch_cfg.value()
+                                                                                    .uci_cfg.value()
+                                                                                    .beta_offsets_cfg.value())
                                    .beta_offset_ack_idx_3.value());
   }
 
@@ -116,21 +115,21 @@ static ulsch_configuration build_ulsch_info(const pusch_config_params&   pusch_c
   // Use \c betaOffsetCSI-Part1-Index1 for up to 11 bits CSI Part 1 reporting.
   else if (pusch_cfg.nof_csi_part1_bits < 12) {
     ulsch_info.beta_offset_csi_part1 =
-        beta_csi_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                  .ul_config.value()
-                                                                                  .init_ul_bwp.pusch_cfg.value()
-                                                                                  .uci_cfg.value()
-                                                                                  .beta_offsets_cfg.value())
+        beta_csi_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                               .ul_config.value()
+                                                                               .init_ul_bwp.pusch_cfg.value()
+                                                                               .uci_cfg.value()
+                                                                               .beta_offsets_cfg.value())
                               .beta_offset_csi_p1_idx_1.value());
   }
   // Use \c betaOffsetCSI-Part1-Index2 for more than 11 bits CSI Part 1 reporting.
   else {
     ulsch_info.beta_offset_csi_part1 =
-        beta_csi_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                  .ul_config.value()
-                                                                                  .init_ul_bwp.pusch_cfg.value()
-                                                                                  .uci_cfg.value()
-                                                                                  .beta_offsets_cfg.value())
+        beta_csi_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                               .ul_config.value()
+                                                                               .init_ul_bwp.pusch_cfg.value()
+                                                                               .uci_cfg.value()
+                                                                               .beta_offsets_cfg.value())
                               .beta_offset_csi_p1_idx_2.value());
   }
 
@@ -143,21 +142,21 @@ static ulsch_configuration build_ulsch_info(const pusch_config_params&   pusch_c
   // Use \c betaOffsetCSI-Part2-Index1 for up to 11 bits CSI Part 2 reporting.
   else if (pusch_cfg.max_nof_csi_part2_bits < 12) {
     ulsch_info.beta_offset_csi_part2 =
-        beta_csi_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                  .ul_config.value()
-                                                                                  .init_ul_bwp.pusch_cfg.value()
-                                                                                  .uci_cfg.value()
-                                                                                  .beta_offsets_cfg.value())
+        beta_csi_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                               .ul_config.value()
+                                                                               .init_ul_bwp.pusch_cfg.value()
+                                                                               .uci_cfg.value()
+                                                                               .beta_offsets_cfg.value())
                               .beta_offset_csi_p2_idx_1.value());
   }
   // Use \c betaOffsetCSI-Part2-Index2 for more than 11 bits CSI Part 2 reporting.
   else {
     ulsch_info.beta_offset_csi_part2 =
-        beta_csi_to_float(variant_get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
-                                                                                  .ul_config.value()
-                                                                                  .init_ul_bwp.pusch_cfg.value()
-                                                                                  .uci_cfg.value()
-                                                                                  .beta_offsets_cfg.value())
+        beta_csi_to_float(std::get<uci_on_pusch::beta_offsets_semi_static>(ue_cell_cfg->cfg_dedicated()
+                                                                               .ul_config.value()
+                                                                               .init_ul_bwp.pusch_cfg.value()
+                                                                               .uci_cfg.value()
+                                                                               .beta_offsets_cfg.value())
                               .beta_offset_csi_p2_idx_2.value());
   }
 
@@ -171,10 +170,10 @@ static void update_ulsch_info(ulsch_configuration& ulsch_cfg, unsigned tbs_bytes
   ulsch_cfg.mcs_descr = mcs_info;
 }
 
-optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params& pdsch_params,
-                                                 sch_mcs_index              max_mcs,
-                                                 unsigned                   nof_prbs,
-                                                 bool                       contains_dc)
+std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params& pdsch_params,
+                                                      sch_mcs_index              max_mcs,
+                                                      unsigned                   nof_prbs,
+                                                      bool                       contains_dc)
 {
   // The maximum supported code rate is 0.95, as per TS38.214, Section 5.1.3. The maximum code rate is defined for DL,
   // but we consider the same value for UL.
@@ -228,18 +227,18 @@ optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params& pdsc
 
   // If no MCS such that effective code rate <= 0.95, return an empty optional object.
   if (effective_code_rate > max_supported_code_rate and mcs == 0) {
-    return nullopt;
+    return std::nullopt;
   }
 
   const unsigned tbs_bytes = tbs_bits / NOF_BITS_PER_BYTE;
-  return optional<sch_mcs_tbs>{sch_mcs_tbs{.mcs = mcs, .tbs = tbs_bytes}};
+  return std::optional<sch_mcs_tbs>{sch_mcs_tbs{.mcs = mcs, .tbs = tbs_bytes}};
 }
 
-optional<sch_mcs_tbs> srsran::compute_ul_mcs_tbs(const pusch_config_params&   pusch_cfg,
-                                                 const ue_cell_configuration* ue_cell_cfg,
-                                                 sch_mcs_index                max_mcs,
-                                                 unsigned                     nof_prbs,
-                                                 bool                         contains_dc)
+std::optional<sch_mcs_tbs> srsran::compute_ul_mcs_tbs(const pusch_config_params&   pusch_cfg,
+                                                      const ue_cell_configuration* ue_cell_cfg,
+                                                      sch_mcs_index                max_mcs,
+                                                      unsigned                     nof_prbs,
+                                                      bool                         contains_dc)
 {
   // The maximum supported code rate is 0.95, as per TS38.214, Section 5.1.3. The maximum code rate is defined for DL,
   // but we consider the same value for UL.
@@ -282,13 +281,13 @@ optional<sch_mcs_tbs> srsran::compute_ul_mcs_tbs(const pusch_config_params&   pu
 
   // If no MCS such that effective code rate <= 0.95, return an empty optional object.
   if (effective_code_rate > max_supported_code_rate and mcs == 0) {
-    return nullopt;
+    return std::nullopt;
   }
 
   // If no MCS such that nof bits for PUSCH > 0, return an empty optional object.
   if (effective_code_rate == 0) {
-    return nullopt;
+    return std::nullopt;
   }
 
-  return optional<sch_mcs_tbs>{sch_mcs_tbs{.mcs = mcs, .tbs = tbs_bytes}};
+  return std::optional<sch_mcs_tbs>{sch_mcs_tbs{.mcs = mcs, .tbs = tbs_bytes}};
 }

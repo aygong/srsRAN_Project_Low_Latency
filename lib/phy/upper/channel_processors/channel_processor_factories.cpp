@@ -30,6 +30,7 @@
 #include "pdsch_encoder_hw_impl.h"
 #include "pdsch_encoder_impl.h"
 #include "pdsch_modulator_impl.h"
+#include "pdsch_processor_asynchronous_pool.h"
 #include "pdsch_processor_concurrent_impl.h"
 #include "pdsch_processor_impl.h"
 #include "pdsch_processor_lite_impl.h"
@@ -264,16 +265,12 @@ public:
 class pdsch_encoder_factory_hw : public pdsch_encoder_factory
 {
 private:
-  bool                                                   cb_mode;
-  unsigned                                               max_tb_size;
   std::shared_ptr<crc_calculator_factory>                crc_factory;
   std::shared_ptr<ldpc_segmenter_tx_factory>             segmenter_factory;
   std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> hw_encoder_factory;
 
 public:
   explicit pdsch_encoder_factory_hw(const pdsch_encoder_factory_hw_configuration& config) :
-    cb_mode(config.cb_mode),
-    max_tb_size(config.max_tb_size),
     crc_factory(std::move(config.crc_factory)),
     segmenter_factory(std::move(config.segmenter_factory)),
     hw_encoder_factory(std::move(config.hw_encoder_factory))
@@ -290,8 +287,7 @@ public:
         crc_factory->create(crc_generator_poly::CRC24A),
         crc_factory->create(crc_generator_poly::CRC24B),
     };
-    return std::make_unique<pdsch_encoder_hw_impl>(
-        cb_mode, max_tb_size, crc, segmenter_factory->create(), hw_encoder_factory->create());
+    return std::make_unique<pdsch_encoder_hw_impl>(crc, segmenter_factory->create(), hw_encoder_factory->create());
   }
 };
 
@@ -463,13 +459,12 @@ public:
   }
 };
 
-class pdsch_processor_pool_factory : public pdsch_processor_factory
+class pdsch_processor_asynchronous_pool_factory : public pdsch_processor_factory
 {
 public:
-  pdsch_processor_pool_factory(std::shared_ptr<pdsch_processor_factory> factory_,
-                               unsigned                                 max_nof_processors_,
-                               bool                                     blocking_) :
-    factory(std::move(factory_)), max_nof_processors(max_nof_processors_), blocking(blocking_)
+  pdsch_processor_asynchronous_pool_factory(std::shared_ptr<pdsch_processor_factory> factory_,
+                                            unsigned                                 max_nof_processors_) :
+    factory(std::move(factory_)), max_nof_processors(max_nof_processors_)
   {
     srsran_assert(factory, "Invalid PDSCH processor factory.");
     srsran_assert(max_nof_processors >= 1,
@@ -485,7 +480,7 @@ public:
       processor = factory->create();
     }
 
-    return std::make_unique<pdsch_processor_pool>(processors, blocking);
+    return std::make_unique<pdsch_processor_asynchronous_pool>(processors, false);
   }
 
   std::unique_ptr<pdsch_processor> create(srslog::basic_logger& logger, bool enable_logging_broadcast) override
@@ -496,7 +491,7 @@ public:
       processor = factory->create(logger, enable_logging_broadcast);
     }
 
-    return std::make_unique<pdsch_processor_pool>(processors, blocking);
+    return std::make_unique<pdsch_processor_asynchronous_pool>(processors, false);
   }
 
   std::unique_ptr<pdsch_pdu_validator> create_validator() override { return factory->create_validator(); }
@@ -504,7 +499,57 @@ public:
 private:
   std::shared_ptr<pdsch_processor_factory> factory;
   unsigned                                 max_nof_processors;
-  bool                                     blocking;
+};
+
+class pdsch_processor_pool_factory : public pdsch_processor_factory
+{
+public:
+  pdsch_processor_pool_factory(std::shared_ptr<pdsch_processor_factory> factory_, unsigned max_nof_processors_) :
+    factory(std::move(factory_)), max_nof_processors(max_nof_processors_)
+  {
+    srsran_assert(factory, "Invalid PDSCH processor factory.");
+    srsran_assert(
+        max_nof_processors > 1, "The number of processors (i.e., {}) must be greater than one.", max_nof_processors);
+  }
+
+  std::unique_ptr<pdsch_processor> create() override
+  {
+    // Creates the processors without logging.
+    if (!processors) {
+      // Create PDSCH processsor instances.
+      std::vector<std::unique_ptr<pdsch_processor>> instances(max_nof_processors);
+      std::generate(instances.begin(), instances.end(), [this]() { return factory->create(); });
+
+      // Create pool.
+      processors = std::make_shared<pdsch_processor_pool::pdsch_processor_pool_type>(std::move(instances));
+    }
+
+    return std::make_unique<pdsch_processor_pool>(processors);
+  }
+
+  std::unique_ptr<pdsch_processor> create(srslog::basic_logger& logger, bool enable_logging_broadcast) override
+  {
+    // Creates the processors with logging.
+    if (!processors) {
+      // Create PDSCH processor instances.
+      std::vector<std::unique_ptr<pdsch_processor>> instances(max_nof_processors);
+      std::generate(instances.begin(), instances.end(), [this, &logger, &enable_logging_broadcast]() {
+        return factory->create(logger, enable_logging_broadcast);
+      });
+
+      // Create pool.
+      processors = std::make_shared<pdsch_processor_pool::pdsch_processor_pool_type>(std::move(instances));
+    }
+
+    return std::make_unique<pdsch_processor_pool>(processors);
+  }
+
+  std::unique_ptr<pdsch_pdu_validator> create_validator() override { return factory->create_validator(); }
+
+private:
+  std::shared_ptr<pdsch_processor_factory>                         factory;
+  std::shared_ptr<pdsch_processor_pool::pdsch_processor_pool_type> processors;
+  unsigned                                                         max_nof_processors;
 };
 
 class prach_detector_factory_sw : public prach_detector_factory
@@ -619,8 +664,14 @@ public:
     std::generate(alphas.begin(), alphas.end(), [n = 0U]() mutable {
       return (TWOPI * static_cast<float>(n++) / static_cast<float>(NRE));
     });
-    return std::make_unique<pucch_detector_impl>(
-        low_papr_factory->create(1, 0, alphas), prg_factory->create(), eqzr_factory->create());
+
+    std::unique_ptr<pucch_detector_format0> detector_format0 =
+        std::make_unique<pucch_detector_format0>(prg_factory->create(), low_papr_factory->create(1, 0, alphas));
+
+    return std::make_unique<pucch_detector_impl>(low_papr_factory->create(1, 0, alphas),
+                                                 prg_factory->create(),
+                                                 eqzr_factory->create(),
+                                                 std::move(detector_format0));
   }
 };
 
@@ -957,11 +1008,17 @@ srsran::create_pdsch_lite_processor_factory_sw(std::shared_ptr<ldpc_segmenter_tx
 }
 
 std::shared_ptr<pdsch_processor_factory>
-srsran::create_pdsch_processor_pool(std::shared_ptr<pdsch_processor_factory> pdsch_proc_factory,
-                                    unsigned                                 max_nof_processors,
-                                    bool                                     blocking)
+srsran::create_pdsch_processor_asynchronous_pool(std::shared_ptr<pdsch_processor_factory> pdsch_proc_factory,
+                                                 unsigned                                 max_nof_processors)
 {
-  return std::make_shared<pdsch_processor_pool_factory>(std::move(pdsch_proc_factory), max_nof_processors, blocking);
+  return std::make_shared<pdsch_processor_asynchronous_pool_factory>(std::move(pdsch_proc_factory), max_nof_processors);
+}
+
+std::shared_ptr<pdsch_processor_factory>
+srsran::create_pdsch_processor_pool(std::shared_ptr<pdsch_processor_factory> pdsch_proc_factory,
+                                    unsigned                                 max_nof_processors)
+{
+  return std::make_shared<pdsch_processor_pool_factory>(std::move(pdsch_proc_factory), max_nof_processors);
 }
 
 std::shared_ptr<prach_detector_factory>

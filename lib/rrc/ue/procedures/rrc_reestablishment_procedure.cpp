@@ -34,26 +34,22 @@ rrc_reestablishment_procedure::rrc_reestablishment_procedure(
     const asn1::rrc_nr::rrc_reest_request_s& request_,
     rrc_ue_context_t&                        context_,
     const byte_buffer&                       du_to_cu_container_,
-    up_resource_manager&                     up_resource_mng_,
     rrc_ue_setup_proc_notifier&              rrc_ue_setup_notifier_,
     rrc_ue_reestablishment_proc_notifier&    rrc_ue_reest_notifier_,
     rrc_ue_srb_handler&                      srb_notifier_,
-    rrc_ue_du_processor_notifier&            du_processor_notifier_,
     rrc_ue_context_update_notifier&          cu_cp_notifier_,
-    rrc_ue_control_notifier&                 ngap_ctrl_notifier_,
+    rrc_ue_cu_cp_ue_notifier&                cu_cp_ue_notifier_,
     rrc_ue_nas_notifier&                     nas_notifier_,
     rrc_ue_event_manager&                    event_mng_,
     rrc_ue_logger&                           logger_) :
   reestablishment_request(request_),
   context(context_),
   du_to_cu_container(du_to_cu_container_),
-  up_resource_mng(up_resource_mng_),
   rrc_ue_setup_notifier(rrc_ue_setup_notifier_),
   rrc_ue_reest_notifier(rrc_ue_reest_notifier_),
   srb_notifier(srb_notifier_),
-  du_processor_notifier(du_processor_notifier_),
   cu_cp_notifier(cu_cp_notifier_),
-  ngap_ctrl_notifier(ngap_ctrl_notifier_),
+  cu_cp_ue_notifier(cu_cp_ue_notifier_),
   nas_notifier(nas_notifier_),
   event_mng(event_mng_),
   logger(logger_)
@@ -77,8 +73,7 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
   }
 
   // Transfer old UE context to new UE context. If it fails, resort to fallback.
-  CORO_AWAIT_VALUE(context_transfer_success,
-                   cu_cp_notifier.on_ue_transfer_required(context.ue_index, old_ue_reest_context.ue_index));
+  CORO_AWAIT_VALUE(context_transfer_success, cu_cp_notifier.on_ue_transfer_required(old_ue_reest_context.ue_index));
   if (not context_transfer_success) {
     CORO_AWAIT(handle_rrc_reestablishment_fallback());
     logger.log_debug("\"{}\" for old_ue={} finalized", name(), old_ue_reest_context.ue_index);
@@ -109,7 +104,7 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
 
     // Notify DU Processor to start a Reestablishment Context Modification Routine
     CORO_AWAIT_VALUE(context_modification_success,
-                     du_processor_notifier.on_rrc_reestablishment_context_modification_required(context.ue_index));
+                     cu_cp_notifier.on_rrc_reestablishment_context_modification_required());
 
     // trigger UE context release at AMF in case of failure
     if (not context_modification_success) {
@@ -118,7 +113,7 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
       // Release the old UE
       ue_context_release_request.ue_index = context.ue_index;
       ue_context_release_request.cause    = ngap_cause_radio_network_t::unspecified;
-      CORO_AWAIT(ngap_ctrl_notifier.on_ue_context_release_request(ue_context_release_request));
+      CORO_AWAIT(cu_cp_notifier.on_ue_release_required(ue_context_release_request));
     } else {
       logger.log_debug("\"{}\" for old_ue={} finalized", name(), old_ue_reest_context.ue_index);
     }
@@ -132,7 +127,7 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
   }
 
   // Notify CU-CP to remove the old UE
-  CORO_AWAIT(cu_cp_notifier.on_ue_removal_required(old_ue_reest_context.ue_index));
+  cu_cp_notifier.on_rrc_reestablishment_complete(old_ue_reest_context.ue_index);
 
   // Note: From this point the UE is removed and only the stored context can be accessed.
 
@@ -141,18 +136,14 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
 
 async_task<void> rrc_reestablishment_procedure::handle_rrc_reestablishment_fallback()
 {
-  return launch_async([this, result = false](coro_context<async_task<void>>& ctx) mutable {
+  context.connection_cause.value = asn1::rrc_nr::establishment_cause_e::mt_access;
+
+  return launch_async([this](coro_context<async_task<void>>& ctx) mutable {
     CORO_BEGIN(ctx);
 
     // Reject RRC Reestablishment Request by sending RRC Setup
-    CORO_AWAIT(launch_async<rrc_setup_procedure>(context,
-                                                 asn1::rrc_nr::establishment_cause_e::mt_access,
-                                                 du_to_cu_container,
-                                                 rrc_ue_setup_notifier,
-                                                 srb_notifier,
-                                                 nas_notifier,
-                                                 event_mng,
-                                                 logger));
+    CORO_AWAIT(launch_async<rrc_setup_procedure>(
+        context, du_to_cu_container, rrc_ue_setup_notifier, srb_notifier, nas_notifier, event_mng, logger));
 
     if (old_ue_reest_context.ue_index != ue_index_t::invalid and !old_ue_reest_context.old_ue_fully_attached) {
       // The UE exists but still has not established an SRB2 and DRB. Request the release of the old UE.
@@ -160,15 +151,7 @@ async_task<void> rrc_reestablishment_procedure::handle_rrc_reestablishment_fallb
                        old_ue_reest_context.ue_index);
       ue_context_release_request.ue_index = old_ue_reest_context.ue_index;
       ue_context_release_request.cause    = ngap_cause_radio_network_t::unspecified;
-      CORO_AWAIT_VALUE(result, ngap_ctrl_notifier.on_ue_context_release_request(ue_context_release_request));
-      if (!result) {
-        // If NGAP release request was not sent to AMF, release UE from DU processor, RRC and F1AP
-        CORO_AWAIT(du_processor_notifier.on_ue_context_release_command(
-            {old_ue_reest_context.ue_index, ngap_cause_radio_network_t::unspecified}));
-      }
-      if (not result) {
-        // The old UE did not have an NGAP UE context.
-      }
+      cu_cp_notifier.on_rrc_reestablishment_failure(ue_context_release_request);
     }
 
     CORO_RETURN();
@@ -190,12 +173,16 @@ bool rrc_reestablishment_procedure::is_reestablishment_accepted()
   // Request from the CU-CP the old RRC UE context.
   old_ue_reest_context =
       cu_cp_notifier.on_rrc_reestablishment_request(reestablishment_request.rrc_reest_request.ue_id.pci,
-                                                    to_rnti(reestablishment_request.rrc_reest_request.ue_id.c_rnti),
-                                                    context.ue_index);
+                                                    to_rnti(reestablishment_request.rrc_reest_request.ue_id.c_rnti));
 
   // check if an old UE context with matching C-RNTI, PCI exists.
   if (old_ue_reest_context.ue_index == ue_index_t::invalid) {
     log_rejected_reestablishment("Old UE context not found");
+    return false;
+  }
+
+  if (old_ue_reest_context.reestablishment_ongoing) {
+    log_rejected_reestablishment("Old UE is already in reestablishment procedure");
     return false;
   }
 
@@ -221,7 +208,7 @@ bool rrc_reestablishment_procedure::verify_security_context()
   // Get packed varShortMAC-Input
   asn1::rrc_nr::var_short_mac_input_s var_short_mac_input = {};
   var_short_mac_input.source_pci                          = reestablishment_request.rrc_reest_request.ue_id.pci;
-  var_short_mac_input.target_cell_id.from_number(context.cell.cgi.nci);
+  var_short_mac_input.target_cell_id.from_number(context.cell.cgi.nci.value());
   var_short_mac_input.source_c_rnti        = reestablishment_request.rrc_reest_request.ue_id.c_rnti;
   byte_buffer   var_short_mac_input_packed = {};
   asn1::bit_ref bref(var_short_mac_input_packed);
@@ -255,13 +242,13 @@ void rrc_reestablishment_procedure::transfer_reestablishment_context_and_update_
   }
 
   // Transfer UP context from old UE
-  up_resource_mng.set_up_context(old_ue_reest_context.up_ctx);
+  cu_cp_notifier.on_up_context_setup_required(old_ue_reest_context.up_ctx);
 
   // Update security keys
   // freq_and_timing must be present, otherwise the RRC UE would've never been created
-  uint32_t ssb_arfcn  = context.cfg.meas_timings.begin()->freq_and_timing.value().carrier_freq;
-  context.sec_context = old_ue_reest_context.sec_context;
-  context.sec_context.horizontal_key_derivation(context.cell.pci, ssb_arfcn);
+  uint32_t ssb_arfcn = context.cfg.meas_timings.begin()->freq_and_timing.value().carrier_freq;
+  cu_cp_ue_notifier.update_security_context(old_ue_reest_context.sec_context);
+  cu_cp_ue_notifier.perform_horizontal_key_derivation(context.cell.pci, ssb_arfcn);
   logger.log_debug("Refreshed keys horizontally. pci={} ssb-arfcn={}", context.cell.pci, ssb_arfcn);
 }
 

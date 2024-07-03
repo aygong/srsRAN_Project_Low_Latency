@@ -32,9 +32,10 @@ using namespace ofh::testing;
 class ofh_uplane_rx_symbol_data_flow_writer_fixture : public ::testing::Test
 {
 protected:
-  static_vector<unsigned, MAX_NOF_SUPPORTED_EAXC> eaxc   = {0, 1, 2, 3};
-  std::shared_ptr<uplink_context_repository>      repo   = std::make_shared<uplink_context_repository>(1);
-  unsigned                                        sector = 0;
+  const ofdm_symbol_range                         symbol_range = {0, 14};
+  static_vector<unsigned, MAX_NOF_SUPPORTED_EAXC> eaxc         = {0, 1, 2, 3};
+  std::shared_ptr<uplink_context_repository>      repo         = std::make_shared<uplink_context_repository>(1);
+  unsigned                                        sector       = 0;
   slot_point                                      slot;
   unsigned                                        symbol_id = 0;
   resource_grid_writer_bool_spy                   rg_writer;
@@ -48,8 +49,7 @@ public:
   {
     results.params.slot      = slot;
     results.params.symbol_id = symbol_id;
-    auto& section            = results.sections.emplace_back();
-    section.iq_samples.resize(MAX_NOF_PRBS * NRE);
+    results.sections.emplace_back();
   }
 };
 
@@ -66,7 +66,7 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, death_test_no_eaxc_found)
 {
   unsigned invalid_eaxc = 4;
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
 
   ASSERT_DEATH(writer.write_to_resource_grid(invalid_eaxc, results), "");
@@ -78,8 +78,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, decoded_prbs_outside_grid_
   auto& section     = results.sections.back();
   section.nof_prbs  = 50;
   section.start_prb = 51;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
 
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
@@ -95,8 +96,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, decoded_prbs_match_grid_pr
   auto& section     = results.sections.back();
   section.nof_prbs  = 51;
   section.start_prb = 0;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
 
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
@@ -113,13 +115,14 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, decoded_prbs_bigger_than_g
   auto& section     = results.sections.back();
   section.nof_prbs  = 273;
   section.start_prb = 0;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
 
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
   ASSERT_TRUE(rg_writer.has_grid_been_written());
-  ASSERT_EQ(rg_writer.get_nof_subc() / NRE, rg_writer.get_nof_prbs_written());
+  ASSERT_EQ(rg_writer.get_nof_subc() / NOF_SUBCARRIERS_PER_RB, rg_writer.get_nof_prbs_written());
 
   uplink_context context  = repo->get(slot, symbol_id);
   const auto&    sym_data = context.get_re_written_mask();
@@ -131,8 +134,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_inside_the_
   auto& section     = results.sections.back();
   section.nof_prbs  = 10;
   section.start_prb = 0;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
 
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
@@ -141,7 +145,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_inside_the_
 
   uplink_context context  = repo->get(slot, symbol_id);
   const auto&    sym_data = context.get_re_written_mask();
-  ASSERT_TRUE(std::all_of(sym_data.begin(), sym_data.end(), [](const auto& port) { return port.all(0, 9 * NRE); }));
+  ASSERT_TRUE(std::all_of(sym_data.begin(), sym_data.end(), [&section](const auto& port) {
+    return port.all(0, (section.nof_prbs - 1) * NOF_SUBCARRIERS_PER_RB);
+  }));
 }
 
 TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_write_the_prbs_overlapped_with_grid)
@@ -149,8 +155,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_write_the_p
   auto& section     = results.sections.back();
   section.nof_prbs  = 60;
   section.start_prb = 40;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
 
   ASSERT_FALSE(repo->get(results.params.slot, results.params.symbol_id).empty());
@@ -159,8 +166,9 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_write_the_p
 
   uplink_context context  = repo->get(slot, symbol_id);
   const auto&    sym_data = context.get_re_written_mask();
-  ASSERT_TRUE(
-      std::all_of(sym_data.begin(), sym_data.end(), [](const auto& port) { return port.all(40 * NRE, 50 * NRE); }));
+  ASSERT_TRUE(std::all_of(sym_data.begin(), sym_data.end(), [](const auto& port) {
+    return port.all(40 * NOF_SUBCARRIERS_PER_RB, 50 * NOF_SUBCARRIERS_PER_RB);
+  }));
 }
 
 TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_fill_the_grid)
@@ -168,20 +176,24 @@ TEST_F(ofh_uplane_rx_symbol_data_flow_writer_fixture, segmented_prbs_fill_the_gr
   auto& section     = results.sections.back();
   section.nof_prbs  = 50;
   section.start_prb = 0;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
 
-  repo->add({results.params.slot, sector}, grid);
+  repo->add({results.params.slot, sector}, grid, symbol_range);
   writer.write_to_resource_grid(eaxc[0], results);
   ASSERT_EQ(section.nof_prbs, rg_writer.get_nof_prbs_written());
   {
     uplink_context context  = repo->get(slot, symbol_id);
     const auto&    sym_data = context.get_re_written_mask();
-    ASSERT_TRUE(std::all_of(sym_data.begin(), sym_data.end(), [](const auto& port) { return port.all(0, 49 * NRE); }));
+    ASSERT_TRUE(std::all_of(sym_data.begin(), sym_data.end(), [&section](const auto& port) {
+      return port.all(0, (section.nof_prbs - 1) * NOF_SUBCARRIERS_PER_RB);
+    }));
   }
 
   unsigned nof_prbs = section.nof_prbs;
 
   section.nof_prbs  = 1;
   section.start_prb = 50;
+  section.iq_samples.resize(section.nof_prbs * NOF_SUBCARRIERS_PER_RB);
   nof_prbs += section.nof_prbs;
 
   writer.write_to_resource_grid(eaxc[0], results);

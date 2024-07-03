@@ -23,10 +23,8 @@
 #pragma once
 
 #include "../adapters/e1ap_adapters.h"
-#include "../adapters/ngap_adapters.h"
 #include "../task_schedulers/cu_up_task_scheduler.h"
 #include "cu_up_processor_config.h"
-#include "srsran/adt/slotted_array.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/e1ap/cu_cp/e1ap_cu_cp.h"
 #include "srsran/support/async/fifo_async_task_scheduler.h"
@@ -41,9 +39,11 @@ class cu_up_processor_impl : public cu_up_processor_impl_interface
 public:
   cu_up_processor_impl(const cu_up_processor_config_t cu_up_processor_config_,
                        e1ap_message_notifier&         e1ap_notifier_,
-                       e1ap_cu_cp_notifier&           e1ap_cu_cp_notif_,
+                       e1ap_cu_cp_notifier&           cu_cp_notifier_,
                        cu_up_task_scheduler&          task_sched_,
                        task_executor&                 ctrl_exec_);
+
+  void stop(ue_index_t ue_index) override;
 
   // message handlers
   void handle_cu_up_e1_setup_request(const cu_up_e1_setup_request& msg) override;
@@ -73,7 +73,7 @@ private:
   cu_up_processor_config_t cfg;
 
   e1ap_message_notifier& e1ap_notifier;
-  e1ap_cu_cp_notifier&   e1ap_cu_cp_notif;
+  e1ap_cu_cp_notifier&   cu_cp_notifier;
   cu_up_task_scheduler&  task_sched;
   task_executor&         ctrl_exec;
 

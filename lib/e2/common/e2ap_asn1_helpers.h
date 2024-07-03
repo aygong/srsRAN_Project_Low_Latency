@@ -31,7 +31,8 @@
 #include "srsran/e2/e2.h"
 #include "srsran/e2/e2ap_configuration.h"
 #include "srsran/e2/e2sm/e2sm_manager.h"
-#include "srsran/ran/bcd_helpers.h"
+#include "srsran/ran/bcd_helper.h"
+#include "srsran/ran/gnb_du_id.h"
 #include "srsran/security/security.h"
 #include <string>
 #include <vector>
@@ -78,8 +79,13 @@ inline void fill_asn1_e2ap_setup_request(asn1::e2ap::e2setup_request_s& setup,
   auto& gnb_id = setup->global_e2node_id.set_gnb();
   gnb_id.global_gnb_id.gnb_id.gnb_id().from_number(e2ap_config.gnb_id.id, e2ap_config.gnb_id.bit_length);
   // convert PLMN to BCD
-  uint32_t plmn_bcd = plmn_string_to_bcd(e2ap_config.plmn);
+  uint32_t plmn_bcd = bcd_helper::plmn_string_to_bcd(e2ap_config.plmn);
   gnb_id.global_gnb_id.plmn_id.from_number(plmn_bcd);
+
+  if (e2ap_config.gnb_du_id.has_value()) {
+    gnb_id.gnb_du_id_present = true;
+    gnb_id.gnb_du_id         = gnb_du_id_to_int(e2ap_config.gnb_du_id.value());
+  }
 
   // RAN functions added
   if (e2ap_config.e2sm_kpm_enabled) {

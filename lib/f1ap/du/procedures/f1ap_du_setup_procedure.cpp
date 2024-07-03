@@ -24,7 +24,8 @@
 #include "../f1ap_du_context.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/f1ap/common/f1ap_message.h"
-#include "srsran/ran/bcd_helpers.h"
+#include "srsran/ran/band_helper.h"
+#include "srsran/ran/bcd_helper.h"
 #include "srsran/support/async/async_timer.h"
 
 using namespace srsran;
@@ -81,6 +82,9 @@ void f1ap_du_setup_procedure::operator()(coro_context<async_task<f1_setup_respon
 
 void f1ap_du_setup_procedure::send_f1_setup_request()
 {
+  // Save the gNB-DU-Id before the F1 Setup is completed for the purpose of logging.
+  du_ctxt.du_id = request.gnb_du_id;
+
   f1ap_message msg = {};
   // set F1AP PDU contents
   msg.pdu.set_init_msg();
@@ -90,7 +94,7 @@ void f1ap_du_setup_procedure::send_f1_setup_request()
   setup_req->transaction_id = transaction.id();
 
   // DU-global parameters.
-  setup_req->gnb_du_id           = request.gnb_du_id;
+  setup_req->gnb_du_id           = static_cast<uint64_t>(request.gnb_du_id);
   setup_req->gnb_du_name_present = not request.gnb_du_name.empty();
   if (setup_req->gnb_du_name_present) {
     setup_req->gnb_du_name.from_string(request.gnb_du_name);
@@ -106,12 +110,13 @@ void f1ap_du_setup_procedure::send_f1_setup_request()
 
     // Fill Served PLMNs
     f1ap_cell.served_cell_info.served_plmns.resize(1);
-    f1ap_cell.served_cell_info.served_plmns[0].plmn_id.from_number(plmn_string_to_bcd(cell_cfg.nr_cgi.plmn));
+    auto plmn_bytes                                    = cell_cfg.nr_cgi.plmn_id.to_bytes();
+    f1ap_cell.served_cell_info.served_plmns[0].plmn_id = plmn_bytes;
 
     // Fill Served Cell Information.
-    f1ap_cell.served_cell_info.nr_pci = cell_cfg.pci;
-    f1ap_cell.served_cell_info.nr_cgi.plmn_id.from_number(plmn_string_to_bcd(cell_cfg.nr_cgi.plmn));
-    f1ap_cell.served_cell_info.nr_cgi.nr_cell_id.from_number(cell_cfg.nr_cgi.nci);
+    f1ap_cell.served_cell_info.nr_pci         = cell_cfg.pci;
+    f1ap_cell.served_cell_info.nr_cgi.plmn_id = plmn_bytes;
+    f1ap_cell.served_cell_info.nr_cgi.nr_cell_id.from_number(cell_cfg.nr_cgi.nci.value());
     f1ap_cell.served_cell_info.five_gs_tac_present = true;
     f1ap_cell.served_cell_info.five_gs_tac.from_number(cell_cfg.tac);
     if (cell_cfg.duplx_mode == duplex_mode::TDD) {
@@ -198,40 +203,46 @@ f1_setup_response_message f1ap_du_setup_procedure::create_f1_setup_result()
 
   if (not transaction.valid()) {
     // Transaction could not be allocated.
-    logger.error("F1 Setup: Procedure cancelled. Cause: Failed to allocate transaction.");
-    res.success = false;
+    logger.error("{}: Procedure cancelled. Cause: Failed to allocate transaction.", name());
+    res.result    = f1_setup_response_message::result_code::proc_failure;
+    du_ctxt.du_id = gnb_du_id_t::invalid;
     return res;
   }
   if (transaction.aborted()) {
     // Abortion/timeout case.
-    logger.error("F1 Setup: Procedure cancelled. Cause: Timeout reached.");
-    res.success = false;
+    logger.error("{}: Procedure cancelled. Cause: Timeout reached.", name());
+    res.result    = f1_setup_response_message::result_code::timeout;
+    du_ctxt.du_id = gnb_du_id_t::invalid;
     return res;
   }
   const f1ap_transaction_response& cu_pdu_response = transaction.response();
 
   if (cu_pdu_response.has_value() and cu_pdu_response.value().value.type().value ==
                                           f1ap_elem_procs_o::successful_outcome_c::types_opts::f1_setup_resp) {
-    res.success = true;
+    res.result = f1_setup_response_message::result_code::success;
 
     // Update F1 DU Context (taking values from request).
-    du_ctxt.gnb_du_id   = request.gnb_du_id;
+    du_ctxt.du_id       = request.gnb_du_id;
     du_ctxt.gnb_du_name = request.gnb_du_name;
     du_ctxt.served_cells.resize(request.served_cells.size());
     for (unsigned i = 0; i != du_ctxt.served_cells.size(); ++i) {
       du_ctxt.served_cells[i].nr_cgi = request.served_cells[i].nr_cgi;
     }
 
-    logger.info("F1 Setup: Procedure completed successfully.");
+    logger.info("{}: Procedure completed successfully.", name());
 
   } else if (cu_pdu_response.has_value() and cu_pdu_response.error().value.type().value !=
                                                  f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::f1_setup_fail) {
-    logger.error("Received PDU with unexpected PDU type {}", cu_pdu_response.value().value.type().to_string());
-    res.success = false;
+    logger.error(
+        "{}: Received PDU with unexpected PDU type {}", name(), cu_pdu_response.value().value.type().to_string());
+    res.result    = f1_setup_response_message::result_code::invalid_response;
+    du_ctxt.du_id = gnb_du_id_t::invalid;
   } else {
-    logger.debug("Received PDU with unsuccessful outcome cause={}",
-                 get_cause_str(cu_pdu_response.error().value.f1_setup_fail()->cause));
-    res.success = false;
+    const auto& fail           = *cu_pdu_response.error().value.f1_setup_fail();
+    res.result                 = f1_setup_response_message::result_code::f1_setup_failure;
+    res.f1_setup_failure_cause = get_cause_str(fail.cause);
+    logger.debug("{}: F1 Setup Failure with cause \"{}\"", name(), get_cause_str(fail.cause));
+    du_ctxt.du_id = gnb_du_id_t::invalid;
   }
   return res;
 }

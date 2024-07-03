@@ -28,6 +28,8 @@ struct sockaddr_storage;
 
 namespace srsran {
 
+class io_broker;
+
 /// \brief Generic network gateway interfaces to connect components to the outside world.
 
 /// \brief Common parameters to all network gateways. Specific gateway
@@ -35,6 +37,8 @@ namespace srsran {
 /// needs.
 struct common_network_gateway_config {
   std::string bind_interface;
+  /// Bind address to use for the socket. If left empty, the socket can only be used with an implicit `bind()` using
+  /// `connect()`.
   std::string bind_address;
   int         bind_port         = 0;
   bool        non_blocking_mode = false;
@@ -81,5 +85,9 @@ public:
 
   /// \brief Return socket file descriptor.
   virtual int get_socket_fd() = 0;
+
+  /// \brief Subscribe GW to IO broker for automatic notification of events.
+  virtual bool subscribe_to(io_broker& broker) = 0;
 };
+
 } // namespace srsran

@@ -33,7 +33,7 @@ ngap_handover_resource_allocation_procedure::ngap_handover_resource_allocation_p
     const ngap_handover_request&       request_,
     const amf_ue_id_t                  amf_ue_id_,
     ngap_ue_context_list&              ue_ctxt_list_,
-    ngap_cu_cp_ue_creation_notifier&   cu_cp_ue_creation_notifier_,
+    ngap_cu_cp_notifier&               cu_cp_ue_creation_notifier_,
     ngap_cu_cp_du_repository_notifier& du_repository_notif_,
     ngap_message_notifier&             amf_notif_,
     timer_manager&                     timers_,
@@ -93,16 +93,17 @@ bool ngap_handover_resource_allocation_procedure::create_ngap_ue(ue_index_t ue_i
     return false;
   }
 
-  // Create UE context and store it
-  ue_ctxt_list.add_ue(ue_index, ran_ue_id, timers, task_exec);
-
   // Notify CU-CP about creation of NGAP UE
-  if (!cu_cp_ue_creation_notifier.on_new_ngap_ue(ue_index)) {
+  ngap_cu_cp_ue_notifier* ue_notifier = cu_cp_ue_creation_notifier.on_new_ngap_ue(ue_index);
+  if (ue_notifier == nullptr) {
     logger.error("ue={}: Failed to create UE", ue_index);
     // Remove created UE context
     ue_ctxt_list.remove_ue_context(ue_index);
     return false;
   }
+
+  // Create UE context and store it
+  ue_ctxt_list.add_ue(ue_index, ran_ue_id, *ue_notifier, timers, task_exec);
 
   ue_ctxt_list[ue_index].logger.log_debug("Created UE");
 
@@ -122,7 +123,6 @@ void ngap_handover_resource_allocation_procedure::send_handover_request_ack(ue_i
   ho_request_ack->amf_ue_ngap_id = amf_ue_id_to_uint(amf_ue_id);
   ho_request_ack->ran_ue_ngap_id = ran_ue_id_to_uint(ran_ue_id);
 
-  logger.info("ue={} ran_ue_id={} amf_ue_id={}: Sending HoRequestAck", ue_index, ran_ue_id, amf_ue_id);
   amf_notifier.on_new_message(ngap_msg);
 }
 
@@ -137,6 +137,6 @@ void ngap_handover_resource_allocation_procedure::send_handover_failure()
   auto& ho_fail           = ngap_msg.pdu.unsuccessful_outcome().value.ho_fail();
   ho_fail->amf_ue_ngap_id = amf_ue_id_to_uint(amf_ue_id);
 
-  logger.info("ue={} amf_ue_id={}: Sending HoFailure", request.ue_index, amf_ue_id);
+  logger.info("ue={} amf_ue={}: Sending HoFailure", request.ue_index, amf_ue_id);
   amf_notifier.on_new_message(ngap_msg);
 }

@@ -33,37 +33,41 @@ namespace srsran {
 
 /// Information relative to a UE PDSCH grant.
 struct ue_pdsch_grant {
-  const ue*         user;
-  du_cell_index_t   cell_index;
-  harq_id_t         h_id;
-  search_space_id   ss_id;
-  unsigned          time_res_index;
-  crb_interval      crbs;
-  aggregation_level aggr_lvl = aggregation_level::n4;
-  sch_mcs_index     mcs;
-  unsigned          nof_layers = 1;
+  const ue*       user;
+  du_cell_index_t cell_index;
+  harq_id_t       h_id;
+  /// Recommended nof. bytes to schedule. This field is not present/ignored in case of HARQ retransmission.
+  std::optional<unsigned> recommended_nof_bytes;
+  /// Maximum nof. RBs to allocate to the UE. This field is not present/ignored in case of HARQ retransmission.
+  std::optional<unsigned> max_nof_rbs;
 };
 
 /// Information relative to a UE PUSCH grant.
 struct ue_pusch_grant {
-  const ue*         user;
-  du_cell_index_t   cell_index;
-  harq_id_t         h_id;
-  crb_interval      crbs;
-  unsigned          time_res_index;
-  search_space_id   ss_id    = to_search_space_id(1);
-  aggregation_level aggr_lvl = aggregation_level::n4;
-  sch_mcs_index     mcs;
+  const ue*       user;
+  du_cell_index_t cell_index;
+  harq_id_t       h_id;
+  /// Recommended nof. bytes to schedule. This field is not present/ignored in case of HARQ retransmission.
+  std::optional<unsigned> recommended_nof_bytes;
+  /// Maximum nof. RBs to allocate to the UE. This field is not present/ignored in case of HARQ retransmission.
+  std::optional<unsigned> max_nof_rbs;
 };
 
-/// \brief Outcome of a UE grant allocation, and action for the scheduler policy to follow afterwards.
+/// \brief Status of a UE grant allocation, and action for the scheduler policy to follow afterwards.
 ///
-/// The current outcomes are:
+/// The current status are:
 /// - success - the allocation was successful with the provided parameters.
 /// - skip_slot - failure to allocate and the scheduler policy should terminate the current slot processing.
 /// - skip_ue - failure to allocate and the scheduler policy should move on to the next candidate UE.
 /// - invalid_params - failure to allocate and the scheduler policy should try a different set of grant parameters.
-enum class alloc_outcome { success, skip_slot, skip_ue, invalid_params };
+enum class alloc_status { success, skip_slot, skip_ue, invalid_params };
+
+/// Allocation result of a UE grant allocation.
+struct alloc_result {
+  alloc_status status;
+  /// Nof. of bytes allocated if allocation was successful.
+  unsigned alloc_bytes{0};
+};
 
 /// Allocator of PDSCH grants for UEs.
 class ue_pdsch_allocator
@@ -71,7 +75,7 @@ class ue_pdsch_allocator
 public:
   virtual ~ue_pdsch_allocator() = default;
 
-  virtual alloc_outcome allocate_dl_grant(const ue_pdsch_grant& grant) = 0;
+  virtual alloc_result allocate_dl_grant(const ue_pdsch_grant& grant) = 0;
 };
 
 /// Allocator of PUSCH grants for UEs.
@@ -80,7 +84,7 @@ class ue_pusch_allocator
 public:
   virtual ~ue_pusch_allocator() = default;
 
-  virtual alloc_outcome allocate_ul_grant(const ue_pusch_grant& grant) = 0;
+  virtual alloc_result allocate_ul_grant(const ue_pusch_grant& grant) = 0;
 };
 
 } // namespace srsran

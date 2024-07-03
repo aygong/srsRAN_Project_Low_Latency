@@ -22,13 +22,14 @@
 
 #include "rlc_tx_um_entity.h"
 #include "rlc_um_pdu.h"
+#include "srsran/pdcp/pdcp_sn_util.h"
 #include "srsran/ran/pdsch/pdsch_constants.h"
 
 using namespace srsran;
 
-rlc_tx_um_entity::rlc_tx_um_entity(uint32_t                             du_index,
+rlc_tx_um_entity::rlc_tx_um_entity(gnb_du_id_t                          du_id,
                                    du_ue_index_t                        ue_index,
-                                   rb_id_t                              rb_id,
+                                   rb_id_t                              rb_id_,
                                    const rlc_tx_um_config&              config,
                                    rlc_tx_upper_layer_data_notifier&    upper_dn_,
                                    rlc_tx_upper_layer_control_notifier& upper_cn_,
@@ -36,7 +37,7 @@ rlc_tx_um_entity::rlc_tx_um_entity(uint32_t                             du_index
                                    task_executor&                       pcell_executor_,
                                    bool                                 metrics_enabled,
                                    rlc_pcap&                            pcap_) :
-  rlc_tx_entity(du_index, ue_index, rb_id, upper_dn_, upper_cn_, lower_dn_, metrics_enabled, pcap_),
+  rlc_tx_entity(du_id, ue_index, rb_id_, upper_dn_, upper_cn_, lower_dn_, metrics_enabled, pcap_),
   cfg(config),
   sdu_queue(cfg.queue_size, logger),
   mod(cardinality(to_number(cfg.sn_field_length))),
@@ -44,18 +45,36 @@ rlc_tx_um_entity::rlc_tx_um_entity(uint32_t                             du_index
   head_len_first(rlc_um_pdu_header_size_no_so(cfg.sn_field_length)),
   head_len_not_first(rlc_um_pdu_header_size_with_so(cfg.sn_field_length)),
   pcell_executor(pcell_executor_),
-  pcap_context(ue_index, rb_id, config)
+  pcap_context(ue_index, rb_id_, config)
 {
   metrics.metrics_set_mode(rlc_mode::um_bidir);
+
+  // check PDCP SN length
+  srsran_assert(config.pdcp_sn_len == pdcp_sn_size::size12bits || config.pdcp_sn_len == pdcp_sn_size::size18bits,
+                "Cannot create RLC TX AM, unsupported pdcp_sn_len={}. du={} ue={} {}",
+                config.pdcp_sn_len,
+                du_id,
+                ue_index,
+                rb_id);
 
   logger.log_info("RLC UM configured. {}", cfg);
 }
 
 // TS 38.322 v16.2.0 Sec. 5.2.2.1
-void rlc_tx_um_entity::handle_sdu(rlc_sdu sdu_)
+void rlc_tx_um_entity::handle_sdu(byte_buffer sdu_buf, bool is_retx)
 {
-  size_t sdu_length    = sdu_.buf.length();
+  rlc_sdu sdu_;
   sdu_.time_of_arrival = std::chrono::high_resolution_clock::now();
+
+  sdu_.buf     = std::move(sdu_buf);
+  sdu_.pdcp_sn = get_pdcp_sn(sdu_.buf, cfg.pdcp_sn_len, logger.get_basic_logger());
+
+  // Sanity check for PDCP ReTx in RLC UM
+  if (SRSRAN_UNLIKELY(is_retx)) {
+    logger.log_error("Ignored unexpected PDCP retransmission flag in RLC UM SDU");
+  }
+
+  size_t sdu_length = sdu_.buf.length();
   if (sdu_queue.write(sdu_)) {
     logger.log_info(sdu_.buf.begin(),
                     sdu_.buf.end(),
@@ -269,7 +288,8 @@ uint32_t rlc_tx_um_entity::get_buffer_state()
   std::lock_guard<std::mutex> lock(mutex);
 
   // minimum bytes needed to tx all queued SDUs + each header
-  uint32_t queue_bytes = sdu_queue.size_bytes() + sdu_queue.size_sdus() * head_len_full;
+  rlc_sdu_queue_lockfree::state_t queue_state = sdu_queue.get_state();
+  uint32_t                        queue_bytes = queue_state.n_bytes + queue_state.n_sdus * head_len_full;
 
   // minimum bytes needed to tx SDU under segmentation + header (if applicable)
   uint32_t segment_bytes = 0;

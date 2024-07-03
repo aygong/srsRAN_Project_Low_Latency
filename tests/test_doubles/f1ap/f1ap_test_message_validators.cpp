@@ -41,9 +41,9 @@ static bool is_packable(const f1ap_message& msg)
   return msg.pdu.pack(bref) == asn1::SRSASN_SUCCESS;
 }
 
-bool srsran::test_helpers::is_init_ul_rrc_msg_transfer_valid(const f1ap_message&           msg,
-                                                             rnti_t                        rnti,
-                                                             optional<nr_cell_global_id_t> nci)
+bool srsran::test_helpers::is_init_ul_rrc_msg_transfer_valid(const f1ap_message&                       msg,
+                                                             rnti_t                                    rnti,
+                                                             const std::optional<nr_cell_global_id_t>& nci)
 {
   TRUE_OR_RETURN(msg.pdu.type() == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg);
   TRUE_OR_RETURN(msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_INIT_UL_RRC_MSG_TRANSFER);
@@ -51,7 +51,7 @@ bool srsran::test_helpers::is_init_ul_rrc_msg_transfer_valid(const f1ap_message&
 
   TRUE_OR_RETURN(to_rnti(rrcmsg->c_rnti) == rnti);
 
-  if (nci.has_value() and cgi_from_asn1(rrcmsg->nr_cgi) != nci) {
+  if (nci.has_value() and cgi_from_asn1(rrcmsg->nr_cgi).value() != nci) {
     return false;
   }
 
@@ -128,6 +128,15 @@ bool srsran::test_helpers::is_valid_ue_context_modification_request(const f1ap_m
 {
   TRUE_OR_RETURN(msg.pdu.type() == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg);
   TRUE_OR_RETURN(msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_UE_CONTEXT_MOD);
+  TRUE_OR_RETURN(is_packable(msg));
+
+  return true;
+}
+
+bool srsran::test_helpers::is_valid_ue_context_release_command(const f1ap_message& msg)
+{
+  TRUE_OR_RETURN(msg.pdu.type() == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg);
+  TRUE_OR_RETURN(msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_UE_CONTEXT_RELEASE);
   TRUE_OR_RETURN(is_packable(msg));
 
   return true;

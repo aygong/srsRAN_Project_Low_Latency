@@ -29,7 +29,7 @@ namespace srsran {
 
 /// \brief Channel State Information measurements.
 ///
-/// All measurements are optional and they are initialized with \c nullopt.
+/// All measurements are optional and they are initialized with \c std::nullopt.
 ///
 /// The measurements shall not store NaN in their values.
 class channel_state_information
@@ -78,8 +78,8 @@ public:
 
   /// \brief Gets the SINR value that is used to select the modulation and coding scheme.
   ///
-  /// \return The selected SINR in decibels if it is available, otherwise \c nullopt.
-  optional<float> get_sinr_dB() const
+  /// \return The selected SINR in decibels if it is available, otherwise \c std::nullopt.
+  std::optional<float> get_sinr_dB() const
   {
     switch (sinr_report_type) {
       case sinr_type::channel_estimator:
@@ -131,13 +131,18 @@ public:
     evm.emplace(evm_);
   }
 
+  /// \brief Gets the EVM.
+  ///
+  /// \return The measured EVM if present, otherwise \c std::nullopt.
+  std::optional<float> get_evm() const { return evm; }
+
   /// \brief Sets the time alignment measurement in PHY time units.
   void set_time_alignment(const phy_time_unit& time_alignment_) { time_alignment.emplace(time_alignment_); }
 
   /// \brief Gets the time alignment.
   ///
-  /// \return The time aligment measurement if present, otherise \c nullopt.
-  optional<phy_time_unit> get_time_alignment() const { return time_alignment; }
+  /// \return The time aligment measurement if present, otherise \c std::nullopt.
+  std::optional<phy_time_unit> get_time_alignment() const { return time_alignment; }
 
   /// \brief Sets the Energy Per Resource Element (EPRE) in normalized dB units.
   ///
@@ -151,8 +156,8 @@ public:
   }
 
   /// \brief Gets the Energy Per Resource Element (EPRE) in normalized dB units.
-  /// \return The measured EPRE if present, otherwise \c nullopt.
-  optional<float> get_epre_dB() const { return epre_dB; }
+  /// \return The measured EPRE if present, otherwise \c std::nullopt.
+  std::optional<float> get_epre_dB() const { return epre_dB; }
 
   /// \brief Sets the Reference Signal Received Power (RSRP) in normalized dB units.
   ///
@@ -167,8 +172,24 @@ public:
   }
 
   /// \brief Gets the Reference Signal Received Power (RSRP) in normalized dB units.
-  /// \return The measured RSRP if present, otherwise \c nullopt.
-  optional<float> get_rsrp_dB() const { return rsrp_dB; }
+  /// \return The measured RSRP if present, otherwise \c std::nullopt.
+  std::optional<float> get_rsrp_dB() const { return rsrp_dB; }
+
+  /// \brief Sets the measured Carrier Frequency Offset (CFO) in hertz.
+  ///
+  /// The CFO value is ignored if NaN.
+  void set_cfo(float cfo_Hz_)
+  {
+    if (std::isnan(cfo_Hz_)) {
+      return;
+    }
+
+    cfo_Hz.emplace(cfo_Hz_);
+  }
+
+  /// \brief Gets the measured Carrier Frequency Offset (CFO) in hertz.
+  /// \return The measured CFO if present, \c std::nullopt otherwise.
+  std::optional<float> get_cfo_Hz() const { return cfo_Hz; }
 
 private:
   friend struct fmt::formatter<channel_state_information>;
@@ -178,19 +199,21 @@ private:
   /// coding scheme.
   sinr_type sinr_report_type;
   /// Time alignment measurement.
-  optional<phy_time_unit> time_alignment;
+  std::optional<phy_time_unit> time_alignment;
   /// Average post-equalization SINR.
-  optional<float> sinr_post_eq_dB;
+  std::optional<float> sinr_post_eq_dB;
   /// Error Vector Magnitude, obtained after QAM demodulation.
-  optional<float> evm;
+  std::optional<float> evm;
   /// SINR obtained from EVM.
-  optional<float> sinr_evm_dB;
+  std::optional<float> sinr_evm_dB;
   /// Average SINR in decibels, computed by the channel estimator.
-  optional<float> sinr_ch_estimator_dB;
+  std::optional<float> sinr_ch_estimator_dB;
   /// Average EPRE in decibels.
-  optional<float> epre_dB;
+  std::optional<float> epre_dB;
   /// Average RSRP in decibels.
-  optional<float> rsrp_dB;
+  std::optional<float> rsrp_dB;
+  /// CFO measurement in hertz.
+  std::optional<float> cfo_Hz;
 };
 
 } // namespace srsran

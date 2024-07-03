@@ -37,7 +37,7 @@
 #include "srsran/support/executors/task_execution_manager.h"
 #include "srsran/support/executors/task_executor.h"
 #include "srsran/support/format_utils.h"
-#include "srsran/support/signal_handler.h"
+#include "srsran/support/signal_handling.h"
 #include "fmt/chrono.h"
 #include <arpa/inet.h>
 #include <random>
@@ -221,8 +221,8 @@ public:
 
     // Skip U-Plane packets.
     auto message_type = static_cast<ecpri::message_type>(packet[15]);
-    if (message_type == ecpri::message_type::iq_data) {
-      logger.debug("Discarding U-Plane packet");
+    if (message_type != ecpri::message_type::rt_control_data) {
+      logger.debug("Discarding eCPRI packet with non 'real-time control data' type");
       return false;
     }
 
@@ -297,14 +297,10 @@ public:
   }
 
   // See interface for documentation.
-  void on_new_frame(span<const uint8_t> payload) override
+  void on_new_frame(unique_rx_buffer buffer) override
   {
-    if (!executor.execute([this, payload, rx_payload = [payload]() -> std::array<uint8_t, MAX_BUFFER_SIZE> {
-          std::array<uint8_t, MAX_BUFFER_SIZE> buffer;
-          std::memcpy(buffer.data(), payload.data(), payload.size());
-          return buffer;
-        }()]() { process_new_frame(span<const uint8_t>(rx_payload.data(), payload.size())); })) {
-      logger.warning("Failed to dispatch uplink task");
+    if (!executor.execute([this, b = std::move(buffer)]() mutable { process_new_frame(std::move(b)); })) {
+      logger.warning("Failed to dispatch receiver task");
     }
   }
 
@@ -313,8 +309,10 @@ public:
   unsigned get_statistics() const { return nof_rx_cplane_packets.load(std::memory_order_relaxed); }
 
 private:
-  void process_new_frame(span<const uint8_t> payload)
+  void process_new_frame(unique_rx_buffer buffer)
   {
+    span<const uint8_t> payload = buffer.data();
+
     if (!packet_inspector::is_uplink_cplane(payload, logger)) {
       return;
     }
@@ -423,18 +421,28 @@ struct worker_manager {
 
 static std::string config_file;
 
-const int                MAX_CONFIG_FILES(6);
-static std::atomic<bool> is_running = {true};
+/// Flag that indicates if the application is running or being shutdown.
+static std::atomic<bool> is_app_running = {true};
+/// Maximum number of configuration files allowed to be concatenated in the command line.
+static constexpr unsigned MAX_CONFIG_FILES = 6;
 
-static void local_signal_handler()
+/// Function to call when the application is interrupted.
+static void interrupt_signal_handler()
 {
-  is_running = false;
+  is_app_running = false;
+}
+
+/// Function to call when the application is going to be forcefully shutdown.
+static void cleanup_signal_handler()
+{
+  srslog::flush();
 }
 
 int main(int argc, char** argv)
 {
-  // Set signal handler.
-  register_signal_handler(local_signal_handler);
+  // Set interrupt and cleanup signal handlers.
+  register_interrupt_signal_handler(interrupt_signal_handler);
+  register_cleanup_signal_handler(cleanup_signal_handler);
 
   // Setup and configure config parsing.
   CLI::App app("RU emulator application");
@@ -464,7 +472,7 @@ int main(int argc, char** argv)
   srslog::init();
 
   srslog::basic_logger& logger = srslog::fetch_basic_logger("RU_EMU", false);
-  logger.set_level(srslog::str_to_basic_level(ru_emulator_parsed_cfg.log_cfg.level));
+  logger.set_level(ru_emulator_parsed_cfg.log_cfg.level);
 
 #ifdef DPDK_FOUND
   bool uses_dpdk = ru_emulator_parsed_cfg.dpdk_config.has_value();
@@ -532,7 +540,7 @@ int main(int argc, char** argv)
   }
   fmt::print("Running. Waiting for incoming packets...\n");
 
-  while (is_running) {
+  while (is_app_running) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     auto    now          = std::chrono::system_clock::now();

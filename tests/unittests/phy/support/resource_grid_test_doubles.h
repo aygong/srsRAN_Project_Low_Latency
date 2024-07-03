@@ -29,11 +29,13 @@
 #include "srsran/phy/support/resource_grid_reader.h"
 #include "srsran/phy/support/resource_grid_writer.h"
 #include "srsran/ran/cyclic_prefix.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/srsvec/copy.h"
 #include "srsran/support/error_handling.h"
 #include "srsran/support/file_vector.h"
 #include "srsran/support/srsran_assert.h"
 #include "srsran/support/srsran_test.h"
+#include <complex>
 #include <map>
 #include <mutex>
 #include <random>
@@ -68,7 +70,8 @@ public:
     logger(srslog::fetch_basic_logger("unittest/resource_grid_spy", false))
   {
     srslog::init();
-    logger.set_level(srslog::str_to_basic_level(log_level));
+    auto value = srslog::str_to_basic_level(log_level);
+    logger.set_level(value.has_value() ? value.value() : srslog::basic_levels::none);
   }
 
   // See interface for documentation.
@@ -79,41 +82,6 @@ public:
 
   // See interface for documentation.
   unsigned get_nof_symbols() const override { return max_symb; }
-
-  // See interface for documentation.
-  void put(unsigned port, span<const resource_grid_coordinate> coordinates, span<const cf_t> symbols) override
-  {
-    std::unique_lock<std::mutex> lock(entries_mutex);
-    ++count;
-    const cf_t* symbol_ptr = symbols.begin();
-    for (const resource_grid_coordinate& coordinate : coordinates) {
-      put(port, coordinate.symbol, coordinate.subcarrier, *(symbol_ptr++));
-    }
-    fmt::print("entries.size()={}\n", entries.size());
-  }
-
-  // See interface for documentation.
-  span<const cf_t>
-  put(unsigned port, unsigned l, unsigned k_init, span<const bool> mask, span<const cf_t> symbols) override
-  {
-    std::unique_lock<std::mutex> lock(entries_mutex);
-    TESTASSERT(k_init + mask.size() <= max_prb * NRE,
-               "The mask staring at {} for {} subcarriers exceeds the resource grid bandwidth (max {}).",
-               k_init,
-               mask.size(),
-               max_prb * NRE);
-    ++count;
-    unsigned i_symb = 0;
-    for (unsigned k = 0; k != mask.size(); ++k) {
-      if (mask[k]) {
-        put(port, l, k_init + k, symbols[i_symb]);
-        i_symb++;
-      }
-    }
-
-    // Consume buffer.
-    return symbols.last(symbols.size() - i_symb);
-  }
 
   span<const cf_t> put(unsigned                            port,
                        unsigned                            l,
@@ -184,7 +152,7 @@ public:
                  entry.symbol,
                  entry.subcarrier);
 
-      cf_t  value = entries.at(key);
+      cf_t  value = to_cf(entries.at(key));
       float err   = std::abs(entry.value - value);
       TESTASSERT(err < ASSERT_MAX_ERROR, "Mismatched value {} but expected {}", value, entry.value);
     }
@@ -193,7 +161,7 @@ public:
   /// \brief Asserts that the mapped resource elements match with a list of expected entries.
   ///
   /// This method asserts that mapped resource elements using the put() methods match a list of expected entries
-  /// without considering any writing order, while using a parametrizable maximkum error threshold.
+  /// without considering any writing order, while using a parametrizable maximum error threshold.
   ///
   /// \param[in] expected_entries Provides a list of golden symbols to assert.
   /// \param[in] max_error Provides the maximum allowable error when comparing the data in the entries.
@@ -212,7 +180,7 @@ public:
                  entry.symbol,
                  entry.subcarrier);
 
-      cf_t  value = entries.at(key);
+      cf_t  value = to_cf(entries.at(key));
       float err   = std::abs(entry.value - value);
       TESTASSERT(err < max_error, "Mismatched value {} but expected {}", value, entry.value);
     }
@@ -236,7 +204,7 @@ private:
   static constexpr float ASSERT_MAX_ERROR = 1e-6;
 
   /// Stores the resource grid written entries.
-  std::map<entry_key_t, cf_t> entries;
+  std::map<entry_key_t, cbf16_t> entries;
 
   /// Protects concurrent write to entries.
   std::mutex entries_mutex;
@@ -289,7 +257,7 @@ private:
                  entries.size() + 1);
 
     // Write element.
-    entries.emplace(key, value);
+    entries.emplace(key, to_cbf16(value));
   }
 };
 
@@ -300,7 +268,7 @@ public:
   using expected_entry_t = resource_grid_writer_spy::expected_entry_t;
 
   resource_grid_reader_spy(unsigned max_ports_ = 0, unsigned max_symb_ = 0, unsigned max_prb_ = 0) :
-    max_ports(max_ports_), max_symb(max_symb_), max_prb(max_prb_)
+    max_ports(max_ports_), max_symb(max_symb_), max_prb(max_prb_), temp_view(max_prb * NRE)
   {
   }
 
@@ -314,26 +282,27 @@ public:
 
   bool is_empty() const override { return entries.empty(); }
 
-  span<cf_t> get(span<cf_t> symbols, unsigned port, unsigned l, unsigned k_init, span<const bool> mask) const override
-  {
-    ++count;
-    unsigned i_symb = 0;
-    for (unsigned k = 0; k != mask.size(); ++k) {
-      if (mask[k]) {
-        symbols[i_symb] = get(static_cast<uint8_t>(port), l, k_init + k);
-        i_symb++;
-      }
-    }
-
-    // Consume buffer.
-    return symbols.last(symbols.size() - i_symb);
-  }
-
   span<cf_t> get(span<cf_t>                          symbols,
                  unsigned                            port,
                  unsigned                            l,
                  unsigned                            k_init,
                  const bounded_bitset<MAX_RB * NRE>& mask) const override
+  {
+    ++count;
+    mask.for_each(0, mask.size(), [&](unsigned i_subc) {
+      symbols.front() = to_cf(get(static_cast<uint8_t>(port), l, k_init + i_subc));
+      symbols         = symbols.last(symbols.size() - 1);
+    });
+
+    // Consume buffer.
+    return symbols;
+  }
+
+  span<cbf16_t> get(span<cbf16_t>                       symbols,
+                    unsigned                            port,
+                    unsigned                            l,
+                    unsigned                            k_init,
+                    const bounded_bitset<MAX_RB * NRE>& mask) const override
   {
     ++count;
     mask.for_each(0, mask.size(), [&](unsigned i_subc) {
@@ -345,19 +314,40 @@ public:
     return symbols;
   }
 
-  void get(span<cf_t> symbols, unsigned port, unsigned l, unsigned k_init) const override
+  void get(span<cf_t> symbols, unsigned port, unsigned l, unsigned k_init, unsigned stride = 1) const override
   {
     ++count;
     cf_t* symbol_ptr = symbols.data();
+    for (unsigned k = k_init, k_end = k_init + stride * symbols.size(); k != k_end; k += stride) {
+      *(symbol_ptr++) = to_cf(get(port, l, k));
+    }
+  }
+
+  void get(span<cbf16_t> symbols, unsigned port, unsigned l, unsigned k_init) const override
+  {
+    ++count;
+    cbf16_t* symbol_ptr = symbols.data();
     for (unsigned k = k_init, k_end = k_init + symbols.size(); k != k_end; ++k) {
       *(symbol_ptr++) = get(port, l, k);
     }
   }
 
-  span<const cf_t> get_view(unsigned port, unsigned l) const override
+  span<const cbf16_t> get_view(unsigned port, unsigned l) const override
   {
-    srsran_assert(false, "Unimplemented method");
-    return {};
+    ++count;
+
+    // Fill temporal view with NAN.
+    cf_t nan = {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN()};
+    std::fill(temp_view.begin(), temp_view.end(), to_cbf16(nan));
+
+    // Write the available entries.
+    for (const auto& e : entries) {
+      if ((std::get<0>(e.first) == port) && (std::get<1>(e.first) == l)) {
+        temp_view[std::get<2>(e.first)] = e.second;
+      }
+    }
+
+    return temp_view;
   }
 
   void write(span<const expected_entry_t> entries_)
@@ -393,9 +383,12 @@ private:
   using entry_key_t = std::tuple<uint8_t, uint8_t, uint16_t>;
 
   /// Stores the resource grid written entries.
-  std::map<entry_key_t, cf_t> entries;
+  std::map<entry_key_t, cbf16_t> entries;
 
-  cf_t get(uint8_t port, uint8_t symbol, uint16_t subcarrier) const
+  /// Temporal storage of the method get_view(). It is overwritten every time get_view() is called.
+  mutable std::vector<cbf16_t> temp_view;
+
+  cbf16_t get(uint8_t port, uint8_t symbol, uint16_t subcarrier) const
   {
     // Generate key.
     entry_key_t key{port, symbol, subcarrier};

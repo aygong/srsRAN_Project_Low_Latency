@@ -52,13 +52,6 @@ public:
   bool is_empty() const override { return true; }
 
   // See interface for documentation.
-  span<cf_t> get(span<cf_t> symbols, unsigned /**/, unsigned /**/, unsigned /**/, span<const bool> /**/) const override
-  {
-    srsvec::zero(symbols);
-    return {};
-  }
-
-  // See interface for documentation.
   span<cf_t> get(span<cf_t> symbols,
                  unsigned /**/,
                  unsigned /**/,
@@ -70,10 +63,27 @@ public:
   }
 
   // See interface for documentation.
-  void get(span<cf_t> symbols, unsigned /**/, unsigned /**/, unsigned /**/) const override { srsvec::zero(symbols); }
+  span<cbf16_t> get(span<cbf16_t> symbols,
+                    unsigned /**/,
+                    unsigned /**/,
+                    unsigned /**/,
+                    const bounded_bitset<MAX_RB * NRE>& /**/) const override
+  {
+    srsvec::zero(symbols);
+    return {};
+  }
 
   // See interface for documentation.
-  span<const cf_t> get_view(unsigned /**/, unsigned /**/) const override { return {}; }
+  void get(span<cf_t> symbols, unsigned /**/, unsigned /**/, unsigned /**/, unsigned /**/) const override
+  {
+    srsvec::zero(symbols);
+  }
+
+  // See interface for documentation.
+  void get(span<cbf16_t> symbols, unsigned /**/, unsigned /**/, unsigned /**/) const override { srsvec::zero(symbols); }
+
+  // See interface for documentation.
+  span<const cbf16_t> get_view(unsigned /**/, unsigned /**/) const override { return {}; }
 
 private:
   unsigned nof_ports;

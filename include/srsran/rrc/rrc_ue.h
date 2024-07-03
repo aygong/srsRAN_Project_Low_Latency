@@ -22,20 +22,17 @@
 
 #pragma once
 
-#include "rrc_cell_context.h"
 #include "rrc_types.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/asn1/rrc_nr/ue_cap.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/cu_cp/cu_cp_ue_messages.h"
-#include "srsran/cu_cp/up_resource_manager.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/rrc/rrc.h"
 #include "srsran/rrc/rrc_ue_config.h"
 #include "srsran/security/security.h"
 #include "srsran/support/async/async_task.h"
-#include "srsran/support/timers.h"
 
 namespace asn1 {
 namespace rrc_nr {
@@ -49,6 +46,15 @@ struct dl_dcch_msg_s;
 
 namespace srsran {
 namespace srs_cu_cp {
+
+class rrc_ue_controller
+{
+public:
+  virtual ~rrc_ue_controller() = default;
+
+  /// \brief Cancel currently running transactions.
+  virtual void stop() = 0;
+};
 
 /// Interface to notify F1AP about a new SRB PDU.
 class rrc_pdu_f1ap_notifier
@@ -153,41 +159,6 @@ public:
   virtual void on_new_as_security_context() = 0;
 };
 
-/// Interface to notify about RRC UE Context messages.
-class rrc_ue_du_processor_notifier
-{
-public:
-  virtual ~rrc_ue_du_processor_notifier() = default;
-
-  /// \brief Notify about a UE Context Release Command.
-  /// \param[in] cmd The UE Context Release Command.
-  virtual async_task<cu_cp_ue_context_release_complete>
-  on_ue_context_release_command(const cu_cp_ue_context_release_command& cmd) = 0;
-
-  /// \brief Notify about a required reestablishment context modification.
-  /// \param[in] ue_index The index of the UE that needs the context modification.
-  virtual async_task<bool> on_rrc_reestablishment_context_modification_required(ue_index_t ue_index) = 0;
-};
-
-/// Schedules asynchronous tasks associated with an UE.
-class rrc_ue_task_scheduler
-{
-public:
-  virtual ~rrc_ue_task_scheduler() = default;
-
-  /// \brief Schedule an asynchronous task for the UE.
-  virtual void schedule_async_task(async_task<void> task) = 0;
-
-  /// \brief Create a new timer for the UE.
-  virtual unique_timer make_unique_timer() = 0;
-
-  /// \brief Get UE timer factory.
-  virtual timer_factory get_timer_factory() = 0;
-
-  /// \brief Get executor.
-  virtual task_executor& get_executor() = 0;
-};
-
 /// Interface to notify about NAS messages.
 class rrc_ue_nas_notifier
 {
@@ -214,8 +185,6 @@ class rrc_ue_control_notifier
 public:
   virtual ~rrc_ue_control_notifier() = default;
 
-  virtual async_task<bool> on_ue_context_release_request(const cu_cp_ue_context_release_request& msg) = 0;
-
   /// \brief Notify about the reception of an inter CU handove related RRC Reconfiguration Complete.
   virtual void on_inter_cu_ho_rrc_recfg_complete_received(const ue_index_t           ue_index,
                                                           const nr_cell_global_id_t& cgi,
@@ -226,6 +195,11 @@ struct rrc_ue_release_context {
   cu_cp_user_location_info_nr user_location_info;
   byte_buffer                 rrc_release_pdu;
   srb_id_t                    srb_id = srb_id_t::nulltype;
+};
+
+struct rrc_ue_handover_reconfiguration_context {
+  unsigned    transaction_id;
+  byte_buffer rrc_ue_handover_reconfiguration_pdu;
 };
 
 /// Handle control messages.
@@ -239,10 +213,11 @@ public:
   /// \returns The result of the rrc reconfiguration.
   virtual async_task<bool> handle_rrc_reconfiguration_request(const rrc_reconfiguration_procedure_request& msg) = 0;
 
-  /// \brief Handle an RRC Reconfiguration Request for a handover.
+  /// \brief Get the RRC Reconfiguration context for a handover.
   /// \param[in] msg The new RRC Reconfiguration Request.
-  /// \returns The transaction ID of the RRC Reconfiguration request.
-  virtual uint8_t handle_handover_reconfiguration_request(const rrc_reconfiguration_procedure_request& msg) = 0;
+  /// \returns The RRC handover reconfiguration context.
+  virtual rrc_ue_handover_reconfiguration_context
+  get_rrc_ue_handover_reconfiguration_context(const rrc_reconfiguration_procedure_request& msg) = 0;
 
   /// \brief Await a RRC Reconfiguration Complete for a handover.
   /// \param[in] transaction_id The transaction ID of the RRC Reconfiguration Complete.
@@ -253,7 +228,7 @@ public:
   virtual async_task<bool> handle_rrc_ue_capability_transfer_request(const rrc_ue_capability_transfer_request& msg) = 0;
 
   /// \brief Get the RRC UE release context.
-  /// \returns The release context of the UE.  If SRB1 is not created yet, a RrcReject message is contained in the
+  /// \returns The release context of the UE. If SRB1 is not created yet, a RrcReject message is contained in the
   /// release context, see section 5.3.15 in TS 38.331. Otherwise, a RrcRelease message is contained in the release
   /// context.
   virtual rrc_ue_release_context get_rrc_ue_release_context(bool requires_rrc_msg) = 0;
@@ -265,13 +240,15 @@ public:
   /// \brief Get the RRC measurement config for the current serving cell of the UE.
   /// \params[in] current_meas_config The current meas config of the UE (if applicable).
   /// \return The measurement config, if present.
-  virtual optional<rrc_meas_cfg> generate_meas_config(optional<rrc_meas_cfg> current_meas_config) = 0;
+  virtual std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config) = 0;
 
-  /// \brief Handle the reception of a new security context.
-  /// \return True if the security context was applied successfully, false otherwise
-  virtual bool handle_new_security_context(const security::security_context& sec_context) = 0;
+  /// \brief Handle the handover command RRC PDU.
+  /// \param[in] cmd The handover command RRC PDU.
+  /// \returns The handover RRC Reconfiguration PDU. If the handover command is invalid, the PDU is empty.
+  virtual byte_buffer handle_rrc_handover_command(byte_buffer cmd) = 0;
 
   /// \brief Get the packed RRC Handover Command.
+  /// \param[in] msg The new RRC Reconfiguration Request.
   /// \returns The RRC Handover Command.
   virtual byte_buffer get_rrc_handover_command(const rrc_reconfiguration_procedure_request& request,
                                                unsigned                                     transaction_id) = 0;
@@ -286,11 +263,7 @@ public:
   virtual ~rrc_ue_init_security_context_handler() = default;
 
   /// \brief Handle the received Init Security Context.
-  /// \param[in] sec_ctxt The Init Security Context.
-  virtual async_task<bool> handle_init_security_context(const security::security_context& sec_ctxt) = 0;
-
-  /// \brief Get the status of the security context.
-  virtual bool get_security_enabled() = 0;
+  virtual async_task<bool> handle_init_security_context() = 0;
 };
 
 /// Handler to get the handover preparation context to the NGAP.
@@ -300,20 +273,53 @@ public:
   virtual ~rrc_ue_handover_preparation_handler() = default;
 
   virtual byte_buffer get_packed_handover_preparation_message() = 0;
+};
 
-  /// \brief Handle the handover command RRC PDU.
-  /// \param[in] cmd The handover command RRC PDU.
-  /// \returns true if the rrc reconfig was successfully forwarded to the DU, false otherwise.
-  virtual bool handle_rrc_handover_command(byte_buffer cmd) = 0;
+class rrc_ue_cu_cp_ue_notifier
+{
+public:
+  virtual ~rrc_ue_cu_cp_ue_notifier() = default;
+
+  /// \brief Get the timer factory for the UE.
+  virtual timer_factory get_timer_factory() = 0;
+
+  /// \brief Get the task executor for the UE.
+  virtual task_executor& get_executor() = 0;
+
+  /// \brief Schedule an async task for the UE.
+  virtual bool schedule_async_task(async_task<void> task) = 0;
+
+  /// \brief Get the AS configuration for the RRC domain
+  virtual security::sec_as_config get_rrc_as_config() = 0;
+
+  /// \brief Get the AS configuration for the RRC domain with 128-bit keys
+  virtual security::sec_128_as_config get_rrc_128_as_config() = 0;
+
+  /// \brief Enable security
+  virtual void enable_security() = 0;
+
+  /// \brief Get the current security context
+  virtual security::security_context get_security_context() = 0;
+
+  /// \brief Get the selected security algorithms
+  virtual security::sec_selected_algos get_security_algos() = 0;
+
+  /// \brief Update the security context
+  /// \param[in] sec_ctxt The new security context
+  virtual void update_security_context(security::security_context sec_ctxt) = 0;
+
+  /// \brief Perform horizontal key derivation
+  virtual void perform_horizontal_key_derivation(pci_t target_pci, unsigned target_ssb_arfcn) = 0;
 };
 
 /// Struct containing all information needed from the old RRC UE for Reestablishment.
 struct rrc_ue_reestablishment_context_response {
-  ue_index_t                          ue_index = ue_index_t::invalid;
-  security::security_context          sec_context;
-  optional<asn1::rrc_nr::ue_nr_cap_s> capabilities;
-  up_context                          up_ctx;
-  bool                                old_ue_fully_attached = false;
+  ue_index_t                               ue_index = ue_index_t::invalid;
+  security::security_context               sec_context;
+  std::optional<asn1::rrc_nr::ue_nr_cap_s> capabilities;
+  up_context                               up_ctx;
+  bool                                     old_ue_fully_attached   = false;
+  bool                                     reestablishment_ongoing = false;
 };
 
 /// Interface to notify about UE context updates.
@@ -331,17 +337,37 @@ public:
   /// \param[in] old_c_rnti The old C-RNTI contained in the RRC Reestablishment Request.
   /// \param[in] ue_index The new UE index of the UE that sent the Reestablishment Request.
   /// \returns The RRC Reestablishment UE context for the old UE.
-  virtual rrc_ue_reestablishment_context_response
-  on_rrc_reestablishment_request(pci_t old_pci, rnti_t old_c_rnti, ue_index_t ue_index) = 0;
+  virtual rrc_ue_reestablishment_context_response on_rrc_reestablishment_request(pci_t old_pci, rnti_t old_c_rnti) = 0;
+
+  /// \brief Notify about a required reestablishment context modification.
+  virtual async_task<bool> on_rrc_reestablishment_context_modification_required() = 0;
+
+  /// \brief Notify the CU-CP to release the old UE after a reestablishment failure.
+  /// \param[in] request The release request.
+  virtual void on_rrc_reestablishment_failure(const cu_cp_ue_context_release_request& request) = 0;
+
+  /// \brief Notify the CU-CP to remove the old UE from the CU-CP after an successful reestablishment.
+  /// \param[in] old_ue_index The index of the old UE to remove.
+  virtual void on_rrc_reestablishment_complete(ue_index_t old_ue_index) = 0;
 
   /// \brief Notify the CU-CP to transfer and remove ue contexts.
-  /// \param[in] ue_index The new UE index of the UE that sent the Reestablishment Request.
   /// \param[in] old_ue_index The old UE index of the UE that sent the Reestablishment Request.
-  virtual async_task<bool> on_ue_transfer_required(ue_index_t ue_index, ue_index_t old_ue_index) = 0;
+  virtual async_task<bool> on_ue_transfer_required(ue_index_t old_ue_index) = 0;
 
-  /// \brief Notify the CU-CP to completly remove a UE from the CU-CP.
-  /// \param[in] ue_index The index of the UE to remove.
-  virtual async_task<void> on_ue_removal_required(ue_index_t ue_index) = 0;
+  /// \brief Notify the CU-CP to release a UE.
+  /// \param[in] request The release request.
+  virtual async_task<void> on_ue_release_required(const cu_cp_ue_context_release_request& request) = 0;
+
+  /// \brief Notify the CU-CP to setup an UP context.
+  /// \param[in] ctxt The UP context to setup.
+  virtual void on_up_context_setup_required(up_context ctxt) = 0;
+
+  /// \brief Get the UP context of the UE.
+  /// \returns The UP context of the UE.
+  virtual up_context on_up_context_required() = 0;
+
+  /// \brief Notify the CU-CP to remove a UE from the CU-CP.
+  virtual async_task<void> on_ue_removal_required() = 0;
 };
 
 /// Interface to notify about measurements
@@ -351,15 +377,13 @@ public:
   virtual ~rrc_ue_measurement_notifier() = default;
 
   /// \brief Retrieve the measurement config (for any UE) connected to the given serving cell.
-  /// \param[in] ue_index The index of the UE to retrieve the measurement config for.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] current_meas_config The current meas config of the UE (if applicable).
-  virtual optional<rrc_meas_cfg> on_measurement_config_request(ue_index_t             ue_index,
-                                                               nr_cell_id_t           nci,
-                                                               optional<rrc_meas_cfg> current_meas_config = {}) = 0;
+  virtual std::optional<rrc_meas_cfg>
+  on_measurement_config_request(nr_cell_identity nci, std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   /// \brief Submit measurement report for given UE to cell manager.
-  virtual void on_measurement_report(const ue_index_t ue_index, const rrc_meas_results& meas_results) = 0;
+  virtual void on_measurement_report(const rrc_meas_results& meas_results) = 0;
 };
 
 class rrc_ue_context_handler
@@ -391,13 +415,13 @@ public:
   rrc_ue_interface()          = default;
   virtual ~rrc_ue_interface() = default;
 
+  virtual rrc_ue_controller&                    get_controller()                           = 0;
   virtual rrc_ul_ccch_pdu_handler&              get_ul_ccch_pdu_handler()                  = 0;
   virtual rrc_ul_dcch_pdu_handler&              get_ul_dcch_pdu_handler()                  = 0;
   virtual rrc_dl_nas_message_handler&           get_rrc_dl_nas_message_handler()           = 0;
   virtual rrc_ue_srb_handler&                   get_rrc_ue_srb_handler()                   = 0;
   virtual rrc_ue_control_message_handler&       get_rrc_ue_control_message_handler()       = 0;
   virtual rrc_ue_init_security_context_handler& get_rrc_ue_init_security_context_handler() = 0;
-  virtual security::security_context&           get_rrc_ue_security_context()              = 0;
   virtual rrc_ue_context_handler&               get_rrc_ue_context_handler()               = 0;
   virtual rrc_ue_handover_preparation_handler&  get_rrc_ue_handover_preparation_handler()  = 0;
 };

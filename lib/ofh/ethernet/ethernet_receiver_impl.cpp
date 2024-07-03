@@ -21,6 +21,7 @@
  */
 
 #include "ethernet_receiver_impl.h"
+#include "ethernet_rx_buffer_impl.h"
 #include "srsran/instrumentation/traces/ofh_traces.h"
 #include "srsran/ofh/ethernet/ethernet_frame_notifier.h"
 #include "srsran/ofh/ethernet/ethernet_properties.h"
@@ -42,7 +43,7 @@ namespace {
 class dummy_frame_notifier : public frame_notifier
 {
   // See interface for documentation.
-  void on_new_frame(span<const uint8_t> payload) override {}
+  void on_new_frame(ether::unique_rx_buffer buffer) override {}
 };
 
 } // namespace
@@ -55,7 +56,7 @@ receiver_impl::receiver_impl(const std::string&    interface,
                              bool                  is_promiscuous_mode_enabled,
                              task_executor&        executor_,
                              srslog::basic_logger& logger_) :
-  logger(logger_), executor(executor_), notifier(dummy_notifier)
+  logger(logger_), executor(executor_), notifier(dummy_notifier), buffer_pool(BUFFER_SIZE)
 {
   socket_fd = ::socket(AF_PACKET, SOCK_RAW, htons(ECPRI_ETH_TYPE));
   if (socket_fd < 0) {
@@ -145,34 +146,39 @@ void receiver_impl::receive_loop()
 }
 
 /// Blocking function that waits for incoming data over the socket or until the specified timeout expires.
-static bool wait_for_data(int socket, std::chrono::seconds timeout)
+static bool wait_for_data(int socket, std::chrono::microseconds timeout)
 {
   fd_set read_fs;
   FD_ZERO(&read_fs);
   FD_SET(socket, &read_fs);
-  timeval tv = {static_cast<time_t>(timeout.count()), 0};
+  timeval tv = {0, static_cast<__suseconds_t>(timeout.count())};
 
   return (::select(socket + 1, &read_fs, nullptr, nullptr, &tv) > 0);
 }
 
 void receiver_impl::receive()
 {
-  ofh_tracer << instant_trace_event("ofh_receiver_wait_data", instant_trace_event::cpu_scope::thread);
-
-  if (!wait_for_data(socket_fd, std::chrono::seconds(1))) {
+  if (!wait_for_data(socket_fd, std::chrono::microseconds(5))) {
     return;
   }
 
-  static constexpr unsigned        BUFFER_SIZE = 9600;
-  trace_point                      tp          = ofh_tracer.now();
-  std::array<uint8_t, BUFFER_SIZE> buffer;
-  auto                             nof_bytes = ::recvfrom(socket_fd, buffer.data(), BUFFER_SIZE, 0, nullptr, nullptr);
+  trace_point tp = ofh_tracer.now();
+
+  auto exp_buffer = buffer_pool.reserve();
+  if (not exp_buffer.has_value()) {
+    logger.warning("No buffer is available for receiving an Ethernet packet");
+    return;
+  }
+  ethernet_rx_buffer_impl buffer    = std::move(exp_buffer.value());
+  span<uint8_t>           data_span = buffer.storage();
+  auto                    nof_bytes = ::recvfrom(socket_fd, data_span.data(), BUFFER_SIZE, 0, nullptr, nullptr);
 
   if (nof_bytes < 0) {
     logger.warning("Ethernet receiver call to recvfrom failed");
     return;
   }
+  buffer.resize(nof_bytes);
 
-  notifier.get().on_new_frame(span<const uint8_t>(buffer.data(), nof_bytes));
+  notifier.get().on_new_frame(unique_rx_buffer(std::move(buffer)));
   ofh_tracer << trace_event("ofh_receiver", tp);
 }

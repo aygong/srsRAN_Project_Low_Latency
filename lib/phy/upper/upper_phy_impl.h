@@ -68,7 +68,7 @@ struct upper_phy_impl_config {
   /// Receive symbol printer. Leave empty to disable.
   std::string rx_symbol_printer_filename;
   /// Receive port the symbols are dumped from. Leave emtpy for all ports.
-  optional<unsigned> rx_symbol_printer_port;
+  std::optional<unsigned> rx_symbol_printer_port;
   /// Boolean flag for dumping PRACH symbols when set to true.
   bool rx_symbol_printer_prach;
   /// Number of slots supported by the uplink PDU repository.
@@ -111,6 +111,9 @@ class upper_phy_impl : public upper_phy
 public:
   /// Constructs an upper PHY implementation object with the given configuration.
   explicit upper_phy_impl(upper_phy_impl_config&& config);
+
+  // See interface for documentation.
+  unsigned get_sector_id() const override { return sector_id; }
 
   // See interface for documentation.
   upper_phy_error_handler& get_error_handler() override;

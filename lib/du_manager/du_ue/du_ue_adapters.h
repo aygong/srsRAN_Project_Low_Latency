@@ -24,7 +24,7 @@
 
 #include "srsran/f1ap/du/f1c_bearer.h"
 #include "srsran/f1ap/du/f1c_rx_sdu_notifier.h"
-#include "srsran/f1u/du/f1u_bearer.h"
+#include "srsran/f1u/du/f1u_gateway.h"
 #include "srsran/f1u/du/f1u_rx_sdu_notifier.h"
 #include "srsran/mac/mac_sdu_handler.h"
 #include "srsran/mac/mac_ue_control_information_handler.h"
@@ -44,11 +44,11 @@ public:
 
   void disconnect();
 
-  void on_new_sdu(byte_buffer pdu, optional<uint32_t> pdcp_sn) override
+  void on_new_sdu(byte_buffer pdu) override
   {
     srsran_assert(rlc_tx != nullptr, "RLC Tx PDU notifier is disconnected");
 
-    rlc_tx->handle_sdu(rlc_sdu{std::move(pdu), pdcp_sn});
+    rlc_tx->handle_sdu(std::move(pdu), /* is_retx = */ false);
   }
 
 private:
@@ -66,10 +66,10 @@ public:
   /// \brief Stop forwarding SDUs to the RLC layer.
   void disconnect();
 
-  void on_new_sdu(pdcp_tx_pdu sdu) override
+  void on_new_sdu(byte_buffer sdu, bool is_retx) override
   {
     srsran_assert(rlc_tx != nullptr, "RLC Tx SDU notifier is disconnected");
-    rlc_tx->handle_sdu(rlc_sdu{std::move(sdu.buf), sdu.pdcp_sn});
+    rlc_tx->handle_sdu(std::move(sdu), is_retx);
   }
 
   void on_discard_sdu(uint32_t pdcp_sn) override { rlc_tx->discard_sdu(pdcp_sn); }
@@ -78,8 +78,26 @@ private:
   rlc_tx_upper_layer_data_interface* rlc_tx = nullptr;
 };
 
-// RLC
+// F1-U Gateway
+class f1u_gateway_nru_rx_adapter final : public f1u_du_gateway_bearer_rx_notifier
+{
+public:
+  void connect(srs_du::f1u_rx_pdu_handler& nru_rx_) { nru_rx = &nru_rx_; }
 
+  /// \brief Stop forwarding SDUs to the RLC layer.
+  void disconnect();
+
+  void on_new_pdu(nru_dl_message msg) override
+  {
+    srsran_assert(nru_rx != nullptr, "NR-U RX PDU notifier is disconnected");
+    nru_rx->handle_pdu(std::move(msg));
+  }
+
+private:
+  srs_du::f1u_rx_pdu_handler* nru_rx = nullptr;
+};
+
+// RLC
 class rlc_rx_rrc_sdu_adapter : public rlc_rx_upper_layer_data_notifier
 {
 public:
@@ -117,47 +135,82 @@ private:
 class rlc_f1c_tx_data_notifier : public rlc_tx_upper_layer_data_notifier
 {
 public:
-  void connect(f1c_bearer& bearer_) { bearer = &bearer_; }
+  void connect(f1c_bearer& bearer_) { bearer.store(&bearer_, std::memory_order_relaxed); }
 
   void disconnect();
 
   void on_transmitted_sdu(uint32_t max_deliv_pdcp_sn) override
   {
-    srsran_assert(bearer != nullptr, "RLC to F1-C TX data notifier is disconnected");
-    bearer->handle_transmit_notification(max_deliv_pdcp_sn);
+    f1c_bearer* b = bearer.load(std::memory_order_relaxed);
+    srsran_assert(b != nullptr, "RLC to F1-C TX data notifier is disconnected");
+    b->handle_transmit_notification(max_deliv_pdcp_sn);
   }
 
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override
   {
-    srsran_assert(bearer != nullptr, "RLC to F1-C TX data notifier is disconnected");
-    bearer->handle_delivery_notification(max_deliv_pdcp_sn);
+    f1c_bearer* b = bearer.load(std::memory_order_relaxed);
+    srsran_assert(b != nullptr, "RLC to F1-C TX data notifier is disconnected");
+    b->handle_delivery_notification(max_deliv_pdcp_sn);
+  }
+
+  void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override
+  {
+    srsran_assertion_failure("Unexpected call of on_retransmitted_sdu on SRB. max_retx_pdcp_sn={}", max_retx_pdcp_sn);
+  }
+
+  void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override
+  {
+    srsran_assertion_failure("Unexpected call of on_delivered_retransmitted_sdu on SRB. max_deliv_retx_pdcp_sn={}",
+                             max_deliv_retx_pdcp_sn);
   }
 
 private:
-  f1c_bearer* bearer = nullptr;
+  /// An atomic pointer to the handler. This pointer may be changed by \c disconnect from UE thread while the cell
+  /// thread still uses this to notify F1 of transmitted/delivered PDCP SNs.
+  /// The lifetime of the F1 bearer exceeds the \c disconnect and is synchronized with the scheduler.
+  std::atomic<f1c_bearer*> bearer = nullptr;
 };
 
 class rlc_f1u_tx_data_notifier : public rlc_tx_upper_layer_data_notifier
 {
 public:
-  void connect(f1u_tx_delivery_handler& handler_) { handler = &handler_; }
+  void connect(f1u_tx_delivery_handler& handler_) { handler.store(&handler_, std::memory_order_relaxed); }
 
   void disconnect();
 
   void on_transmitted_sdu(uint32_t max_deliv_pdcp_sn) override
   {
-    srsran_assert(handler != nullptr, "RLC to F1-U TX data notifier is disconnected");
-    handler->handle_transmit_notification(max_deliv_pdcp_sn);
+    f1u_tx_delivery_handler* h = handler.load(std::memory_order_relaxed);
+    srsran_assert(h != nullptr, "RLC to F1-U TX data notifier is disconnected");
+    h->handle_transmit_notification(max_deliv_pdcp_sn);
   }
 
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override
   {
-    srsran_assert(handler != nullptr, "RLC to F1-U TX data notifier is disconnected");
-    handler->handle_delivery_notification(max_deliv_pdcp_sn);
+    f1u_tx_delivery_handler* h = handler.load(std::memory_order_relaxed);
+    srsran_assert(h != nullptr, "RLC to F1-U TX data notifier is disconnected");
+    h->handle_delivery_notification(max_deliv_pdcp_sn);
+  }
+
+  void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override
+  {
+    f1u_tx_delivery_handler* h = handler.load(std::memory_order_relaxed);
+    srsran_assert(h != nullptr, "RLC to F1-U TX data notifier is disconnected");
+    h->handle_retransmit_notification(max_retx_pdcp_sn);
+  }
+
+  void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override
+  {
+    f1u_tx_delivery_handler* h = handler.load(std::memory_order_relaxed);
+    srsran_assert(h != nullptr, "RLC to F1-U TX data notifier is disconnected");
+    h->handle_delivery_retransmitted_notification(max_deliv_retx_pdcp_sn);
   }
 
 private:
-  f1u_tx_delivery_handler* handler = nullptr;
+  /// An atomic pointer to the handler. This pointer may be changed by \c disconnect from UE thread while the cell
+  /// thread still uses this to notify F1 of transmitted/delivered PDCP SNs.
+  /// The lifetime of the F1 bearer exceeds the \c disconnect and is synchronized with the scheduler.
+  std::atomic<f1u_tx_delivery_handler*> handler = nullptr;
 };
 
 class rlc_tx_control_notifier : public rlc_tx_upper_layer_control_notifier

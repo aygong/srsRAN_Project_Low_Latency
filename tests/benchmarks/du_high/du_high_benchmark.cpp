@@ -42,8 +42,11 @@
 #include "lib/du_high/du_high_executor_strategies.h"
 #include "lib/du_high/du_high_impl.h"
 #include "lib/mac/mac_ul/ul_bsr.h"
+#include "tests/test_doubles/f1ap/f1ap_test_messages.h"
+#include "tests/test_doubles/scheduler/scheduler_result_test.h"
 #include "tests/unittests/f1ap/du/f1ap_du_test_helpers.h"
 #include "srsran/asn1/f1ap/common.h"
+#include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/du_high/du_high_configuration.h"
 #include "srsran/f1u/du/f1u_gateway.h"
@@ -56,6 +59,9 @@
 
 using namespace srsran;
 using namespace srs_du;
+
+/// Constant used to bound the number of bytes pushed to the DU DL F1-U interface per slot.
+const unsigned MAX_F1U_DL_BITRATE_PER_PORT_BPS = 500e6;
 
 /// \brief Parameters of the benchmark.
 struct bench_params {
@@ -79,12 +85,14 @@ struct bench_params {
   units::bytes pdu_size{1500};
   /// \brief Logical cores used by the "du_cell" thread.
   std::vector<unsigned> du_cell_cores = {};
+  /// \brief Policy scheduler type.
+  policy_scheduler_expert_config strategy_cfg = time_rr_scheduler_expert_config{};
 };
 
 static void usage(const char* prog, const bench_params& params)
 {
   fmt::print("Usage: {} [-R repetitions] [-U nof. ues] [-D Duplex mode] [-d DL bytes per slot] [-u UL BSR] [-r Max RBs "
-             "per UE DL grant] [-a CPU affinity] [-p F1-U PDU size]\n",
+             "per UE DL grant] [-a CPU affinity] [-p F1-U PDU size] [-P Policy scheduler type]\n",
              prog);
   fmt::print("\t-R Repetitions [Default {}]\n", params.nof_repetitions);
   fmt::print("\t-U Nof. DU UEs for each simulation (e.g. \"1,5,10\" would run three benchmarks with 1, 5 and 10 UEs) "
@@ -99,7 +107,8 @@ static void usage(const char* prog, const bench_params& params)
              params.ul_bsr_bytes);
   fmt::print("\t-r Max RBs per UE DL grant per slot [Default 275]\n");
   fmt::print("\t-a \"du_cell\" cores that the benchmark should use [Default \"no CPU affinity\"]\n");
-  fmt::print("\t-p F1-U PDU size used [Default {}]", params.pdu_size);
+  fmt::print("\t-p F1-U PDU size used [Default {}]\n", params.pdu_size);
+  fmt::print("\t-P Policy scheduler the bechmark should use (\"time_rr\", \"time_pf\") [Default \"time_rr\"]\n");
   fmt::print("\t-h Show this message\n");
 }
 
@@ -118,7 +127,7 @@ static std::vector<Ret> tokenize(const std::string& s, Func&& func)
 static void parse_args(int argc, char** argv, bench_params& params)
 {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "R:U:D:d:u:r:a:p:h")) != -1) {
+  while ((opt = getopt(argc, argv, "R:U:D:d:u:r:a:p:P:h")) != -1) {
     switch (opt) {
       case 'R':
         params.nof_repetitions = std::strtol(optarg, nullptr, 10);
@@ -163,12 +172,28 @@ static void parse_args(int argc, char** argv, bench_params& params)
       case 'p':
         params.pdu_size = units::bytes{(unsigned)std::strtol(optarg, nullptr, 10)};
         break;
+      case 'P': {
+        if (std::string(optarg) == "time_pf") {
+          params.strategy_cfg = time_pf_scheduler_expert_config{};
+        } else if (std::string(optarg) == "time_rr") {
+          params.strategy_cfg = time_rr_scheduler_expert_config{};
+        } else {
+          usage(argv[0], params);
+          exit(0);
+        }
+      } break;
       case 'h':
       default:
         usage(argv[0], params);
         exit(0);
     }
   }
+
+  // apply limits.
+  subcarrier_spacing scs = params.dplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30;
+  double             slot_dur              = 0.001 / get_nof_slots_per_subframe(scs);
+  unsigned           max_dl_bytes_per_slot = MAX_F1U_DL_BITRATE_PER_PORT_BPS * slot_dur / 8;
+  params.dl_bytes_per_slot                 = std::min(max_dl_bytes_per_slot, params.dl_bytes_per_slot);
 }
 
 static void print_args(const bench_params& params)
@@ -187,19 +212,24 @@ static void print_args(const bench_params& params)
     }
   }
   const double slot_dur_sec = params.dplx_mode == srsran::duplex_mode::FDD ? 0.001 : 0.0005;
-  fmt::print("- F1-U DL Bitrate [Mbps]: {}\n", params.dl_bytes_per_slot * 1e6 * slot_dur_sec);
+  fmt::print("- F1-U DL Bitrate [Mbps]: {}\n", params.dl_bytes_per_slot * 8.0 * 1.0e-6 / slot_dur_sec);
   fmt::print("- F1-U DL PDU size [bytes]: {}\n", params.pdu_size);
   fmt::print("- BSR size [bytes]: {}\n", params.ul_bsr_bytes);
   fmt::print("- Max DL RB grant size [RBs]: {}\n", params.max_dl_rb_grant);
+  if (std::holds_alternative<time_pf_scheduler_expert_config>(params.strategy_cfg)) {
+    fmt::print("- Policys scheduler: time_pf\n");
+  } else {
+    fmt::print("- Policys scheduler: time_rr\n");
+  }
 }
 
-class dummy_metrics_handler : public scheduler_ue_metrics_notifier
+class dummy_metrics_handler : public scheduler_metrics_notifier
 {
 public:
-  void report_metrics(span<const scheduler_ue_metrics> ue_metrics) override
+  void report_metrics(const scheduler_cell_metrics& metrics) override
   {
     unsigned sum_dl_bs = 0;
-    for (const auto& ue : ue_metrics) {
+    for (const auto& ue : metrics.ue_metrics) {
       sum_dl_bs += ue.dl_bs;
     }
     tot_dl_bs.store(sum_dl_bs, std::memory_order_relaxed);
@@ -227,6 +257,7 @@ private:
   {
   public:
     f1ap_du_tx_pdu_notifier(cu_cp_simulator& parent_) : parent(parent_) {}
+    ~f1ap_du_tx_pdu_notifier() override { parent.du_rx_pdu_notifier.reset(); }
 
     void on_new_message(const f1ap_message& msg) override { parent.handle_message(msg); }
 
@@ -237,7 +268,6 @@ private:
 public:
   std::unique_ptr<f1ap_message_notifier>        du_rx_pdu_notifier;
   std::array<std::atomic<bool>, MAX_NOF_DU_UES> ue_created_flag_list;
-  unsigned                                      next_gnb_cu_ue_f1ap_id = 0;
 
   std::unique_ptr<f1ap_message_notifier>
   handle_du_connection_request(std::unique_ptr<f1ap_message_notifier> du_rx_pdu_notifier_) override
@@ -247,58 +277,70 @@ public:
   }
 
 private:
-  unsigned get_next_gnb_cu_ue_f1ap_id() { return next_gnb_cu_ue_f1ap_id++; }
-
   void handle_message(const f1ap_message& msg)
   {
     switch (msg.pdu.type().value) {
       case asn1::f1ap::f1ap_pdu_c::types_opts::init_msg:
-        handle_init_msg(msg.pdu.init_msg());
+        handle_init_msg(msg);
         break;
       case asn1::f1ap::f1ap_pdu_c::types_opts::successful_outcome:
         handle_success_outcome(msg.pdu.successful_outcome());
         break;
       default:
-        report_fatal_error("Unreachable code in this benchmark");
+        report_fatal_error("Received invalid PDU type {} in this benchmark", msg.pdu.type().value);
     }
   }
 
-  void handle_init_msg(const asn1::f1ap::init_msg_s& init_msg)
+  void handle_init_msg(const f1ap_message& msg)
   {
+    using namespace asn1::f1ap;
+    using init_opts            = f1ap_elem_procs_o::init_msg_c::types_opts;
+    const init_msg_s& init_msg = msg.pdu.init_msg();
     switch (init_msg.value.type().value) {
-      case asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types_opts::f1_setup_request: {
-        f1ap_message f1ap_msg;
-        f1ap_msg.pdu.set_successful_outcome().load_info_obj(ASN1_F1AP_ID_F1_SETUP);
-        f1ap_msg.pdu.successful_outcome().value.f1_setup_resp()->cells_to_be_activ_list_present = true;
-        f1ap_msg.pdu.successful_outcome().value.f1_setup_resp()->cells_to_be_activ_list.resize(1);
-        du_rx_pdu_notifier->on_new_message(f1ap_msg);
+      case init_opts::f1_setup_request: {
+        du_rx_pdu_notifier->on_new_message(test_helpers::generate_f1_setup_response(msg));
       } break;
-      case asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types_opts::init_ul_rrc_msg_transfer: {
-        // Send UE Context Modification to create DRB1.
-        f1ap_message msg = generate_ue_context_modification_request({drb_id_t::drb1});
+      case init_opts::f1_removal_request: {
+        du_rx_pdu_notifier->on_new_message(test_helpers::generate_f1_removal_response(msg));
+      } break;
+      case init_opts::init_ul_rrc_msg_transfer: {
+        // Send DL RRC Message Transfer (which triggers the exit of fallback mode).
+        gnb_du_ue_f1ap_id_t du_ue_id =
+            int_to_gnb_du_ue_f1ap_id(init_msg.value.init_ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
+        gnb_cu_ue_f1ap_id_t cu_ue_id =
+            int_to_gnb_cu_ue_f1ap_id(init_msg.value.init_ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
+        f1ap_message dl_msg = test_helpers::create_dl_rrc_message_transfer(
+            du_ue_id, cu_ue_id, srb_id_t::srb0, byte_buffer::create({0x1, 0x2, 0x3}).value());
+        du_rx_pdu_notifier->on_new_message(dl_msg);
+      } break;
+      case init_opts::ul_rrc_msg_transfer: {
+        // Send UE Context Setup to create DRB1.
+        gnb_du_ue_f1ap_id_t du_ue_id =
+            int_to_gnb_du_ue_f1ap_id(init_msg.value.ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
+        gnb_cu_ue_f1ap_id_t cu_ue_id =
+            int_to_gnb_cu_ue_f1ap_id(init_msg.value.ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
+        f1ap_message uectxt_msg = test_helpers::create_ue_context_setup_request(cu_ue_id, du_ue_id, {drb_id_t::drb1});
+        auto&        ue_ctxt_setup = *uectxt_msg.pdu.init_msg().value.ue_context_setup_request();
+        // Do not send RRC container, otherwise we have to send an RLC ACK.
+        ue_ctxt_setup.rrc_container_present = false;
         // Note: Use UM because AM requires status PDUs.
-        auto& drb1 = msg.pdu.init_msg()
-                         .value.ue_context_mod_request()
-                         ->drbs_to_be_setup_mod_list[0]
-                         ->drbs_to_be_setup_mod_item();
+        auto& drb1          = ue_ctxt_setup.drbs_to_be_setup_list[0]->drbs_to_be_setup_item();
         drb1.rlc_mode.value = asn1::f1ap::rlc_mode_opts::rlc_um_bidirectional;
         drb1.qos_info.choice_ext()->drb_info().drb_qos.qos_characteristics.non_dyn_5qi().five_qi =
             7; // UM in default configs
-        msg.pdu.init_msg().value.ue_context_mod_request()->gnb_cu_ue_f1ap_id = get_next_gnb_cu_ue_f1ap_id();
-        msg.pdu.init_msg().value.ue_context_mod_request()->gnb_du_ue_f1ap_id =
-            init_msg.value.init_ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id;
-        du_rx_pdu_notifier->on_new_message(msg);
+        du_rx_pdu_notifier->on_new_message(uectxt_msg);
       } break;
       default:
-        report_fatal_error("Unreachable code in this benchmark");
+        report_fatal_error("Unhandled PDU type {} in this benchmark", init_msg.value.type().to_string());
     }
   }
 
   void handle_success_outcome(const asn1::f1ap::successful_outcome_s& succ_outcome)
   {
+    using namespace asn1::f1ap;
     switch (succ_outcome.value.type().value) {
-      case asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_mod_resp: {
-        ue_created_flag_list[succ_outcome.value.ue_context_mod_resp()->gnb_du_ue_f1ap_id].store(
+      case f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_setup_resp: {
+        ue_created_flag_list[succ_outcome.value.ue_context_setup_resp()->gnb_du_ue_f1ap_id].store(
             true, std::memory_order_relaxed);
       } break;
       default:
@@ -308,45 +350,38 @@ private:
 };
 
 /// \brief Dummy F1-U bearer for the purpose of benchmark.
-class f1u_dummy_bearer : public f1u_bearer,
-                         public f1u_rx_pdu_handler,
-                         public f1u_tx_delivery_handler,
-                         public f1u_tx_sdu_handler
+class f1u_gw_dummy_bearer : public f1u_du_gateway_bearer
 {
 public:
-  f1u_rx_pdu_handler&      get_rx_pdu_handler() override { return *this; }
-  f1u_tx_delivery_handler& get_tx_delivery_handler() override { return *this; }
-  f1u_tx_sdu_handler&      get_tx_sdu_handler() override { return *this; }
-  void                     stop() override {}
-
-  void handle_pdu(nru_dl_message msg) override {}
-  void handle_transmit_notification(uint32_t highest_pdcp_sn) override {}
-  void handle_delivery_notification(uint32_t highest_pdcp_sn) override {}
-  void handle_sdu(byte_buffer_chain sdu) override {}
+  void on_new_pdu(nru_ul_message msg) override {}
+  void stop() override {}
 };
 
 /// \brief Simulator of the CU-UP from the perspective of the DU.
 class cu_up_simulator : public f1u_du_gateway
 {
 public:
-  static_vector<f1u_dummy_bearer, MAX_NOF_DU_UES>             bearer_list;
-  static_vector<srs_du::f1u_rx_sdu_notifier*, MAX_NOF_DU_UES> du_notif_list;
+  static_vector<f1u_gw_dummy_bearer*, MAX_NOF_DU_UES>                       bearer_list;
+  static_vector<srs_du::f1u_du_gateway_bearer_rx_notifier*, MAX_NOF_DU_UES> du_notif_list;
 
-  f1u_bearer* create_du_bearer(uint32_t                       ue_index,
-                               drb_id_t                       drb_id,
-                               srs_du::f1u_config             config,
-                               const up_transport_layer_info& dl_tnl,
-                               const up_transport_layer_info& ul_tnl,
-                               srs_du::f1u_rx_sdu_notifier&   du_rx,
-                               timer_factory                  timers,
-                               task_executor&                 ue_executor) override
+  std::unique_ptr<f1u_du_gateway_bearer> create_du_bearer(uint32_t                                   ue_index,
+                                                          drb_id_t                                   drb_id,
+                                                          srs_du::f1u_config                         config,
+                                                          const up_transport_layer_info&             dl_up_tnl_info,
+                                                          const up_transport_layer_info&             ul_up_tnl_info,
+                                                          srs_du::f1u_du_gateway_bearer_rx_notifier& du_rx,
+                                                          timer_factory                              timers,
+                                                          task_executor& ue_executor) override
   {
+    auto f1u_bearer = std::make_unique<f1u_gw_dummy_bearer>();
     du_notif_list.push_back(&du_rx);
-    bearer_list.emplace_back();
-    return &bearer_list.back();
+    bearer_list.push_back(f1u_bearer.get());
+    return f1u_bearer;
   }
 
   void remove_du_bearer(const up_transport_layer_info& dl_tnl) override {}
+
+  expected<std::string> get_du_bind_address(gnb_du_id_t gnb_du_id) override { return std::string("127.0.0.1"); }
 };
 
 /// \brief Instantiation of the DU-high workers and executors for the benchmark.
@@ -555,14 +590,15 @@ class du_high_bench
   static const unsigned DEFAULT_DL_PDU_SIZE = 1500;
 
 public:
-  du_high_bench(unsigned                          dl_buffer_state_bytes_,
-                unsigned                          ul_bsr_bytes_,
-                unsigned                          max_nof_rbs_per_dl_grant,
-                units::bytes                      f1u_pdu_size_,
-                span<unsigned>                    du_cell_cores,
-                const cell_config_builder_params& builder_params = {}) :
+  du_high_bench(unsigned                              dl_buffer_state_bytes_,
+                unsigned                              ul_bsr_bytes_,
+                unsigned                              max_nof_rbs_per_dl_grant,
+                units::bytes                          f1u_pdu_size_,
+                span<unsigned>                        du_cell_cores,
+                const policy_scheduler_expert_config& strategy_cfg,
+                const cell_config_builder_params&     builder_params = {}) :
     params(builder_params),
-    dl_buffer_state_bytes(dl_buffer_state_bytes_),
+    f1u_dl_pdu_bytes_per_slot(dl_buffer_state_bytes_),
     f1u_pdu_size(f1u_pdu_size_),
     workers(du_cell_cores),
     ul_bsr_bytes(ul_bsr_bytes_)
@@ -581,7 +617,7 @@ public:
     report_fatal_error_if_not(bsr_mac_subpdu.append(lbsr_buff_sz), "Failed to allocate PDU");
 
     // Instantiate a DU-high object.
-    cfg.gnb_du_id    = 1;
+    cfg.gnb_du_id    = (gnb_du_id_t)1;
     cfg.gnb_du_name  = fmt::format("srsgnb{}", cfg.gnb_du_id);
     cfg.du_bind_addr = transport_layer_address::create_from_string(fmt::format("127.0.0.{}", cfg.gnb_du_id));
     cfg.exec_mapper  = &workers.du_high_exec_mapper;
@@ -591,6 +627,7 @@ public:
     cfg.timers       = &timers;
     cfg.cells        = {config_helpers::make_default_du_cell_config(params)};
     cfg.sched_cfg    = config_helpers::make_default_scheduler_expert_config();
+    cfg.sched_cfg.ue.strategy_cfg  = strategy_cfg;
     cfg.sched_cfg.ue.pdsch_nof_rbs = {1, max_nof_rbs_per_dl_grant};
     cfg.mac_cfg                    = mac_expert_config{.configs = {{10000, 10000, 10000}}};
     cfg.qos                        = config_helpers::make_default_du_qos_config_list(/* warn_on_drop */ true, 1000);
@@ -635,7 +672,8 @@ public:
 
   ~du_high_bench() { stop(); }
 
-  static rnti_t du_ue_index_to_rnti(du_ue_index_t ue_idx) { return to_rnti(0x4601 + ue_idx); }
+  static rnti_t        du_ue_index_to_rnti(du_ue_index_t ue_idx) { return to_rnti(0x4601 + ue_idx); }
+  static du_ue_index_t rnti_to_du_ue_index(rnti_t rnti) { return to_du_ue_index(static_cast<unsigned>(rnti) - 0x4601); }
 
   /// \brief Run a slot indication until completion.
   void run_slot()
@@ -651,7 +689,7 @@ public:
   }
 
   template <typename StopCondition>
-  bool run_slot_until(const StopCondition& cond_func, unsigned slot_timeout = 1000)
+  bool run_slot_until(const StopCondition& cond_func, unsigned slot_timeout = 100000)
   {
     unsigned count = 0;
     for (; count < slot_timeout; ++count) {
@@ -719,24 +757,43 @@ public:
   {
     using namespace std::chrono_literals;
 
+    rnti_t rnti = du_ue_index_to_rnti(ue_idx);
+
     // Wait until it's a full UL slot to send Msg3.
-    auto next_msg3_opportunity_condition = [this]() {
+    auto next_ul_slot = [this]() {
       return not cfg.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.has_value() or
              not is_tdd_full_ul_slot(cfg.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.value(),
                                      slot_point(next_sl_tx - tx_rx_delay - 1).slot_index());
     };
-    run_slot_until(next_msg3_opportunity_condition);
+    report_fatal_error_if_not(run_slot_until(next_ul_slot), "No slot for Msg3 was detected");
 
     // Received Msg3 with UL-CCCH message.
     mac_rx_data_indication rx_ind;
     rx_ind.sl_rx      = next_sl_tx - tx_rx_delay;
     rx_ind.cell_index = to_du_cell_index(0);
-    rx_ind.pdus.push_back(
-        mac_rx_pdu{du_ue_index_to_rnti(ue_idx),
-                   0,
-                   0,
-                   byte_buffer::create({0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00}).value()});
+    rx_ind.pdus.push_back(mac_rx_pdu{
+        rnti, 0, 0, byte_buffer::create({0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00}).value()});
     du_hi->get_pdu_handler().handle_rx_data_indication(std::move(rx_ind));
+    test_logger.info("rnti={}: Msg3 forwarded to DU-high", rnti);
+
+    // Wait for Msg4.
+    auto dl_pdu_sched = [this, rnti]() {
+      if (sim_phy.slot_dl_result.dl_res != nullptr) {
+        return find_ue_pdsch_with_lcid(rnti, LCID_SRB0, sim_phy.slot_dl_result.dl_res->ue_grants) != nullptr;
+      }
+      return false;
+    };
+    report_fatal_error_if_not(run_slot_until(dl_pdu_sched), "Msg4 with RRC Setup was not scheduled");
+    test_logger.info("rnti={}: DU-high scheduled Msg4 (containing RRC Setup)", rnti);
+
+    // Push MAC UL SDU that will trigger UE Context Setup.
+    // Note: MAC UL SDU will make the UE go out of fallback mode.
+    rx_ind             = {};
+    rx_ind.sl_rx       = next_sl_tx - tx_rx_delay;
+    rx_ind.cell_index  = to_du_cell_index(0);
+    byte_buffer ul_pdu = byte_buffer::create({0x01, 0x04, 0xc0, 0x00, 0x00, 0x00}).value(); // SRB1, RLC SN 0
+    rx_ind.pdus.push_back(mac_rx_pdu{du_ue_index_to_rnti(ue_idx), 0, 0, ul_pdu.copy()});
+    du_hi->get_pdu_handler().handle_rx_data_indication(rx_ind);
 
     // Wait for UE Context Modification Response to arrive to CU.
     while (not sim_cu_cp.ue_created_flag_list[ue_idx]) {
@@ -754,41 +811,45 @@ public:
     // more PDUs.
     static const size_t SATURATION_DL_BS_BYTES = 1e5;
 
-    if (dl_buffer_state_bytes == 0) {
+    if (f1u_dl_pdu_bytes_per_slot == 0) {
       // Early return.
       return;
     }
-    if (metrics_handler.tot_dl_bs > SATURATION_DL_BS_BYTES) {
+    uint64_t bytes_to_sched = f1u_dl_total_bytes.load(std::memory_order_relaxed);
+    bytes_to_sched -= std::min(bytes_to_sched, sim_phy.metrics.nof_dl_bytes);
+    if (bytes_to_sched > SATURATION_DL_BS_BYTES) {
       // Saturation of the DU DL detected. We throttle the F1-U interface to avoid depleting the byte buffer pool.
       return;
     }
+
     while (not workers.dl_exec.defer([this]() {
       static std::array<uint32_t, MAX_NOF_DU_UES> pdcp_sn_list{0};
-      const unsigned nof_dl_pdus_per_slot = divide_ceil(dl_buffer_state_bytes, this->f1u_pdu_size.value());
-      const unsigned last_dl_pdu_size     = dl_buffer_state_bytes % this->f1u_pdu_size.value();
+      const unsigned nof_dl_pdus_per_slot = divide_ceil(f1u_dl_pdu_bytes_per_slot, this->f1u_pdu_size.value());
+      const unsigned last_dl_pdu_size     = f1u_dl_pdu_bytes_per_slot % this->f1u_pdu_size.value();
 
-      // Forward DL buffer occupancy updates to all bearers.
-      for (unsigned bearer_idx = 0; bearer_idx != sim_cu_up.du_notif_list.size(); ++bearer_idx) {
-        const auto& du_notif = sim_cu_up.du_notif_list[bearer_idx];
-        for (unsigned i = 0; i != nof_dl_pdus_per_slot; ++i) {
-          // Update PDCP SN.
-          pdcp_sn_list[bearer_idx] = (pdcp_sn_list[bearer_idx] + 1) % (1U << 18U);
-          // We perform a deep-copy of the byte buffer to better simulate a real deployment, where there is stress over
-          // the byte buffer pool.
-          auto pdu_copy = pdcp_pdu.deep_copy();
-          if (pdu_copy.is_error()) {
-            test_logger.warning("Byte buffer segment pool depleted");
+      // Forward DL buffer occupancy updates to all bearers in a Round-robin fashion.
+      for (unsigned i = 0; i != nof_dl_pdus_per_slot; ++i) {
+        unsigned    bearer_idx = f1u_dl_rr_count++ % sim_cu_up.du_notif_list.size();
+        const auto& du_notif   = sim_cu_up.du_notif_list[bearer_idx];
+
+        // Update PDCP SN.
+        pdcp_sn_list[bearer_idx] = (pdcp_sn_list[bearer_idx] + 1) % (1U << 18U);
+        // We perform a deep-copy of the byte buffer to better simulate a real deployment, where there is stress over
+        // the byte buffer pool.
+        auto pdu_copy = pdcp_pdu.deep_copy();
+        if (not pdu_copy.has_value()) {
+          test_logger.warning("Byte buffer segment pool depleted");
+          return;
+        }
+        if (i == nof_dl_pdus_per_slot - 1 and last_dl_pdu_size != 0) {
+          // If it is last DL PDU.
+          if (!pdu_copy.value().resize(last_dl_pdu_size)) {
+            test_logger.warning("Unable to resize PDU to {} bytes", last_dl_pdu_size);
             return;
           }
-          if (i == nof_dl_pdus_per_slot - 1 and last_dl_pdu_size != 0) {
-            // If it is last DL PDU.
-            if (!pdu_copy.value().resize(last_dl_pdu_size)) {
-              test_logger.warning("Unable to resize PDU to {} bytes", last_dl_pdu_size);
-              return;
-            }
-          }
-          du_notif->on_new_sdu(pdcp_tx_pdu{.buf = std::move(pdu_copy.value()), .pdcp_sn = pdcp_sn_list[bearer_idx]});
         }
+        f1u_dl_total_bytes.fetch_add(pdu_copy.value().length(), std::memory_order_relaxed);
+        du_notif->on_new_pdu(nru_dl_message{.t_pdu = std::move(pdu_copy.value())});
       }
     })) {
       // keep trying to push new PDUs.
@@ -894,33 +955,39 @@ public:
 
       // 1 Byte for LCID and other fields and 1/2 Byte(s) for payload length.
       static const uint8_t mac_header_size = payload_len > 255 ? 3 : 2;
-      // Early return.
+
+      // Early return - the TB is too small.
       if (pusch.pusch_cfg.tb_size_bytes <= mac_header_size + bsr_mac_subpdu.length()) {
         return;
       }
-      // Prepare MAC PDU for LCID 4.
-      payload_len -= mac_header_size + bsr_mac_subpdu.length();
-      static const lcid_t drb_lcid = uint_to_lcid(4);
-      mac_rx_pdu          rx_pdu{pusch.pusch_cfg.rnti, 0, pusch.pusch_cfg.harq_id, {}};
-      // Pack header and payload length.
-      if (payload_len > 255) {
-        report_fatal_error_if_not(rx_pdu.pdu.append(0x40 | drb_lcid), "Failed to allocate PDU");
-        report_fatal_error_if_not(rx_pdu.pdu.append((payload_len & 0xff00) >> 8), "Failed to allocate PDU");
-        report_fatal_error_if_not(rx_pdu.pdu.append(payload_len & 0x00ff), "Failed to allocate PDU");
-      } else {
-        report_fatal_error_if_not(rx_pdu.pdu.append(drb_lcid), "Failed to allocate PDU");
-        report_fatal_error_if_not(rx_pdu.pdu.append(payload_len & 0x00ff), "Failed to allocate PDU");
-      }
-      static const uint8_t rlc_um_complete_pdu_header = 0x00;
-      report_fatal_error_if_not(rx_pdu.pdu.append(rlc_um_complete_pdu_header), "Failed to allocate PDU");
-      // Exclude RLC header from payload length.
-      report_fatal_error_if_not(rx_pdu.pdu.append(mac_pdu.begin(), mac_pdu.begin() + (payload_len - 1)),
-                                "Failed to allocate PDU");
-      // Append Long BSR bytes.
-      report_fatal_error_if_not(rx_pdu.pdu.append(bsr_mac_subpdu.begin(), bsr_mac_subpdu.end()),
-                                "Failed to allocate PDU");
 
-      rx_ind.pdus.push_back(rx_pdu);
+      // Encode MAC SDU for LCID 4 only if UE Context Modification Response has arrived to CU and LCID 4 is configured.
+      if (sim_cu_cp.ue_created_flag_list[rnti_to_du_ue_index(pusch.pusch_cfg.rnti)]) {
+        // Prepare MAC SDU for LCID 4.
+        static const lcid_t drb_lcid = uint_to_lcid(4);
+        mac_rx_pdu          rx_pdu{pusch.pusch_cfg.rnti, 0, pusch.pusch_cfg.harq_id, {}};
+        // Pack header and payload length.
+        // Subtract BSR length.
+        payload_len -= mac_header_size + bsr_mac_subpdu.length();
+        if (payload_len > 255) {
+          report_fatal_error_if_not(rx_pdu.pdu.append(0x40 | drb_lcid), "Failed to allocate PDU");
+          report_fatal_error_if_not(rx_pdu.pdu.append((payload_len & 0xff00) >> 8), "Failed to allocate PDU");
+          report_fatal_error_if_not(rx_pdu.pdu.append(payload_len & 0x00ff), "Failed to allocate PDU");
+        } else {
+          report_fatal_error_if_not(rx_pdu.pdu.append(drb_lcid), "Failed to allocate PDU");
+          report_fatal_error_if_not(rx_pdu.pdu.append(payload_len & 0x00ff), "Failed to allocate PDU");
+        }
+        static const uint8_t rlc_um_complete_pdu_header = 0x00;
+        report_fatal_error_if_not(rx_pdu.pdu.append(rlc_um_complete_pdu_header), "Failed to allocate PDU");
+        // Exclude RLC header from payload length.
+        report_fatal_error_if_not(rx_pdu.pdu.append(mac_pdu.begin(), mac_pdu.begin() + (payload_len - 1)),
+                                  "Failed to allocate PDU");
+        // Append Long BSR bytes.
+        report_fatal_error_if_not(rx_pdu.pdu.append(bsr_mac_subpdu.begin(), bsr_mac_subpdu.end()),
+                                  "Failed to allocate PDU");
+
+        rx_ind.pdus.push_back(rx_pdu);
+      }
 
       // Remove PUCCH UCI if UCI mltplxd on PUSCH.
       if (pusch.uci.has_value()) {
@@ -991,7 +1058,7 @@ public:
       crc_pdu.rnti           = pusch.pusch_cfg.rnti;
       crc_pdu.harq_id        = pusch.pusch_cfg.harq_id;
       crc_pdu.tb_crc_success = true;
-      crc_pdu.ul_sinr_metric = 21.0;
+      crc_pdu.ul_sinr_dB     = 21.0;
     }
     if (not sim_phy.slot_ul_result.ul_res->puschs.empty()) {
       pending_crc.push_back(std::move(crc));
@@ -1002,7 +1069,7 @@ public:
   cell_config_builder_params params;
   du_high_configuration      cfg{};
   /// Size of the DL buffer status to push for DL Tx.
-  unsigned     dl_buffer_state_bytes;
+  unsigned     f1u_dl_pdu_bytes_per_slot;
   units::bytes f1u_pdu_size{DEFAULT_DL_PDU_SIZE};
 
   srslog::basic_logger&              test_logger = srslog::fetch_basic_logger("TEST");
@@ -1042,6 +1109,11 @@ public:
 
   /// Size of the UL Buffer status report to push for UL Tx.
   unsigned ul_bsr_bytes;
+
+  // Round-robin indexer for pushing DL PDUs to attached UEs.
+  unsigned f1u_dl_rr_count = 0;
+  // Sum of total F1-U DL bytes pushed into DU.
+  std::atomic<uint64_t> f1u_dl_total_bytes{0};
 };
 
 /// \brief Generate custom cell configuration builder params based on duplex mode.
@@ -1055,8 +1127,8 @@ static cell_config_builder_params generate_custom_cell_config_builder_params(dup
       dplx_mode == duplex_mode::FDD ? srsran::bs_channel_bandwidth_fr1::MHz20 : bs_channel_bandwidth_fr1::MHz100;
   const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(
       params.channel_bw_mhz, params.scs_common, band_helper::get_freq_range(*params.band));
-  static const uint8_t                              ss0_idx = 0;
-  optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
+  static const uint8_t                                   ss0_idx = 0;
+  std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
       band_helper::get_ssb_coreset0_freq_location(params.dl_arfcn,
                                                   *params.band,
                                                   nof_crbs,
@@ -1084,14 +1156,15 @@ static cell_config_builder_params generate_custom_cell_config_builder_params(dup
 }
 
 /// \brief Benchmark DU-high with DL and/or UL only traffic using an RLC UM bearer.
-void benchmark_dl_ul_only_rlc_um(benchmarker&   bm,
-                                 unsigned       nof_ues,
-                                 duplex_mode    dplx_mode,
-                                 unsigned       dl_buffer_state_bytes,
-                                 unsigned       ul_bsr_bytes,
-                                 unsigned       max_nof_rbs_per_dl_grant,
-                                 units::bytes   dl_pdu_size,
-                                 span<unsigned> du_cell_cores)
+void benchmark_dl_ul_only_rlc_um(benchmarker&                          bm,
+                                 unsigned                              nof_ues,
+                                 duplex_mode                           dplx_mode,
+                                 unsigned                              dl_buffer_state_bytes,
+                                 unsigned                              ul_bsr_bytes,
+                                 unsigned                              max_nof_rbs_per_dl_grant,
+                                 units::bytes                          dl_pdu_size,
+                                 span<unsigned>                        du_cell_cores,
+                                 const policy_scheduler_expert_config& strategy_cfg)
 {
   auto                benchname = fmt::format("{}{}{}, {} UEs, RLC UM",
                                dl_buffer_state_bytes > 0 ? "DL" : "",
@@ -1104,6 +1177,7 @@ void benchmark_dl_ul_only_rlc_um(benchmarker&   bm,
                       max_nof_rbs_per_dl_grant,
                       dl_pdu_size,
                       du_cell_cores,
+                      strategy_cfg,
                       generate_custom_cell_config_builder_params(dplx_mode)};
   for (unsigned ue_count = 0; ue_count < nof_ues; ++ue_count) {
     bench.add_ue(to_du_ue_index(ue_count));
@@ -1121,7 +1195,7 @@ void benchmark_dl_ul_only_rlc_um(benchmarker&   bm,
         bench.run_slot();
       },
       [&bench]() {
-        // Push DL PDUs and UL PDUs.
+        // Push DL PDUs.
         bench.push_pdcp_pdus();
 
         // Advance slot
@@ -1181,13 +1255,15 @@ int main(int argc, char** argv)
   static const std::size_t byte_buffer_segment_size = 2048;
 
   // Set DU-high logging.
-  srslog::fetch_basic_logger("TEST").set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("RLC").set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("MAC", true).set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("SCHED", true).set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("DU-F1").set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("UE-MNG").set_level(srslog::basic_levels::warning);
-  srslog::fetch_basic_logger("DU-MNG").set_level(srslog::basic_levels::warning);
+  auto test_log_level = srslog::basic_levels::warning;
+  srslog::fetch_basic_logger("TEST").set_level(test_log_level);
+  srslog::fetch_basic_logger("RLC").set_level(test_log_level);
+  srslog::fetch_basic_logger("MAC", true).set_level(test_log_level);
+  srslog::fetch_basic_logger("SCHED", true).set_level(test_log_level);
+  srslog::fetch_basic_logger("DU-F1").set_level(test_log_level);
+  srslog::fetch_basic_logger("DU-F1-U").set_level(test_log_level);
+  srslog::fetch_basic_logger("UE-MNG").set_level(test_log_level);
+  srslog::fetch_basic_logger("DU-MNG").set_level(test_log_level);
   srslog::init();
 
   std::string tracing_filename = "";
@@ -1222,7 +1298,8 @@ int main(int argc, char** argv)
                                 params.ul_bsr_bytes,
                                 params.max_dl_rb_grant,
                                 params.pdu_size,
-                                params.du_cell_cores);
+                                params.du_cell_cores,
+                                params.strategy_cfg);
   }
 
   if (not tracing_filename.empty()) {

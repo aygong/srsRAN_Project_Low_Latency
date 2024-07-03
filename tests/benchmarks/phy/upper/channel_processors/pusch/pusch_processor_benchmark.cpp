@@ -119,9 +119,6 @@ static std::string                        ldpc_decoder_type           = "auto";
 static std::string                        rate_dematcher_type         = "auto";
 static bool                               enable_evm                  = false;
 static benchmark_modes                    benchmark_mode              = benchmark_modes::throughput_total;
-static unsigned                           nof_rx_ports                = 1;
-static constexpr unsigned                 max_nof_rx_ports            = 4;
-static unsigned                           nof_tx_layers               = 1;
 static unsigned                           nof_harq_ack                = 0;
 static unsigned                           nof_csi_part1               = 0;
 static unsigned                           nof_csi_part2               = 0;
@@ -139,25 +136,28 @@ static std::atomic<int>      pending_count = {0};
 static std::atomic<unsigned> finish_count  = {0};
 
 #ifdef HWACC_PUSCH_ENABLED
-static bool        ext_softbuffer = true;
-static bool        std_out_sink   = true;
-static std::string hal_log_level  = "error";
-static std::string eal_arguments  = "";
+static bool                 dedicated_queue = true;
+static bool                 ext_softbuffer  = true;
+static bool                 std_out_sink    = true;
+static srslog::basic_levels hal_log_level   = srslog::basic_levels::error;
+static std::string          eal_arguments   = "";
 #endif // HWACC_PUSCH_ENABLED
 
 // Test profile structure, initialized with default profile values.
 struct test_profile {
-  std::string                      name        = "default";
-  std::string                      description = "Runs all combinations.";
-  subcarrier_spacing               scs         = subcarrier_spacing::kHz15;
-  cyclic_prefix                    cp          = cyclic_prefix::NORMAL;
-  unsigned                         nof_symbols = get_nsymb_per_slot(cyclic_prefix::NORMAL);
-  std::vector<unsigned>            nof_prb_set = {25, 52, 106, 270};
-  std::vector<sch_mcs_description> mcs_set     = {{modulation_scheme::QPSK, 120.0F},
-                                                  {modulation_scheme::QAM16, 658.0F},
-                                                  {modulation_scheme::QAM64, 873.0F},
-                                                  {modulation_scheme::QAM256, 948.0F}};
-  std::vector<unsigned>            rv_set      = {0};
+  std::string                      name           = "default";
+  std::string                      description    = "Runs all combinations.";
+  subcarrier_spacing               scs            = subcarrier_spacing::kHz15;
+  cyclic_prefix                    cp             = cyclic_prefix::NORMAL;
+  unsigned                         nof_symbols    = get_nsymb_per_slot(cyclic_prefix::NORMAL);
+  std::vector<unsigned>            nof_prb_set    = {25, 52, 106, 270};
+  std::vector<sch_mcs_description> mcs_set        = {{modulation_scheme::QPSK, 120.0F},
+                                                     {modulation_scheme::QAM16, 658.0F},
+                                                     {modulation_scheme::QAM64, 873.0F},
+                                                     {modulation_scheme::QAM256, 948.0F}};
+  std::vector<unsigned>            rv_set         = {0};
+  unsigned                         nof_rx_ports   = 1;
+  std::vector<unsigned>            nof_layers_set = {1};
 };
 
 // Profile selected during test execution.
@@ -169,93 +169,48 @@ static const std::vector<test_profile> profile_set = {
         // Use default profile values.
     },
 
-    {"pusch_scs15_5MHz_qpsk_min",
-     "Decodes PUSCH with 5 MHz of bandwidth and a 15 kHz SCS, QPSK modulation at minimum code rate.",
+    {"scs15_5MHz_qpsk_rv0_1port_1layer",
+     "Decodes PUSCH with 15 kHz SCS, 5 MHz of bandwidth, QPSK modulation, minimum code rate, RV 0, 1 port, "
+     "and 1 layer.",
      subcarrier_spacing::kHz15,
      cyclic_prefix::NORMAL,
      get_nsymb_per_slot(cyclic_prefix::NORMAL),
      {25},
      {{modulation_scheme::QPSK, 120.0F}},
-     {0}},
+     {0},
+     1,
+     {1}},
 
-    {"pusch_scs15_5MHz_256qam_max",
-     "Decodes PUSCH with 5 MHz of bandwidth and a 15 kHz SCS, 256-QAM modulation at maximum code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {25},
-     {{modulation_scheme::QAM256, 948.0F}},
-     {0}},
-
-    {"pusch_scs15_20MHz_qpsk_min",
-     "Decodes PUSCH with 20 MHz of bandwidth and a 15 kHz SCS, QPSK modulation at minimum code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {106},
-     {{modulation_scheme::QPSK, 120.0F}},
-     {0}},
-
-    {"pusch_scs15_20MHz_16qam_med",
-     "Decodes PUSCH with 20 MHz of bandwidth and a 15 kHz SCS, 16-QAM modulation at a medium code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {106},
-     {{modulation_scheme::QAM16, 658.0F}},
-     {0}},
-
-    {"pusch_scs15_50MHz_64qam_max",
-     "Decodes PUSCH with 50 MHz of bandwidth and a 15 kHz SCS, 64-QAM modulation at a high code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {270},
-     {{modulation_scheme::QAM64, 873.0F}},
-     {0}},
-
-    {"pusch_scs15_20MHz_256qam_max",
-     "Decodes PUSCH with 20 MHz of bandwidth and a 15 kHz SCS, 256-QAM modulation at maximum code rate",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {106},
-     {{modulation_scheme::QAM256, 948.0F}},
-     {0}},
-
-    {"pusch_scs15_50MHz_qpsk_min",
-     "Decodes PUSCH with 50 MHz of bandwidth and a 15 kHz SCS, QPSK modulation at minimum code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {270},
-     {{modulation_scheme::QPSK, 120.0F}},
-     {0}},
-
-    {"pusch_scs15_50MHz_256qam_max",
-     "Decodes PUSCH with 50 MHz of bandwidth and a 15 kHz SCS, 256-QAM modulation at maximum code rate.",
-     subcarrier_spacing::kHz15,
-     cyclic_prefix::NORMAL,
-     get_nsymb_per_slot(cyclic_prefix::NORMAL),
-     {270},
-     {{modulation_scheme::QAM256, 948.0F}},
-     {0}},
-
-    {"pusch_scs30_100MHz_256qam_max",
-     "Decodes PUSCH with 100 MHz of bandwidth and a 30 kHz SCS, 256-QAM modulation at maximum code rate.",
+    {"scs30_100MHz_256qam_rv0_4port_nlayer",
+     "Decodes PUSCH with 30 kHz SCS, 100 MHz of bandwidth, 256-QAM modulation, maximum code rate, RV 0, 4 port, "
+     "and 1-2 layer.",
      subcarrier_spacing::kHz30,
      cyclic_prefix::NORMAL,
      get_nsymb_per_slot(cyclic_prefix::NORMAL),
      {273},
      {{modulation_scheme::QAM256, 948.0F}},
-     {0, 2}},
+     {0},
+     4,
+     {1, 2}},
+
+    {"scs30_100MHz_256qam_rvall_1port_1layer",
+     "Decodes PUSCH with 30 kHz SCS, 100 MHz of bandwidth, 256-QAM modulation, maximum code rate, RV 0-3, 1 port, "
+     "and 1 layer.",
+     subcarrier_spacing::kHz30,
+     cyclic_prefix::NORMAL,
+     get_nsymb_per_slot(cyclic_prefix::NORMAL),
+     {273},
+     {{modulation_scheme::QAM256, 948.0F}},
+     {0, 2, 3, 1},
+     1,
+     {1}},
 };
 
 static void usage(const char* prog)
 {
   fmt::print("Usage: {} [-m benchmark mode] [-R repetitions] [-B Batch size per thread] [-T number of threads] [-D "
              "LDPC type] [-M rate "
-             "dematcher type] [-P profile] [-x] [-y] [-z error|warning|info|debug] [-h] [eal_args ...]\n",
+             "dematcher type] [-P profile] [-w] [-x] [-y] [-z error|warning|info|debug] [-h] [eal_args ...]\n",
              prog);
   fmt::print("\t-m Benchmark mode. [Default {}]\n", to_string(benchmark_mode));
   fmt::print("\t\t {:<20}It does not print any result.\n", to_string(benchmark_modes::silent));
@@ -271,14 +226,15 @@ static void usage(const char* prog)
              nof_pusch_decoder_threads,
              max_nof_threads);
   fmt::print("\t-D LDPC decoder type. [Default {}]\n", ldpc_decoder_type);
-  fmt::print("\t-p Number of RX ports. [Default {}, max. {}]\n", nof_rx_ports, max_nof_rx_ports);
   fmt::print("\t-M Rate dematcher type. [Default {}]\n", rate_dematcher_type);
   fmt::print("\t-E Toggle EVM enable/disable. [Default {}]\n", enable_evm ? "enable" : "disable");
   fmt::print("\t-P Benchmark profile. [Default {}]\n", selected_profile_name);
   for (const test_profile& profile : profile_set) {
-    fmt::print("\t\t {:<30}{}\n", profile.name, profile.description);
+    fmt::print("\t\t {:<40} {}\n", profile.name, profile.description);
   }
 #ifdef HWACC_PUSCH_ENABLED
+  fmt::print("\t-w       Force shared hardware-queue use [Default {}]\n",
+             dedicated_queue ? "dedicated_queue" : "shared_queue");
   fmt::print("\t-x       Use the host's memory for the soft-buffer [Default {}]\n", !ext_softbuffer);
   fmt::print("\t-y       Force logging output written to a file [Default {}]\n", std_out_sink ? "std_out" : "file");
   fmt::print("\t-z       Set logging level for the HAL [Default {}]\n", hal_log_level);
@@ -324,7 +280,7 @@ static std::string capture_eal_args(int* argc, char*** argv)
 static int parse_args(int argc, char** argv)
 {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "R:T:t:p:B:D:M:EP:m:xyz:h")) != -1) {
+  while ((opt = getopt(argc, argv, "R:T:t:B:D:M:EP:m:wxyz:h")) != -1) {
     switch (opt) {
       case 'R':
         nof_repetitions = std::strtol(optarg, nullptr, 10);
@@ -334,9 +290,6 @@ static int parse_args(int argc, char** argv)
         break;
       case 't':
         nof_pusch_decoder_threads = std::min(max_nof_threads, static_cast<unsigned>(std::strtol(optarg, nullptr, 10)));
-        break;
-      case 'p':
-        nof_rx_ports = std::min(max_nof_rx_ports, static_cast<unsigned>(std::strtol(optarg, nullptr, 10)));
         break;
       case 'B':
         batch_size_per_thread = std::strtol(optarg, nullptr, 10);
@@ -362,15 +315,20 @@ static int parse_args(int argc, char** argv)
         }
         break;
 #ifdef HWACC_PUSCH_ENABLED
+      case 'w':
+        dedicated_queue = false;
+        break;
       case 'x':
         ext_softbuffer = false;
         break;
       case 'y':
         std_out_sink = false;
         break;
-      case 'z':
-        hal_log_level = std::string(optarg);
+      case 'z': {
+        auto level    = srslog::str_to_basic_level(std::string(optarg));
+        hal_log_level = level.has_value() ? level.value() : srslog::basic_levels::error;
         break;
+      }
 #endif // HWACC_PUSCH_ENABLED
       case 'h':
       default:
@@ -407,46 +365,48 @@ static std::vector<test_case_type> generate_test_cases(const test_profile& profi
   for (sch_mcs_description mcs : profile.mcs_set) {
     for (unsigned nof_prb : profile.nof_prb_set) {
       for (unsigned rv : profile.rv_set) {
-        // Determine the Transport Block Size.
-        tbs_calculator_configuration tbs_config = {};
-        tbs_config.mcs_descr                    = mcs;
-        tbs_config.n_prb                        = nof_prb;
-        tbs_config.nof_layers                   = nof_tx_layers;
-        tbs_config.nof_symb_sh                  = profile.nof_symbols;
-        tbs_config.nof_dmrs_prb = dmrs.nof_dmrs_per_rb() * dmrs_symbol_mask.count() * nof_cdm_groups_without_data;
-        unsigned tbs            = tbs_calculator_calculate(tbs_config);
+        for (unsigned nof_layers : profile.nof_layers_set) {
+          // Determine the Transport Block Size.
+          tbs_calculator_configuration tbs_config = {};
+          tbs_config.mcs_descr                    = mcs;
+          tbs_config.n_prb                        = nof_prb;
+          tbs_config.nof_layers                   = nof_layers;
+          tbs_config.nof_symb_sh                  = profile.nof_symbols;
+          tbs_config.nof_dmrs_prb = dmrs.nof_dmrs_per_rb() * dmrs_symbol_mask.count() * nof_cdm_groups_without_data;
+          unsigned tbs            = tbs_calculator_calculate(tbs_config);
 
-        // Build the PUSCH PDU configuration.
-        pusch_processor::pdu_t config = {};
-        config.slot                   = slot_point(to_numerology_value(profile.scs), 0);
-        config.rnti                   = 1;
-        config.bwp_size_rb            = nof_prb;
-        config.bwp_start_rb           = 0;
-        config.cp                     = profile.cp;
-        config.mcs_descr              = mcs;
-        config.codeword.emplace(pusch_processor::codeword_description{
-            rv, get_ldpc_base_graph(mcs.get_normalised_target_code_rate(), units::bits(tbs)), true});
-        config.uci.alpha_scaling         = 1.0;
-        config.uci.beta_offset_harq_ack  = 5.0;
-        config.uci.beta_offset_csi_part1 = 5.0;
-        config.uci.beta_offset_csi_part2 = 5.0;
-        config.uci.nof_harq_ack          = nof_harq_ack;
-        config.uci.nof_csi_part1         = nof_csi_part1;
-        config.uci.csi_part2_size        = uci_part2_size_description(nof_csi_part2);
-        config.n_id                      = 0;
-        config.nof_tx_layers             = nof_tx_layers;
-        config.rx_ports.resize(nof_rx_ports);
-        std::iota(config.rx_ports.begin(), config.rx_ports.end(), 0);
-        config.dmrs_symbol_mask            = dmrs_symbol_mask;
-        config.dmrs                        = dmrs;
-        config.scrambling_id               = 0;
-        config.nof_cdm_groups_without_data = nof_cdm_groups_without_data;
-        config.freq_alloc                  = rb_allocation::make_type1(config.bwp_start_rb, nof_prb);
-        config.start_symbol_index          = 0;
-        config.nof_symbols                 = profile.nof_symbols;
-        config.tbs_lbrm_bytes              = ldpc::MAX_CODEBLOCK_SIZE / 8;
+          // Build the PUSCH PDU configuration.
+          pusch_processor::pdu_t config = {};
+          config.slot                   = slot_point(to_numerology_value(profile.scs), 0);
+          config.rnti                   = 1;
+          config.bwp_size_rb            = nof_prb;
+          config.bwp_start_rb           = 0;
+          config.cp                     = profile.cp;
+          config.mcs_descr              = mcs;
+          config.codeword.emplace(pusch_processor::codeword_description{
+              rv, get_ldpc_base_graph(mcs.get_normalised_target_code_rate(), units::bits(tbs)), true});
+          config.uci.alpha_scaling         = 1.0;
+          config.uci.beta_offset_harq_ack  = 5.0;
+          config.uci.beta_offset_csi_part1 = 5.0;
+          config.uci.beta_offset_csi_part2 = 5.0;
+          config.uci.nof_harq_ack          = nof_harq_ack;
+          config.uci.nof_csi_part1         = nof_csi_part1;
+          config.uci.csi_part2_size        = uci_part2_size_description(nof_csi_part2);
+          config.n_id                      = 0;
+          config.nof_tx_layers             = nof_layers;
+          config.rx_ports.resize(profile.nof_rx_ports);
+          std::iota(config.rx_ports.begin(), config.rx_ports.end(), 0);
+          config.dmrs_symbol_mask            = dmrs_symbol_mask;
+          config.dmrs                        = dmrs;
+          config.scrambling_id               = 0;
+          config.nof_cdm_groups_without_data = nof_cdm_groups_without_data;
+          config.freq_alloc                  = rb_allocation::make_type1(config.bwp_start_rb, nof_prb);
+          config.start_symbol_index          = 0;
+          config.nof_symbols                 = profile.nof_symbols;
+          config.tbs_lbrm                    = tbs_lbrm_default;
 
-        test_case_set.emplace_back(std::tuple<pusch_processor::pdu_t, unsigned>(config, tbs));
+          test_case_set.emplace_back(std::tuple<pusch_processor::pdu_t, unsigned>(config, tbs));
+        }
       }
     }
   }
@@ -484,7 +444,7 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
 #ifdef HWACC_PUSCH_ENABLED
   // Intefacing to the bbdev-based hardware-accelerator.
   srslog::basic_logger& logger = srslog::fetch_basic_logger("HWACC", false);
-  logger.set_level(srslog::str_to_basic_level(hal_log_level));
+  logger.set_level(hal_log_level);
   dpdk::bbdev_acc_configuration bbdev_config;
   bbdev_config.id                                    = 0;
   bbdev_config.nof_ldpc_enc_lcores                   = 0;
@@ -497,16 +457,17 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
   // Interfacing to a shared external HARQ buffer context repository.
   unsigned nof_cbs                   = MAX_NOF_SEGMENTS;
   uint64_t acc100_ext_harq_buff_size = bbdev_accelerator->get_harq_buff_size_bytes();
-  std::shared_ptr<ext_harq_buffer_context_repository> harq_buffer_context =
-      create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, false);
+  std::shared_ptr<hal::ext_harq_buffer_context_repository> harq_buffer_context =
+      hal::create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, false);
   TESTASSERT(harq_buffer_context);
 
   // Set the hardware-accelerator configuration.
-  hw_accelerator_pusch_dec_configuration hw_decoder_config;
+  hal::hw_accelerator_pusch_dec_configuration hw_decoder_config;
   hw_decoder_config.acc_type            = "acc100";
   hw_decoder_config.bbdev_accelerator   = bbdev_accelerator;
   hw_decoder_config.ext_softbuffer      = ext_softbuffer;
   hw_decoder_config.harq_buffer_context = harq_buffer_context;
+  hw_decoder_config.dedicated_queue     = dedicated_queue;
 
   // ACC100 hardware-accelerator implementation.
   return create_hw_accelerator_pusch_dec_factory(hw_decoder_config);
@@ -586,7 +547,7 @@ static pusch_processor_factory& get_pusch_processor_factory()
   TESTASSERT(dmrs_pusch_chan_estimator_factory);
 
   // Create channel equalizer factory.
-  std::shared_ptr<channel_equalizer_factory> eq_factory = create_channel_equalizer_factory_zf();
+  std::shared_ptr<channel_equalizer_factory> eq_factory = create_channel_equalizer_generic_factory();
   TESTASSERT(eq_factory);
 
   // Create PUSCH demodulator factory.
@@ -621,22 +582,37 @@ static pusch_processor_factory& get_pusch_processor_factory()
 
   // Create PUSCH processor.
   pusch_processor_factory_sw_configuration pusch_proc_factory_config;
-  pusch_proc_factory_config.estimator_factory                    = dmrs_pusch_chan_estimator_factory;
-  pusch_proc_factory_config.demodulator_factory                  = pusch_demod_factory;
-  pusch_proc_factory_config.demux_factory                        = demux_factory;
-  pusch_proc_factory_config.decoder_factory                      = pusch_dec_factory;
-  pusch_proc_factory_config.uci_dec_factory                      = uci_dec_factory;
-  pusch_proc_factory_config.ch_estimate_dimensions.nof_prb       = MAX_RB;
-  pusch_proc_factory_config.ch_estimate_dimensions.nof_symbols   = MAX_NSYMB_PER_SLOT;
-  pusch_proc_factory_config.ch_estimate_dimensions.nof_rx_ports  = nof_rx_ports;
-  pusch_proc_factory_config.ch_estimate_dimensions.nof_tx_layers = nof_tx_layers;
-  pusch_proc_factory_config.dec_nof_iterations                   = 2;
-  pusch_proc_factory_config.dec_enable_early_stop                = true;
-  pusch_proc_factory_config.max_nof_concurrent_threads           = nof_threads;
-  pusch_proc_factory = create_pusch_processor_factory_sw(pusch_proc_factory_config);
+  pusch_proc_factory_config.estimator_factory                   = dmrs_pusch_chan_estimator_factory;
+  pusch_proc_factory_config.demodulator_factory                 = pusch_demod_factory;
+  pusch_proc_factory_config.demux_factory                       = demux_factory;
+  pusch_proc_factory_config.decoder_factory                     = pusch_dec_factory;
+  pusch_proc_factory_config.uci_dec_factory                     = uci_dec_factory;
+  pusch_proc_factory_config.ch_estimate_dimensions.nof_prb      = MAX_RB;
+  pusch_proc_factory_config.ch_estimate_dimensions.nof_symbols  = MAX_NSYMB_PER_SLOT;
+  pusch_proc_factory_config.ch_estimate_dimensions.nof_rx_ports = selected_profile.nof_rx_ports;
+  pusch_proc_factory_config.ch_estimate_dimensions.nof_tx_layers =
+      *std::max_element(selected_profile.nof_layers_set.begin(), selected_profile.nof_layers_set.end());
+  pusch_proc_factory_config.dec_nof_iterations         = 2;
+  pusch_proc_factory_config.dec_enable_early_stop      = true;
+  pusch_proc_factory_config.max_nof_concurrent_threads = nof_threads;
+  pusch_proc_factory                                   = create_pusch_processor_factory_sw(pusch_proc_factory_config);
   TESTASSERT(pusch_proc_factory);
 
-  pusch_proc_factory = create_pusch_processor_pool(std::move(pusch_proc_factory), nof_threads, true);
+  pusch_proc_factory_config.decoder_factory =
+      create_pusch_decoder_empty_factory(MAX_RB, pusch_constants::MAX_NOF_LAYERS);
+  TESTASSERT(pusch_proc_factory_config.decoder_factory);
+  std::shared_ptr<pusch_processor_factory> uci_proc_factory =
+      create_pusch_processor_factory_sw(pusch_proc_factory_config);
+  TESTASSERT(uci_proc_factory);
+
+  pusch_processor_pool_factory_config pusch_proc_pool_config;
+  pusch_proc_pool_config.factory                = pusch_proc_factory;
+  pusch_proc_pool_config.uci_factory            = uci_proc_factory;
+  pusch_proc_pool_config.nof_regular_processors = nof_threads;
+  pusch_proc_pool_config.nof_uci_processors     = nof_threads;
+  pusch_proc_pool_config.blocking               = true;
+
+  pusch_proc_factory = create_pusch_processor_pool(pusch_proc_pool_config);
   TESTASSERT(pusch_proc_factory);
 
   return *pusch_proc_factory;
@@ -745,11 +721,11 @@ int main(int argc, char** argv)
     ldpc_decoder_type   = "acc100";
     rate_dematcher_type = "acc100";
     srslog::sink* log_sink =
-        std_out_sink ? srslog::create_stdout_sink() : srslog::create_file_sink("pusch_processor_benchmark.log");
+        std_out_sink ? srslog::create_stdout_sink() : srslog::create_file_sink("processor_benchmark.log");
     srslog::set_default_sink(*log_sink);
     srslog::init();
     srslog::basic_logger& logger = srslog::fetch_basic_logger("EAL", false);
-    logger.set_level(srslog::str_to_basic_level(hal_log_level));
+    logger.set_level(hal_log_level);
     dpdk_interface = dpdk::create_dpdk_eal(eal_arguments, logger);
     TESTASSERT(dpdk_interface, "Failed to open DPDK EAL with arguments.");
   }
@@ -777,10 +753,11 @@ int main(int argc, char** argv)
   unsigned grid_nof_subcs   = MAX_RB * NRE;
 
   // Create resource grid.
-  std::unique_ptr<resource_grid> grid = create_resource_grid(nof_rx_ports, grid_nof_symbols, grid_nof_subcs);
+  std::unique_ptr<resource_grid> grid =
+      create_resource_grid(pusch_constants::MAX_NOF_LAYERS, grid_nof_symbols, grid_nof_subcs);
   TESTASSERT(grid);
 
-  unsigned nof_grid_re = grid_nof_subcs * grid_nof_symbols * nof_rx_ports;
+  unsigned nof_grid_re = grid_nof_subcs * grid_nof_symbols * selected_profile.nof_rx_ports;
 
   // Create a vector to hold the randomly generated RE.
   std::vector<cf_t> random_re(nof_grid_re);
@@ -796,7 +773,7 @@ int main(int argc, char** argv)
 
   // Fill the grid with the random RE.
   span<const cf_t> re_view(random_re);
-  for (unsigned i_rx_port = 0; i_rx_port != nof_rx_ports; ++i_rx_port) {
+  for (unsigned i_rx_port = 0; i_rx_port != selected_profile.nof_rx_ports; ++i_rx_port) {
     for (unsigned i_symbol = 0; i_symbol != grid_nof_symbols; ++i_symbol) {
       re_view = grid->get_writer().put(i_rx_port, i_symbol, 0, re_mask, re_view);
     }
@@ -848,11 +825,12 @@ int main(int argc, char** argv)
     // Measurement description.
     fmt::memory_buffer meas_description;
     fmt::format_to(meas_description,
-                   "PUSCH RB={:<3} Mod={:<6} R={:<5.3f} rv={} - {:>5.1f} Mbps",
+                   "PUSCH RB={:<3} Mod={:<6} R={:<5.3f} rv={} n_layers={} - {:>5.1f} Mbps",
                    config.freq_alloc.get_nof_rb(),
                    to_string(config.mcs_descr.modulation),
                    config.mcs_descr.get_normalised_target_code_rate(),
                    config.codeword.value().rv,
+                   config.nof_tx_layers,
                    peak_throughput_Mbps);
 
     // Run the benchmark.

@@ -40,7 +40,7 @@ struct pucch_gen_params_opt1 {
   bool                             f1_intraslot_freq_hopping{false};
   bounded_integer<unsigned, 1, 2>  f2_nof_symbols{1};
   unsigned                         max_nof_rbs{1};
-  optional<unsigned>               max_payload_bits;
+  std::optional<unsigned>          max_payload_bits;
   max_pucch_code_rate              max_code_rate{max_pucch_code_rate::dot_25};
   bool                             f2_intraslot_freq_hopping{false};
 };
@@ -62,7 +62,7 @@ struct pucch_gen_params_opt2 {
   bool                             f1_intraslot_freq_hopping{false};
   bounded_integer<unsigned, 1, 2>  f2_nof_symbols{1};
   unsigned                         max_nof_rbs{1};
-  optional<unsigned>               max_payload_bits;
+  std::optional<unsigned>          max_payload_bits;
   max_pucch_code_rate              max_code_rate{max_pucch_code_rate::dot_25};
   bool                             f2_intraslot_freq_hopping{false};
 };
@@ -107,8 +107,8 @@ public:
   void add_resource(const pucch_resource& res)
   {
     if (res.format == pucch_format::FORMAT_1) {
-      srsran_assert(variant_holds_alternative<pucch_format_1_cfg>(res.format_params), "Expected PUCCH Format 1");
-      const auto& res_f1 = variant_get<pucch_format_1_cfg>(res.format_params);
+      srsran_assert(std::holds_alternative<pucch_format_1_cfg>(res.format_params), "Expected PUCCH Format 1");
+      const auto& res_f1 = std::get<pucch_format_1_cfg>(res.format_params);
 
       if (res.second_hop_prb.has_value()) {
         // First hop.
@@ -148,8 +148,8 @@ public:
       }
 
     } else if (res.format == srsran::pucch_format::FORMAT_2) {
-      srsran_assert(variant_holds_alternative<pucch_format_2_3_cfg>(res.format_params), "Expected PUCCH Format 2");
-      const auto& res_f2 = variant_get<pucch_format_2_3_cfg>(res.format_params);
+      srsran_assert(std::holds_alternative<pucch_format_2_3_cfg>(res.format_params), "Expected PUCCH Format 2");
+      const auto& res_f2 = std::get<pucch_format_2_3_cfg>(res.format_params);
 
       if (res.second_hop_prb.has_value()) {
         // First hop.
@@ -189,8 +189,8 @@ public:
   bool verify_collision(const pucch_resource& res) const
   {
     if (res.format == pucch_format::FORMAT_1) {
-      srsran_assert(variant_holds_alternative<pucch_format_1_cfg>(res.format_params), "Expected PUCCH Format 1");
-      const auto& res_f1 = variant_get<pucch_format_1_cfg>(res.format_params);
+      srsran_assert(std::holds_alternative<pucch_format_1_cfg>(res.format_params), "Expected PUCCH Format 1");
+      const auto& res_f1 = std::get<pucch_format_1_cfg>(res.format_params);
       // Intra-slot frequency hopping.
       if (res.second_hop_prb.has_value()) {
         // First hop.
@@ -247,8 +247,8 @@ public:
         }
       }
     } else if (res.format == srsran::pucch_format::FORMAT_2) {
-      srsran_assert(variant_holds_alternative<pucch_format_2_3_cfg>(res.format_params), "Expected PUCCH Format 2");
-      const auto& res_f2 = variant_get<pucch_format_2_3_cfg>(res.format_params);
+      srsran_assert(std::holds_alternative<pucch_format_2_3_cfg>(res.format_params), "Expected PUCCH Format 2");
+      const auto& res_f2 = std::get<pucch_format_2_3_cfg>(res.format_params);
 
       // Intra-slot frequency hopping.
       if (res.second_hop_prb.has_value()) {
@@ -675,14 +675,14 @@ protected:
     auto& csi_cfg = serv_cell_cfg.csi_meas_cfg.value();
     srsran_assert(serv_cell_cfg.csi_meas_cfg.has_value(), "CSI meas config is expected to be present");
     srsran_assert(not csi_cfg.csi_report_cfg_list.empty() and
-                      variant_holds_alternative<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
+                      std::holds_alternative<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
                           csi_cfg.csi_report_cfg_list.front().report_cfg_type) and
-                      not variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
+                      not std::get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
                               csi_cfg.csi_report_cfg_list.front().report_cfg_type)
                               .pucch_csi_res_list.empty(),
                   "PUCCH-CSI-ResourceList has not been configured in the CSI-reportConfig");
 
-    const pucch_res_id_t csi_res_id = variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
+    const pucch_res_id_t csi_res_id = std::get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
                                           csi_cfg.csi_report_cfg_list.front().report_cfg_type)
                                           .pucch_csi_res_list.front()
                                           .pucch_res_id;

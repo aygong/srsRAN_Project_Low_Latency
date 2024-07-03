@@ -55,7 +55,10 @@ from .steps.stub import ping, start_network, stop, ue_start_and_attach, ue_stop
     ),
 )
 @mark.android
-@mark.flaky(reruns=2, only_rerun=["failed to start", "Exception calling application"])
+@mark.flaky(
+    reruns=2,
+    only_rerun=["failed to start", "Exception calling application", "Attach timeout reached", "Some packages got lost"],
+)
 # pylint: disable=too-many-arguments
 def test_android(
     retina_manager: RetinaTestManager,
@@ -106,7 +109,10 @@ def test_android(
     ),
 )
 @mark.android_hp
-@mark.flaky(reruns=2, only_rerun=["failed to start", "Exception calling application"])
+@mark.flaky(
+    reruns=2,
+    only_rerun=["failed to start", "Exception calling application", "Attach timeout reached", "Some packages got lost"],
+)
 # pylint: disable=too-many-arguments
 def test_android_hp(
     retina_manager: RetinaTestManager,
@@ -154,7 +160,15 @@ def test_android_hp(
     ),
 )
 @mark.zmq
-@mark.flaky(reruns=2, only_rerun=["failed to start", "Attach timeout reached", "Some packages got lost"])
+@mark.flaky(
+    reruns=2,
+    only_rerun=[
+        "failed to start",
+        "Attach timeout reached",
+        "Some packages got lost",
+        "socket is already closed",
+    ],
+)
 # pylint: disable=too-many-arguments
 def test_zmq(
     retina_manager: RetinaTestManager,
@@ -353,7 +367,7 @@ def _ping(
         sample_rate=sample_rate,
         global_timing_advance=global_timing_advance,
         time_alignment_calibration=time_alignment_calibration,
-        gtpu_enable=True,
+        n3_enable=True,
         log_ip_level="debug",
     )
     configure_artifacts(

@@ -91,10 +91,11 @@ bool srsran::srs_cu_cp::fill_rrc_reconfig_args(
     const std::vector<drb_id_t>&                                       drb_to_remove,
     const f1ap_du_to_cu_rrc_info&                                      du_to_cu_rrc_info,
     const std::vector<byte_buffer>&                                    nas_pdus,
-    const optional<rrc_meas_cfg>                                       rrc_meas_cfg,
+    const std::optional<rrc_meas_cfg>                                  rrc_meas_cfg,
     bool                                                               reestablish_srbs,
     bool                                                               reestablish_drbs,
     bool                                                               update_keys,
+    byte_buffer                                                        sib1,
     const srslog::basic_logger&                                        logger)
 {
   rrc_radio_bearer_config radio_bearer_config;
@@ -181,6 +182,10 @@ bool srsran::srs_cu_cp::fill_rrc_reconfig_args(
 
   rrc_reconfig_args.meas_cfg = rrc_meas_cfg;
 
+  if (!sib1.empty()) {
+    rrc_reconfig_args.non_crit_ext.value().ded_sib1_delivery = std::move(sib1);
+  }
+
   return true;
 }
 
@@ -216,7 +221,8 @@ bool fill_f1ap_drb_setup_mod_item(f1ap_drbs_to_be_setup_mod_item& drb_setup_mod_
   // S-NSSAI
   drb_setup_mod_item.qos_info.s_nssai = next_drb_config.s_nssai;
 
-  drb_setup_mod_item.rlc_mod = next_drb_config.rlc_mod;
+  drb_setup_mod_item.rlc_mod     = next_drb_config.rlc_mod;
+  drb_setup_mod_item.pdcp_sn_len = next_drb_config.pdcp_cfg.tx.sn_size;
 
   // Add up tnl info
   for (const auto& ul_up_transport_param : e1ap_drb_item.ul_up_transport_params) {
@@ -272,12 +278,12 @@ bool srsran::srs_cu_cp::update_setup_list(
     const slotted_id_vector<pdu_session_id_t, e1ap_pdu_session_resource_setup_modification_item>&
                                  pdu_session_resource_setup_list,
     up_config_update&            next_config,
-    up_resource_manager&         rrc_ue_up_resource_manager,
+    up_resource_manager&         up_resource_mng,
     const security_indication_t& default_security_indication,
     const srslog::basic_logger&  logger)
 {
   // Set up SRB2 if this is the first DRB to be setup
-  if (rrc_ue_up_resource_manager.get_nof_drbs() == 0) {
+  if (up_resource_mng.get_nof_drbs() == 0) {
     f1ap_srbs_to_be_setup_mod_item srb2;
     srb2.srb_id = srb_id_t::srb2;
     srb_setup_mod_list.emplace(srb2.srb_id, srb2);
@@ -403,7 +409,7 @@ bool srsran::srs_cu_cp::update_setup_list(
     const slotted_id_vector<pdu_session_id_t, e1ap_pdu_session_resource_setup_modification_item>&
                                 pdu_session_resource_setup_list,
     up_config_update&           next_config,
-    up_resource_manager&        rrc_ue_up_resource_manager,
+    up_resource_manager&        up_resource_mng,
     const srslog::basic_logger& logger)
 {
   // Set up SRB1 and SRB2 (this is for inter CU handover, so no SRBs are setup yet)

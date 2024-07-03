@@ -27,6 +27,7 @@
 #include "radio_uhd_rx_stream.h"
 #include "radio_uhd_tx_stream.h"
 #include "srsran/radio/radio_session.h"
+#include "srsran/srslog/srslog.h"
 
 /// \brief Determines whether a frequency is valid within a range.
 ///
@@ -131,6 +132,10 @@ public:
           }
           break;
         case radio_uhd_device_type::types::B2xx:
+          if (!device_addr.has_key("master_clock_rate")) {
+            automatic_master_clock_rate = true;
+          }
+          break;
         case radio_uhd_device_type::types::UNKNOWN:
         default:
           // No default parameters are required.
@@ -202,8 +207,25 @@ public:
   {
     return safe_execution([this, &timespec]() { usrp->set_time_unknown_pps(timespec); });
   }
+  bool get_rx_antennas(std::vector<std::string>& rx_antennas, unsigned channel_id)
+  {
+    return safe_execution([this, &rx_antennas, &channel_id]() { rx_antennas = usrp->get_rx_antennas(channel_id); });
+  }
+  bool set_rx_antenna(const std::string& rx_antenna, unsigned channel_id)
+  {
+    return safe_execution([this, &rx_antenna, &channel_id]() { usrp->set_rx_antenna(rx_antenna, channel_id); });
+  }
+  bool get_selected_tx_antenna(std::string& tx_antenna, unsigned channel_id)
+  {
+    return safe_execution([this, &tx_antenna, &channel_id]() { tx_antenna = usrp->get_tx_antenna(channel_id); });
+  }
   bool set_automatic_master_clock_rate(double srate_Hz)
   {
+    // Skip automatic master clock rate if it is not available.
+    if (!automatic_master_clock_rate) {
+      return true;
+    }
+
     return safe_execution([this, &srate_Hz]() {
       // Get range of valid master clock rates.
       uhd::meta_range_t range = usrp->get_master_clock_rate_range();
@@ -428,8 +450,9 @@ public:
   }
 
 private:
-  uhd::usrp::multi_usrp::sptr usrp = nullptr;
-  radio_uhd_device_type       type = radio_uhd_device_type::types::UNKNOWN;
+  uhd::usrp::multi_usrp::sptr usrp                        = nullptr;
+  radio_uhd_device_type       type                        = radio_uhd_device_type::types::UNKNOWN;
+  bool                        automatic_master_clock_rate = false;
   srslog::basic_logger&       logger;
 };
 

@@ -61,6 +61,9 @@ void ue_configuration_procedure::operator()(coro_context<async_task<f1ap_ue_cont
     CORO_EARLY_RETURN(make_ue_config_failure());
   }
 
+  // > Stop traffic in the DRBs that need to be removed.
+  CORO_AWAIT(stop_drbs_to_rem());
+
   // > Update DU UE bearers.
   update_ue_context();
 
@@ -73,6 +76,12 @@ void ue_configuration_procedure::operator()(coro_context<async_task<f1ap_ue_cont
   proc_logger.log_proc_completed();
 
   CORO_RETURN(mac_res.result ? make_ue_config_response() : make_ue_config_failure());
+}
+
+async_task<void> ue_configuration_procedure::stop_drbs_to_rem()
+{
+  // Request traffic to stop for DRBs that are going to be removed.
+  return ue->handle_drb_traffic_stop_request(request.drbs_to_rem);
 }
 
 void ue_configuration_procedure::update_ue_context()
@@ -162,19 +171,21 @@ void ue_configuration_procedure::update_ue_context()
     //  varying 5QI.
 
     // Create DU DRB instance.
-    std::unique_ptr<du_ue_drb> drb = create_drb(ue->ue_index,
-                                                ue->pcell_index,
-                                                drbtoadd.drb_id,
-                                                it->lcid,
-                                                it->rlc_cfg,
-                                                it->mac_cfg,
-                                                f1u_cfg_it->second.f1u,
-                                                drbtoadd.uluptnl_info_list,
-                                                ue_mng.get_f1u_teid_pool(),
-                                                du_params,
-                                                ue->get_rlc_rlf_notifier(),
-                                                get_5qi_to_qos_characteristics_mapping(drbtoadd.five_qi),
-                                                drbtoadd.gbr_flow_info);
+    std::unique_ptr<du_ue_drb> drb =
+        create_drb(drb_creation_info{ue->ue_index,
+                                     ue->pcell_index,
+                                     drbtoadd.drb_id,
+                                     it->lcid,
+                                     it->rlc_cfg,
+                                     it->mac_cfg,
+                                     f1u_cfg_it->second.f1u,
+                                     drbtoadd.uluptnl_info_list,
+                                     ue_mng.get_f1u_teid_pool(),
+                                     du_params,
+                                     ue->get_rlc_rlf_notifier(),
+                                     get_5qi_to_qos_characteristics_mapping(drbtoadd.five_qi),
+                                     drbtoadd.gbr_flow_info,
+                                     drbtoadd.s_nssai});
     if (drb == nullptr) {
       proc_logger.log_proc_warning("Failed to create {}. Cause: Failed to allocate DU UE resources.", drbtoadd.drb_id);
       continue;
@@ -185,7 +196,15 @@ void ue_configuration_procedure::update_ue_context()
 
 void ue_configuration_procedure::clear_old_ue_context()
 {
-  drbs_to_rem.clear();
+  if (not drbs_to_rem.empty()) {
+    // Dispatch DRB context destruction to the respective UE executor.
+    task_executor& exec = du_params.services.ue_execs.ctrl_executor(ue->ue_index);
+    if (not exec.defer([drbs = std::move(drbs_to_rem)]() mutable { drbs.clear(); })) {
+      logger.warning("ue={}: Could not dispatch DRB removal task to UE executor. Destroying it the main DU manager "
+                     "execution context",
+                     ue->ue_index);
+    }
+  }
 }
 
 async_task<mac_ue_reconfiguration_response> ue_configuration_procedure::update_mac_mux_and_demux()

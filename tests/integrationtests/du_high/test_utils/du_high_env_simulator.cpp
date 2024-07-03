@@ -22,29 +22,19 @@
 
 #include "du_high_env_simulator.h"
 #include "tests/test_doubles/f1ap/f1ap_test_message_validators.h"
+#include "tests/test_doubles/f1ap/f1ap_test_messages.h"
 #include "tests/test_doubles/mac/mac_test_messages.h"
 #include "tests/unittests/f1ap/du/f1ap_du_test_helpers.h"
 #include "tests/unittests/scheduler/test_utils/result_test_helpers.h"
 #include "srsran/asn1/f1ap/common.h"
+#include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/du_high/du_high_factory.h"
+#include "srsran/support/error_handling.h"
 #include "srsran/support/test_utils.h"
 
 using namespace srsran;
 using namespace srs_du;
-
-static f1ap_message create_f1_setup_response()
-{
-  f1ap_message f1ap_msg;
-  f1ap_msg.pdu.set_successful_outcome().load_info_obj(ASN1_F1AP_ID_F1_SETUP);
-  f1ap_msg.pdu.successful_outcome().value.f1_setup_resp()->cells_to_be_activ_list_present = true;
-  f1ap_msg.pdu.successful_outcome().value.f1_setup_resp()->cells_to_be_activ_list.resize(1);
-  auto& cell = f1ap_msg.pdu.successful_outcome().value.f1_setup_resp()->cells_to_be_activ_list[0];
-  cell.load_info_obj(ASN1_F1AP_ID_CELLS_TO_BE_ACTIV_LIST_ITEM);
-  cell->cells_to_be_activ_list_item().nr_cgi.plmn_id.from_string("00f101");
-  cell->cells_to_be_activ_list_item().nr_cgi.nr_cell_id.from_string("000000000000101111000110000101001110");
-  return f1ap_msg;
-}
 
 namespace {
 
@@ -61,21 +51,27 @@ public:
 
   void on_new_message(const f1ap_message& msg) override
   {
-    if (msg.pdu.type().value == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg and
-        msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_F1_SETUP) {
-      // Auto-schedule CU response.
-      du_rx_notifier->on_new_message(create_f1_setup_response());
+    if (msg.pdu.type().value == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg) {
+      if (msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_F1_SETUP) {
+        // Auto-schedule CU response.
+        du_rx_notifier->on_new_message(test_helpers::generate_f1_setup_response(msg));
+      } else if (msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_F1_REMOVAL) {
+        // Auto-schedule CU response.
+        du_rx_notifier->on_new_message(test_helpers::generate_f1_removal_response(msg));
+      }
     }
 
     // Dispatch storing of message to test main thread so it can be safely checked in the test function body.
-    bool result = test_exec.execute([this, msg]() {
+    // Note: F1AP Tx PDU notifier can be deleted by the F1AP-DU at any moment. Therefore, we cannot pass this in the
+    // capture.
+    bool result = test_exec.execute([last_msgs = &last_f1ap_msgs, msg]() {
+      static srslog::basic_logger& logger = srslog::fetch_basic_logger("TEST");
       logger.info("Received F1 UL message with {}", msg.pdu.type().to_string());
-      last_f1ap_msgs.push_back(msg);
+      last_msgs->push_back(msg);
     });
     EXPECT_TRUE(result);
   }
 
-  srslog::basic_logger&                  logger = srslog::fetch_basic_logger("TEST");
   task_executor&                         test_exec;
   std::vector<f1ap_message>&             last_f1ap_msgs;
   std::unique_ptr<f1ap_message_notifier> du_rx_notifier;
@@ -157,7 +153,8 @@ static void init_loggers()
   srslog::fetch_basic_logger("SCHED", true).set_level(srslog::basic_levels::debug);
   srslog::fetch_basic_logger("RLC").set_level(srslog::basic_levels::info);
   srslog::fetch_basic_logger("DU-MNG").set_level(srslog::basic_levels::debug);
-  srslog::fetch_basic_logger("DU-F1").set_level(srslog::basic_levels::debug);
+  srslog::fetch_basic_logger("DU-F1-U").set_level(srslog::basic_levels::warning);
+  srslog::fetch_basic_logger("DU-F1").set_level(srslog::basic_levels::info);
   srslog::fetch_basic_logger("ASN1").set_level(srslog::basic_levels::debug);
   srslog::fetch_basic_logger("TEST").set_level(srslog::basic_levels::debug);
   srslog::init();
@@ -175,7 +172,7 @@ du_high_env_simulator::du_high_env_simulator(du_high_env_sim_params params) :
     cfg.f1u_gw       = &cu_up_sim;
     cfg.phy_adapter  = &phy;
     cfg.timers       = &timers;
-    cfg.gnb_du_id    = 0;
+    cfg.gnb_du_id    = gnb_du_id_t::min;
     cfg.gnb_du_name  = "srsdu";
     cfg.du_bind_addr = transport_layer_address::create_from_string("127.0.0.1");
 
@@ -184,7 +181,7 @@ du_high_env_simulator::du_high_env_simulator(du_high_env_sim_params params) :
     for (unsigned i = 0; i < params.nof_cells; ++i) {
       builder_params.pci = (pci_t)i;
       cfg.cells.push_back(config_helpers::make_default_du_cell_config(builder_params));
-      cfg.cells.back().nr_cgi.nci = i;
+      cfg.cells.back().nr_cgi.nci = nr_cell_identity::create(i).value();
     }
 
     cfg.qos       = config_helpers::make_default_du_qos_config_list(/* warn_on_drop */ true, 0);
@@ -235,10 +232,44 @@ bool du_high_env_simulator::add_ue(rnti_t rnti, du_cell_index_t cell_index)
   // Send UL-CCCH message.
   du_hi->get_pdu_handler().handle_rx_data_indication(test_helpers::create_ccch_message(next_slot, rnti, cell_index));
 
-  // Wait for Init UL RRC Message to come out of the F1AP.
-  bool ret =
-      run_until([this]() { return not cu_notifier.last_f1ap_msgs.empty(); }, 1000 * (next_slot.numerology() + 1));
-  if (not ret or not test_helpers::is_init_ul_rrc_msg_transfer_valid(cu_notifier.last_f1ap_msgs.back(), rnti)) {
+  // Wait for Init UL RRC Message to come out of the F1AP and ConRes CE to be scheduled.
+  // Note: These events are concurrent.
+  bool init_ul_rrc_msg_flag = false;
+  auto init_ul_rrc_msg_sent = [this, rnti, &init_ul_rrc_msg_flag]() {
+    if (init_ul_rrc_msg_flag) {
+      return;
+    }
+    if (not cu_notifier.last_f1ap_msgs.empty()) {
+      report_fatal_error_if_not(
+          test_helpers::is_init_ul_rrc_msg_transfer_valid(cu_notifier.last_f1ap_msgs.back(), rnti),
+          "Init UL RRC Message is not valid");
+      init_ul_rrc_msg_flag = true;
+      return;
+    }
+  };
+  bool conres_sent     = false;
+  auto con_res_ce_sent = [this, rnti, cell_index, &conres_sent]() {
+    if (conres_sent) {
+      return;
+    }
+    phy_cell_test_dummy& phy_cell = phy.cells[cell_index];
+    if (phy_cell.last_dl_res.has_value()) {
+      auto& dl_res = *phy_cell.last_dl_res.value().dl_res;
+      if (find_ue_pdsch(rnti, dl_res.ue_grants) != nullptr) {
+        report_fatal_error_if_not(find_ue_pdsch_with_lcid(rnti, lcid_dl_sch_t::UE_CON_RES_ID, dl_res.ue_grants) !=
+                                      nullptr,
+                                  "UE ConRes not scheduled");
+        conres_sent = true;
+        return;
+      }
+    }
+  };
+  if (not run_until([&]() {
+        init_ul_rrc_msg_sent();
+        con_res_ce_sent();
+        return conres_sent and init_ul_rrc_msg_flag;
+      })) {
+    test_logger.error("rnti={}: Unable to add UE. Timeout waiting for Init UL RRC Message or ConRes CE", rnti);
     return false;
   }
 
@@ -247,13 +278,14 @@ bool du_high_env_simulator::add_ue(rnti_t rnti, du_cell_index_t cell_index)
   gnb_cu_ue_f1ap_id_t cu_ue_id = int_to_gnb_cu_ue_f1ap_id(next_cu_ue_id++);
   EXPECT_TRUE(ues.insert(std::make_pair(rnti, ue_sim_context{rnti, du_ue_id, cu_ue_id, cell_index})).second);
 
-  return ret;
+  return true;
 }
 
 bool du_high_env_simulator::run_rrc_setup(rnti_t rnti)
 {
   auto it = ues.find(rnti);
   if (it == ues.end()) {
+    test_logger.error("rnti={}: Failed to run RRC Setup procedure. Cause: UE not found", rnti);
     return false;
   }
   const ue_sim_context& u        = it->second;
@@ -264,22 +296,16 @@ bool du_high_env_simulator::run_rrc_setup(rnti_t rnti)
       *u.du_ue_id, *u.cu_ue_id, srb_id_t::srb0, byte_buffer::create({0x1, 0x2, 0x3}).value());
   du_hi->get_f1ap_message_handler().handle_message(msg);
 
-  // Wait for contention resolution to be sent to the PHY.
+  // Wait for Msg4 to be sent to the PHY.
   bool ret = run_until([&]() {
     if (phy_cell.last_dl_res.has_value() and phy_cell.last_dl_res.value().dl_res != nullptr) {
       auto& dl_res = *phy_cell.last_dl_res.value().dl_res;
-      for (const dl_msg_alloc& grant : dl_res.ue_grants) {
-        if (grant.pdsch_cfg.rnti == rnti and
-            std::any_of(grant.tb_list[0].lc_chs_to_sched.begin(),
-                        grant.tb_list[0].lc_chs_to_sched.end(),
-                        [](const dl_msg_lc_info& lc_grant) { return lc_grant.lcid == lcid_dl_sch_t::UE_CON_RES_ID; })) {
-          return true;
-        }
-      }
+      return find_ue_pdsch_with_lcid(rnti, LCID_SRB0, dl_res.ue_grants) != nullptr;
     }
     return false;
   });
   if (not ret) {
+    test_logger.error("rnti={}: Msg4 not sent to the PHY", rnti);
     return false;
   }
 
@@ -289,25 +315,13 @@ bool du_high_env_simulator::run_rrc_setup(rnti_t rnti)
     run_slot();
   }
 
-  // Wait for CSI for UE to leave fallback mode.
-  // TODO. For now we just bypass by sending the RRC Setup Complete.
-  if (not run_until([&]() {
-        if (phy_cell.last_ul_res.has_value() and phy_cell.last_ul_res.value().ul_res != nullptr) {
-          if (find_ue_pucch_with_csi(rnti, phy_cell.last_ul_res.value().ul_res->pucchs) != nullptr) {
-            return true;
-          }
-        }
-        return false;
-      })) {
-    return false;
-  }
-
   // UE sends RRC Setup Complete. Wait until F1AP forwards UL RRC Message to CU-CP.
   cu_notifier.last_f1ap_msgs.clear();
   du_hi->get_pdu_handler().handle_rx_data_indication(
       test_helpers::create_pdu_with_sdu(next_slot, rnti, lcid_t::LCID_SRB1));
   ret = run_until([this]() { return not cu_notifier.last_f1ap_msgs.empty(); });
   if (not ret or not test_helpers::is_ul_rrc_msg_transfer_valid(cu_notifier.last_f1ap_msgs.back(), srb_id_t::srb1)) {
+    test_logger.error("rnti={}: F1AP UL RRC Message (containing rrcSetupComplete) not sent or is invalid", rnti);
     return false;
   }
   return true;
@@ -383,7 +397,7 @@ bool du_high_env_simulator::run_ue_context_setup(rnti_t rnti)
 void du_high_env_simulator::run_slot()
 {
   for (unsigned i = 0; i != du_high_cfg.cells.size(); ++i) {
-    // Signal slot indication to l2.
+    // Dispatch a slot indication to each cell in the L2.
     du_hi->get_slot_handler(to_du_cell_index(i)).handle_slot_indication(next_slot);
 
     // Wait for slot indication to be processed and the l2 results to be sent back to the l1 (in this case, the test
@@ -400,7 +414,7 @@ void du_high_env_simulator::run_slot()
         << fmt::format("Slot={} failed to be processed (last processed slot={}). Is there a deadlock?",
                        next_slot,
                        phy.cells[i].last_slot_res);
-    const optional<mac_dl_sched_result>& dl_result = phy.cells[i].last_dl_res;
+    const std::optional<mac_dl_sched_result>& dl_result = phy.cells[i].last_dl_res;
     if (dl_result.has_value()) {
       EXPECT_TRUE(dl_result->slot == next_slot);
     }
@@ -425,6 +439,16 @@ void du_high_env_simulator::handle_slot_results(du_cell_index_t cell_index)
     if (not ul_res.pucchs.empty()) {
       mac_uci_indication_message uci_ind = test_helpers::create_uci_indication(sl_rx, ul_res.pucchs);
       this->du_hi->get_control_info_handler(cell_index).handle_uci(uci_ind);
+    }
+
+    if (not ul_res.puschs.empty()) {
+      mac_crc_indication_message crc_ind = test_helpers::create_crc_indication(sl_rx, ul_res.puschs);
+      this->du_hi->get_control_info_handler(cell_index).handle_crc(crc_ind);
+
+      std::optional<mac_uci_indication_message> uci_ind = test_helpers::create_uci_indication(sl_rx, ul_res.puschs);
+      if (uci_ind.has_value()) {
+        this->du_hi->get_control_info_handler(cell_index).handle_uci(uci_ind.value());
+      }
     }
   }
 }

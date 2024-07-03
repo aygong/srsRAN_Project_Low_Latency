@@ -26,23 +26,27 @@
 using namespace srsran;
 using namespace srs_du;
 
+namespace {
+
 struct pucch_grant {
-  pucch_format           format;
-  ofdm_symbol_range      symbols;
-  prb_interval           prbs;
-  optional<prb_interval> freq_hop_grant;
-  optional<unsigned>     occ_cs_idx;
+  pucch_format                format;
+  ofdm_symbol_range           symbols;
+  prb_interval                prbs;
+  std::optional<prb_interval> freq_hop_grant;
+  std::optional<unsigned>     occ_cs_idx;
 };
 
-// Returns the number of possible spreading factors which is a function of the number of symbols.
+} // namespace
+
+/// Returns the number of possible spreading factors which is a function of the number of symbols.
 static unsigned format1_symb_to_spreading_factor(bounded_integer<unsigned, 4, 14> f1_symbols)
 {
   // As per Table 6.3.2.4.1-1, TS 38.211.
   return f1_symbols.to_uint() / 2;
 };
 
-// Given the OCC-CS index (implementation-defined), maps and returns the \c initialCyclicShift, defined as per
-// PUCCH-format1, in PUCCH-Config, TS 38.331.
+/// Given the OCC-CS index (implementation-defined), maps and returns the \c initialCyclicShift, defined as per
+/// PUCCH-format1, in PUCCH-Config, TS 38.331.
 static unsigned occ_cs_index_to_cyclic_shift(unsigned occ_cs_idx, unsigned nof_css)
 {
   // NOTE: the OCC-CS index -> (CS, OCC) mapping is defined as follows.
@@ -55,8 +59,8 @@ static unsigned occ_cs_index_to_cyclic_shift(unsigned occ_cs_idx, unsigned nof_c
   return (occ_cs_idx * cs_step) % max_nof_css;
 }
 
-// Given the OCC-CS index (implementation-defined), maps and returns the \c timeDomainOCC, defined as per PUCCH-format1,
-// in PUCCH-Config, TS 38.331.
+/// Given the OCC-CS index (implementation-defined), maps and returns the \c timeDomainOCC, defined as per
+/// PUCCH-format1, in PUCCH-Config, TS 38.331.
 static unsigned occ_cs_index_to_occ(unsigned occ_cs_idx, unsigned nof_css)
 {
   // NOTE: the OCC-CS index -> (CS, OCC) mapping is defined as follows.
@@ -327,7 +331,7 @@ error_type<std::string> srsran::srs_du::pucch_parameters_validator(unsigned     
 {
   // > If intraslot_freq_hopping is enabled, check if PUCCH Format 2 has more than symbol.
   if (f2_params.intraslot_freq_hopping and f2_params.nof_symbols == 1) {
-    return {"Intra-slot frequency hopping for PUCCH Format 2 requires 2 symbols"};
+    return make_unexpected("Intra-slot frequency hopping for PUCCH Format 2 requires 2 symbols");
   }
 
   // > Compute the number of RBs required for the PUCCH Format 1 and 2 resources.
@@ -336,7 +340,7 @@ error_type<std::string> srsran::srs_du::pucch_parameters_validator(unsigned     
   // We define a block as a set of Resources (either F1 or F2) aligned over the same starting PRB.
   const unsigned nof_f1_per_block = nof_occ_codes * format1_cp_step_to_uint(f1_params.nof_cyc_shifts) *
                                     (NOF_OFDM_SYM_PER_SLOT_NORMAL_CP / f1_params.nof_symbols.to_uint());
-  unsigned nof_f1_rbs =
+  auto nof_f1_rbs =
       static_cast<unsigned>(std::ceil(static_cast<float>(nof_res_f1) / static_cast<float>(nof_f1_per_block)));
   // With intraslot_freq_hopping, the nof of RBs is an even number.
   if (f1_params.intraslot_freq_hopping) {
@@ -350,7 +354,7 @@ error_type<std::string> srsran::srs_du::pucch_parameters_validator(unsigned     
                                   : f2_params.max_nof_rbs;
 
   if (f2_max_rbs > pucch_constants::FORMAT2_MAX_NPRB) {
-    return {"The number of PRBs for PUCCH Format 2 exceeds the limit of 16"};
+    return make_unexpected("The number of PRBs for PUCCH Format 2 exceeds the limit of 16");
   }
 
   const unsigned nof_f2_blocks = NOF_OFDM_SYM_PER_SLOT_NORMAL_CP / f2_params.nof_symbols.to_uint();
@@ -365,7 +369,7 @@ error_type<std::string> srsran::srs_du::pucch_parameters_validator(unsigned     
   // [Implementation-defined] We do not allow the PUCCH resources to occupy more than 60% of the BWP.
   const float max_allowed_prbs_usage = 0.6F;
   if (static_cast<float>(nof_f1_rbs + nof_f2_rbs) / static_cast<float>(bwp_size_rbs) >= max_allowed_prbs_usage) {
-    return {"With the given parameters, the number of PRBs for PUCCH exceeds the 60% of the BWP PRBs"};
+    return make_unexpected("With the given parameters, the number of PRBs for PUCCH exceeds the 60% of the BWP PRBs");
   }
 
   return {};
@@ -386,7 +390,7 @@ static std::vector<pucch_resource> merge_f1_f2_resource_lists(const std::vector<
   unsigned f1_rbs_occupancy_low_freq = 0;
   unsigned f1_rbs_occupancy_hi_freq  = 0;
   for (const auto& res_f1 : pucch_f1_resource_list) {
-    const unsigned res_id = static_cast<unsigned>(resource_list.size());
+    auto res_id = static_cast<unsigned>(resource_list.size());
     // No need to set res_id.second, which is the PUCCH resource ID for the ASN1 message. This will be set by the DU
     // before assigning the resources to the UE.
     pucch_resource res{.res_id = {res_id, 0}, .starting_prb = res_f1.prbs.start()};
@@ -427,7 +431,7 @@ static std::vector<pucch_resource> merge_f1_f2_resource_lists(const std::vector<
   }
 
   for (const auto& res_f2 : pucch_f2_resource_list) {
-    const unsigned res_id = static_cast<unsigned>(resource_list.size());
+    auto res_id = static_cast<unsigned>(resource_list.size());
     // No need to set res_id.second, which is the PUCCH resource ID for the ASN1 message. This will be set by the DU
     // before assigning the resources to the UE.
     pucch_resource res{.res_id = {res_id, 0}};
@@ -484,7 +488,7 @@ std::vector<pucch_resource> srsran::srs_du::generate_cell_pucch_res_list(unsigne
                                                                          unsigned        bwp_size_rbs)
 {
   auto outcome = pucch_parameters_validator(nof_res_f1, nof_res_f2, f1_params, f2_params, bwp_size_rbs);
-  if (outcome.is_error()) {
+  if (not outcome.has_value()) {
     srsran_assertion_failure("The cell list could not be generated due to: {}", outcome.error());
     return {};
   }
@@ -513,8 +517,8 @@ static unsigned cell_res_list_validator(const std::vector<pucch_resource>&      
 
   auto count_resources = [&res_list](pucch_format format) {
     unsigned cnt = 0;
-    for (auto it = res_list.begin(); it != res_list.end(); ++it) {
-      if (it->format == format) {
+    for (const auto& it : res_list) {
+      if (it.format == format) {
         ++cnt;
       }
     }
@@ -659,7 +663,7 @@ bool srsran::srs_du::ue_pucch_config_builder(serving_cell_config&               
                                                          .second_hop_prb = csi_cell_res.second_hop_prb,
                                                          .format         = csi_cell_res.format,
                                                          .format_params  = csi_cell_res.format_params});
-    srsran::variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
+    std::get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(
         serv_cell_cfg.csi_meas_cfg->csi_report_cfg_list[0].report_cfg_type)
         .pucch_csi_res_list.front()
         .pucch_res_id = {csi_cell_res.res_id.cell_res_id, ue_pucch_res_id};

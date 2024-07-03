@@ -46,7 +46,7 @@ protected:
   void test_amf_connection();
 
   void test_e1ap_attach();
-  void test_du_attach(du_index_t du_index, gnb_du_id_t gnb_du_id, unsigned nrcell_id, pci_t pci);
+  void test_du_attach(du_index_t du_index, gnb_du_id_t gnb_du_id, nr_cell_identity nrcell_id, pci_t pci);
 
   void attach_ue(gnb_du_ue_f1ap_id_t du_ue_id, gnb_cu_ue_f1ap_id_t cu_ue_id, rnti_t crnti, du_index_t du_index);
   void authenticate_ue(amf_ue_id_t         amf_ue_id,
@@ -77,17 +77,19 @@ protected:
   bool check_minimal_paging_result();
   bool check_paging_result();
 
+  void start_auto_tick(const std::future<void>& stop_signal);
+
   srslog::basic_logger& test_logger  = srslog::fetch_basic_logger("TEST");
   srslog::basic_logger& cu_cp_logger = srslog::fetch_basic_logger("CU-CP");
 
-  dummy_ngap_amf_notifier        ngap_amf_notifier;
-  std::unique_ptr<timer_manager> timers = std::make_unique<timer_manager>(256);
-  manual_task_worker             ctrl_worker{128};
+  timer_manager      timers{256};
+  manual_task_worker ctrl_worker{128};
 
   std::unique_ptr<ngap_message_handler> dummy_amf;
 
   std::unique_ptr<cu_cp_impl> cu_cp_obj;
 
+  dummy_n2_gateway         n2_gw;
   dummy_cu_cp_f1c_gateway  f1c_gw;
   dummy_cu_cp_e1ap_gateway e1ap_gw;
 };

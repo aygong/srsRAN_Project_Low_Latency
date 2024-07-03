@@ -45,7 +45,7 @@ public:
   ~e2sm_kpm_du_meas_provider_impl() = default;
 
   /// scheduler_ue_metrics_notifier functions.
-  void report_metrics(span<const scheduler_ue_metrics> ue_metrics) override;
+  void report_metrics(const scheduler_cell_metrics& ue_metrics) override;
   void report_metrics(const rlc_metrics& metrics) override;
 
   /// e2sm_kpm_meas_provider functions.
@@ -71,13 +71,13 @@ public:
   bool get_meas_data(const asn1::e2sm::meas_type_c&               meas_type,
                      const asn1::e2sm::label_info_list_l          label_info_list,
                      const std::vector<asn1::e2sm::ue_id_c>&      ues,
-                     const srsran::optional<asn1::e2sm::cgi_c>    cell_global_id,
+                     const std::optional<asn1::e2sm::cgi_c>       cell_global_id,
                      std::vector<asn1::e2sm::meas_record_item_c>& items) override;
 
 private:
   typedef bool(metric_meas_getter_func_t)(const asn1::e2sm::label_info_list_l          label_info_list,
                                           const std::vector<asn1::e2sm::ue_id_c>&      ues,
-                                          const srsran::optional<asn1::e2sm::cgi_c>    cell_global_id,
+                                          const std::optional<asn1::e2sm::cgi_c>       cell_global_id,
                                           std::vector<asn1::e2sm::meas_record_item_c>& items);
 
   typedef metric_meas_getter_func_t(e2sm_kpm_du_meas_provider_impl::*metric_meas_getter_func_ptr);

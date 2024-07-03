@@ -34,7 +34,7 @@ stress_stack::stress_stack(const stress_test_args& args_, uint32_t id, rb_id_t r
   pcell_name("PCell-Worker-" + std::to_string(id)),
   ue_worker{ue_name, task_worker_queue_size},
   pcell_worker{pcell_name, task_worker_queue_size},
-  logger("STACK", {0, id, rb_id, "DL/UL"})
+  logger("STACK", {gnb_du_id_t::min, id, rb_id, "DL/UL"})
 {
   ue_executor    = make_task_executor_ptr(ue_worker);
   pcell_executor = make_task_executor_ptr(pcell_worker);
@@ -84,11 +84,13 @@ stress_stack::stress_stack(const stress_test_args& args_, uint32_t id, rb_id_t r
   rlc_config rlc_cnfg = get_rlc_config_from_args(args_);
   switch (rlc_cnfg.mode) {
     case rlc_mode::am:
-      rlc_cnfg.am.tx.queue_size = rlc_sdu_queue;
+      rlc_cnfg.am.tx.queue_size  = rlc_sdu_queue;
+      rlc_cnfg.am.tx.pdcp_sn_len = pdcp_msg.config.tx.sn_size;
       break;
     case rlc_mode::um_bidir:
     case rlc_mode::um_unidir_dl:
-      rlc_cnfg.um.tx.queue_size = rlc_sdu_queue;
+      rlc_cnfg.um.tx.queue_size  = rlc_sdu_queue;
+      rlc_cnfg.um.tx.pdcp_sn_len = pdcp_msg.config.tx.sn_size;
       break;
     default:
       report_fatal_error("Invalid RLC mode.");

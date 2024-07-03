@@ -178,11 +178,11 @@ bool gtpu_read_ie_gtpu_peer_address(gtpu_ie_gtpu_peer_address& ie, bit_decoder& 
   switch (length) {
     case 4:
       ie.gtpu_peer_address = gtpu_ie_gtpu_peer_address::ipv4_addr_t{};
-      read_ok &= dec.unpack_bytes(variant_get<gtpu_ie_gtpu_peer_address::ipv4_addr_t>(ie.gtpu_peer_address));
+      read_ok &= dec.unpack_bytes(std::get<gtpu_ie_gtpu_peer_address::ipv4_addr_t>(ie.gtpu_peer_address));
       break;
     case 16:
       ie.gtpu_peer_address = gtpu_ie_gtpu_peer_address::ipv6_addr_t{};
-      read_ok &= dec.unpack_bytes(variant_get<gtpu_ie_gtpu_peer_address::ipv6_addr_t>(ie.gtpu_peer_address));
+      read_ok &= dec.unpack_bytes(std::get<gtpu_ie_gtpu_peer_address::ipv6_addr_t>(ie.gtpu_peer_address));
       break;
     default:
       logger.warning("Failed to read IE GTP-U peer address: Invalid length={}.", length);
@@ -412,10 +412,10 @@ bool gtpu_extension_header_comprehension_check(const gtpu_extension_header_type&
     case gtpu_extension_header_type::long_pdcp_pdu_number_0:
     case gtpu_extension_header_type::long_pdcp_pdu_number_1:
     case gtpu_extension_header_type::xw_ran_container:
-    case gtpu_extension_header_type::nr_ran_container:
       break;
+    case gtpu_extension_header_type::nr_ran_container:
     case gtpu_extension_header_type::pdu_session_container:
-      return true; // TODO add actual support for PDU session container
+      return true;
     case gtpu_extension_header_type::pdcp_pdu_number:
       return true; // TODO add actual support for PDCP PDU number
     case gtpu_extension_header_type::reserved_0:

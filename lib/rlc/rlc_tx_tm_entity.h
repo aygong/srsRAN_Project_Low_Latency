@@ -48,9 +48,9 @@ private:
   std::atomic_flag pending_buffer_state = ATOMIC_FLAG_INIT;
 
 public:
-  rlc_tx_tm_entity(uint32_t                             du_index,
+  rlc_tx_tm_entity(gnb_du_id_t                          du_id,
                    du_ue_index_t                        ue_index,
-                   rb_id_t                              rb_id,
+                   rb_id_t                              rb_id_,
                    const rlc_tx_tm_config&              config,
                    rlc_tx_upper_layer_data_notifier&    upper_dn_,
                    rlc_tx_upper_layer_control_notifier& upper_cn_,
@@ -64,7 +64,7 @@ public:
   };
 
   // Interfaces for higher layers
-  void handle_sdu(rlc_sdu sdu) override;
+  void handle_sdu(byte_buffer sdu_buf, bool is_retx) override;
   void discard_sdu(uint32_t pdcp_sn) override;
 
   // Interfaces for lower layers

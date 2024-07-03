@@ -22,12 +22,12 @@
 
 #pragma once
 
-#include "srsran/adt/any.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/span.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/compiler.h"
 #include "srsran/support/srsran_assert.h"
+#include <any>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -265,7 +265,8 @@ public:
     if (new_cap > 0) {
       new_data = new T[new_cap];
       if (data_ != nullptr) {
-        std::move(data_, data_ + size_, new_data);
+        unsigned min_size = std::min(size_, new_size);
+        std::move(data_, data_ + min_size, new_data);
       }
     }
     cap_  = new_cap;
@@ -735,6 +736,14 @@ public:
   using iterator       = typename std::array<uint8_t, N>::iterator;
   using const_iterator = typename std::array<uint8_t, N>::const_iterator;
 
+  fixed_octstring() = default;
+  explicit fixed_octstring(const std::array<uint8_t, N>& array_) : octets_(array_) {}
+  fixed_octstring<N, aligned>& operator=(const std::array<uint8_t, N>& array_)
+  {
+    octets_ = array_;
+    return *this;
+  }
+
   const uint8_t& operator[](uint32_t idx) const { return octets_[idx]; }
   uint8_t&       operator[](uint32_t idx) { return octets_[idx]; }
   bool           operator==(const fixed_octstring<N>& other) const { return octets_ == other.octets_; }
@@ -758,6 +767,7 @@ public:
     octet_string_helper::to_octet_string(octets_, val);
     return *this;
   }
+  const std::array<uint8_t, N> to_bytes() const { return octets_; }
 
   /// Pack fixed-size octet string as per X.691 Section 16 - Encoding the octetstring type.
   /// \tparam N - number of items
@@ -1346,12 +1356,12 @@ struct choice_buffer_base_t {
   template <typename T>
   T& get()
   {
-    return *(reinterpret_cast<T*>(&buffer));
+    return *std::launder(reinterpret_cast<T*>(&buffer));
   }
   template <typename T>
   const T& get() const
   {
-    return *(reinterpret_cast<const T*>(&buffer));
+    return *std::launder(reinterpret_cast<const T*>(&buffer));
   }
   template <typename T>
   void destroy()
@@ -1397,18 +1407,18 @@ public:
     return *this;
   }
 
-  bool has_value() const { return not obj.empty(); }
+  bool has_value() const { return obj.has_value(); }
 
   template <typename T>
   bool holds_choice() const
   {
-    return srsran::any_cast<T>(&obj) != nullptr;
+    return std::any_cast<T>(&obj) != nullptr;
   }
 
   template <typename T>
   T& get()
   {
-    T* ret = srsran::any_cast<T>(&obj);
+    T* ret = std::any_cast<T>(&obj);
     srsran_assert(ret != nullptr, "Invalid choice type");
     return *ret;
   }
@@ -1416,15 +1426,15 @@ public:
   template <typename T>
   const T& get() const
   {
-    const T* ret = srsran::any_cast<T>(&obj);
+    const T* ret = std::any_cast<T>(&obj);
     srsran_assert(ret != nullptr, "Invalid choice type");
     return *ret;
   }
 
-  void reset() { obj.clear(); }
+  void reset() { obj.reset(); }
 
 private:
-  srsran::any obj;
+  std::any obj;
 };
 
 /*********************

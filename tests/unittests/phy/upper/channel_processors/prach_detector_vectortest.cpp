@@ -28,6 +28,8 @@
 #include "fmt/ostream.h"
 #include <gtest/gtest.h>
 
+using namespace srsran;
+
 static bool is_recognized_conf(const srsran::prach_detector::configuration& conf)
 {
   if (conf.nof_rx_ports == 1) {
@@ -129,8 +131,7 @@ TEST_P(PrachDetectorFixture, FromVector)
   }
 
   // Calculate the number of symbols.
-  unsigned nof_symbols =
-      static_cast<unsigned>(preamble_info.symbol_length.to_seconds() * ra_scs_to_Hz(preamble_info.scs));
+  unsigned nof_symbols = preamble_info.nof_symbols;
 
   // Get frequency domain data.
   prach_buffer_tensor sequence(sequence_data);

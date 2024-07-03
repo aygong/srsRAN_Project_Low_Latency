@@ -20,6 +20,7 @@
  *
  */
 
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/executors/task_execution_manager.h"
 #include <future>
 #include <gtest/gtest.h>
@@ -115,7 +116,7 @@ TEST_F(task_execution_manager_test, decorate_executor_as_synchronous)
 {
   using namespace execution_config_helper;
   worker_pool cfg{
-      "WORKER", 2, {task_queue{concurrent_queue_policy::locking_mpmc, 8}}, {executor{"EXEC", {}, nullopt, true}}};
+      "WORKER", 2, {task_queue{concurrent_queue_policy::locking_mpmc, 8}}, {executor{"EXEC", {}, std::nullopt, true}}};
 
   task_execution_manager mng;
   ASSERT_TRUE(mng.add_execution_context(create_execution_context(cfg)));

@@ -47,9 +47,9 @@ search_space_configuration::search_space_configuration(nr_band            band,
   // for CSS sets configured by searchSpace-SIB1.
   const unsigned cset0_nof_cces =
       cset0_desc.nof_rb_coreset * cset0_desc.nof_symb_coreset / pdcch_constants::NOF_REG_PER_CCE;
-  nof_candidates = {0, 0, 4, 2, 1};
-  for (unsigned lidx = 0; lidx != NOF_AGGREGATION_LEVELS; ++lidx) {
-    nof_candidates[lidx] = to_nof_cces(aggregation_index_to_level(lidx)) > cset0_nof_cces ? 0U : nof_candidates[lidx];
+  nof_candidates = {0, 0, 0, 0, 0};
+  for (unsigned lidx = 2; lidx != NOF_AGGREGATION_LEVELS; ++lidx) {
+    nof_candidates[lidx] = cset0_nof_cces / to_nof_cces(aggregation_index_to_level(lidx));
   }
 
   // NOTE: Currently, we support only SS/PBCH and CORESET multiplexing pattern 1 where the periodicity of
@@ -75,15 +75,15 @@ search_space_configuration::search_space_configuration(nr_band            band,
 }
 
 search_space_configuration::search_space_configuration(
-    search_space_id                                    id_,
-    coreset_id                                         cs_id_,
-    std::array<uint8_t, 5>                             nof_candidates_,
-    variant<common_dci_format, ue_specific_dci_format> dci_fmt_,
-    unsigned                                           monitoring_slot_periodicity_,
-    unsigned                                           monitoring_slot_offset_,
-    subcarrier_spacing                                 scs_common,
-    unsigned                                           duration_,
-    monitoring_symbols_within_slot_t                   monitoring_symbols_within_slot_) :
+    search_space_id                                         id_,
+    coreset_id                                              cs_id_,
+    std::array<uint8_t, 5>                                  nof_candidates_,
+    std::variant<common_dci_format, ue_specific_dci_format> dci_fmt_,
+    unsigned                                                monitoring_slot_periodicity_,
+    unsigned                                                monitoring_slot_offset_,
+    subcarrier_spacing                                      scs_common,
+    unsigned                                                duration_,
+    monitoring_symbols_within_slot_t                        monitoring_symbols_within_slot_) :
   id(id_),
   cs_id(cs_id_),
   nof_candidates(nof_candidates_),

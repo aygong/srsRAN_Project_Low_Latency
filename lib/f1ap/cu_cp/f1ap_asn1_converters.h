@@ -22,8 +22,8 @@
 
 #pragma once
 
+#include "../common/asn1_helpers.h"
 #include "srsran/adt/optional.h"
-#include "srsran/adt/variant.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/asn1/f1ap/f1ap_ies.h"
 #include "srsran/cu_cp/cu_cp_types.h"
@@ -31,6 +31,7 @@
 #include "srsran/ran/cause/f1ap_cause.h"
 #include "srsran/ran/nr_cgi.h"
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace srsran {
@@ -70,30 +71,33 @@ inline asn1::f1ap::cause_c cause_to_asn1(f1ap_cause_t cause)
 {
   asn1::f1ap::cause_c asn1_cause;
 
-  if (variant_holds_alternative<f1ap_cause_radio_network_t>(cause)) {
-    asn1_cause.set_radio_network() =
-        static_cast<asn1::f1ap::cause_radio_network_opts::options>(variant_get<f1ap_cause_radio_network_t>(cause));
-  } else if (variant_holds_alternative<f1ap_cause_transport_t>(cause)) {
-    asn1_cause.set_transport() =
-        static_cast<asn1::f1ap::cause_transport_opts::options>(variant_get<f1ap_cause_transport_t>(cause));
-  } else if (variant_holds_alternative<cause_protocol_t>(cause)) {
-    asn1_cause.set_protocol() =
-        static_cast<asn1::f1ap::cause_protocol_opts::options>(variant_get<cause_protocol_t>(cause));
-  } else if (variant_holds_alternative<cause_misc_t>(cause)) {
-    asn1_cause.set_misc() = static_cast<asn1::f1ap::cause_misc_opts::options>(variant_get<cause_misc_t>(cause));
-  } else {
-    report_fatal_error("Cannot convert cause to F1AP type: {}", cause);
+  if (const auto* result = std::get_if<f1ap_cause_radio_network_t>(&cause)) {
+    asn1_cause.set_radio_network() = static_cast<asn1::f1ap::cause_radio_network_opts::options>(*result);
+    return asn1_cause;
+  }
+  if (const auto* result = std::get_if<f1ap_cause_transport_t>(&cause)) {
+    asn1_cause.set_transport() = static_cast<asn1::f1ap::cause_transport_opts::options>(*result);
+    return asn1_cause;
+  }
+  if (const auto* result = std::get_if<cause_protocol_t>(&cause)) {
+    asn1_cause.set_protocol() = static_cast<asn1::f1ap::cause_protocol_opts::options>(*result);
+    return asn1_cause;
+  }
+  if (const auto* result = std::get_if<cause_misc_t>(&cause)) {
+    asn1_cause.set_misc() = static_cast<asn1::f1ap::cause_misc_opts::options>(*result);
+    return asn1_cause;
   }
 
+  report_fatal_error("Cannot convert cause to F1AP type: {}", cause);
   return asn1_cause;
 }
 
 /// \brief Convert F1AP NRCGI to NR Cell Identity.
 /// \param f1ap_cgi The F1AP NRCGI.
 /// \return The NR Cell Identity.
-inline nr_cell_id_t f1ap_asn1_to_nr_cell_identity(asn1::f1ap::nr_cgi_s& f1ap_cgi)
+inline nr_cell_identity f1ap_asn1_to_nr_cell_identity(asn1::f1ap::nr_cgi_s& f1ap_cgi)
 {
-  return f1ap_cgi.nr_cell_id.to_number();
+  return nr_cell_identity::create(f1ap_cgi.nr_cell_id.to_number()).value();
 }
 
 /// \brief Convert \c rlc_mode to F1AP ASN.1.
@@ -370,8 +374,8 @@ inline void f1ap_scell_to_be_setup_mod_item_to_asn1(template_asn1_item& asn1_sce
                                                     const f1ap_scell_to_be_setup_mod_item& scell_to_be_setup_mod_item)
 {
   // scell id
-  asn1_scell_to_be_setup_mod_item.scell_id.nr_cell_id.from_number(scell_to_be_setup_mod_item.scell_id.nci);
-  asn1_scell_to_be_setup_mod_item.scell_id.plmn_id.from_string(scell_to_be_setup_mod_item.scell_id.plmn_hex);
+  asn1_scell_to_be_setup_mod_item.scell_id.nr_cell_id.from_number(scell_to_be_setup_mod_item.scell_id.nci.value());
+  asn1_scell_to_be_setup_mod_item.scell_id.plmn_id = scell_to_be_setup_mod_item.scell_id.plmn_id.to_bytes();
 
   // scell idx
   asn1_scell_to_be_setup_mod_item.scell_idx = scell_to_be_setup_mod_item.scell_idx;
@@ -459,7 +463,32 @@ inline asn1::f1ap::dupl_activation_e f1ap_dupl_activation_to_asn1(const f1ap_dup
   return asn1_dupl_activation;
 }
 
+/// \brief Convert extension fields of drb to be setup item to F1AP ASN.1.
+/// \param[out] ie_exts The ASN.1 struct to store the result.
+/// \param[in] drb_to_be_setup_item The drb to be setup item common type struct.
+inline void
+f1ap_drbs_to_be_setup_mod_item_ext_ies_to_asn1(asn1::f1ap::drbs_to_be_setup_item_ext_ies_container& ie_exts,
+                                               const f1ap_drbs_to_be_setup_mod_item& drb_to_be_setup_mod_item)
+{
+  ie_exts.dl_pdcp_sn_len = pdcp_sn_size_to_f1ap_asn1(drb_to_be_setup_mod_item.pdcp_sn_len);
+}
+
+/// \brief Convert extension fields of drb to be setup mod item to F1AP ASN.1.
+/// \param[out] ie_exts The ASN.1 struct to store the result.
+/// \param[in] drb_to_be_setup_mod_item The drb to be setup mod item common type struct.
+inline void
+f1ap_drbs_to_be_setup_mod_item_ext_ies_to_asn1(asn1::f1ap::drbs_to_be_setup_mod_item_ext_ies_container& ie_exts,
+                                               const f1ap_drbs_to_be_setup_mod_item& drb_to_be_setup_mod_item)
+{
+  ie_exts.dl_pdcp_sn_len_present = true;
+  ie_exts.dl_pdcp_sn_len         = pdcp_sn_size_to_f1ap_asn1(drb_to_be_setup_mod_item.pdcp_sn_len);
+}
+
 /// \brief Convert drbs to be setup/setup mod item to F1AP ASN.1.
+///
+/// This is as shared function for \c drbs_to_be_setup_item_s and \c drbs_to_be_setup_item_s, because of identical
+/// items. Since the \c ie_exts are different, the filling of these extensions is delegated to respective overloads.
+///
 /// \param[out] asn1_drbs_to_be_setup_mod_item The ASN.1 struct to store the result.
 /// \param[in] drbs_to_be_setup_mod_item The drbs to be setup/setup item mod common type struct.
 template <typename template_asn1_item>
@@ -481,6 +510,10 @@ inline void f1ap_drbs_to_be_setup_mod_item_to_asn1(template_asn1_item&          
 
   // rlc mode
   asn1_drb_to_be_setup_mod_item.rlc_mode = rlc_mode_to_f1ap_asn1(drb_to_be_setup_mod_item.rlc_mod);
+
+  // pdcp sn size
+  f1ap_drbs_to_be_setup_mod_item_ext_ies_to_asn1(asn1_drb_to_be_setup_mod_item.ie_exts, drb_to_be_setup_mod_item);
+  asn1_drb_to_be_setup_mod_item.ie_exts_present = true;
 
   // ul cfg
   if (drb_to_be_setup_mod_item.ul_cfg.has_value()) {
@@ -675,10 +708,10 @@ inline asn1::f1ap::nr_cgi_s nr_cgi_to_f1ap_asn1(const nr_cell_global_id_t& nr_cg
   asn1::f1ap::nr_cgi_s asn1_nr_cgi;
 
   // nr cell id
-  asn1_nr_cgi.nr_cell_id.from_number(nr_cgi.nci);
+  asn1_nr_cgi.nr_cell_id.from_number(nr_cgi.nci.value());
 
   // plmn id
-  asn1_nr_cgi.plmn_id.from_string(nr_cgi.plmn_hex);
+  asn1_nr_cgi.plmn_id = nr_cgi.plmn_id.to_bytes();
 
   return asn1_nr_cgi;
 }
@@ -691,10 +724,10 @@ inline nr_cell_global_id_t f1ap_asn1_to_nr_cgi(const asn1::f1ap::nr_cgi_s& asn1_
   nr_cell_global_id_t nr_cgi;
 
   // nr cell id
-  nr_cgi.nci = asn1_nr_cgi.nr_cell_id.to_number();
+  nr_cgi.nci = nr_cell_identity::create(asn1_nr_cgi.nr_cell_id.to_number()).value();
 
   // plmn id
-  nr_cgi.plmn_hex = asn1_nr_cgi.plmn_id.to_string();
+  nr_cgi.plmn_id = plmn_identity::from_bytes(asn1_nr_cgi.plmn_id.to_bytes()).value();
 
   return nr_cgi;
 }

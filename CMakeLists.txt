@@ -31,7 +31,7 @@ endif(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 cmake_minimum_required(VERSION 3.14)
 project(srsran)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
@@ -70,6 +70,7 @@ option(AUTO_DETECT_ISA       "Enable automatic ISA detection"           OFF)
 option(BUILD_TESTS           "Compile tests"                            ON)
 option(ENABLE_GPROF          "Enable gprof"                             OFF)
 option(USE_PHY_TESTVECTORS   "Enable testvector PHY tests"              OFF)
+option(FORCE_DEBUG_INFO      "Add debug information to Release build"   OFF)
 
 # Set assertion level options and default value.
 set(ASSERT_LEVEL "AUTO" CACHE STRING "Assertion paranoia level")
@@ -87,16 +88,22 @@ if (ENABLE_WERROR)
         if (HAS_MAYBE_UNINITIALIZED)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=maybe-uninitialized")
         endif()
+        check_cxx_compiler_flag("-Wstringop-overflow" HAS_STRINGOP_OVERFLOW)
+        if (HAS_STRINGOP_OVERFLOW)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=stringop-overflow")
+        endif()
+        if (ASSERT_LEVEL STREQUAL "MINIMAL")
+            check_cxx_compiler_flag("-Warray-bounds" HAS_ARRAY_BOUNDS)
+            if (HAS_ARRAY_BOUNDS)
+                set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=array-bounds")
+            endif()
+        endif()
     endif()
 endif ()
 
 if (ENABLE_ASAN AND ENABLE_TSAN)
     message(FATAL_ERROR "ASAN and TSAN cannot be enabled at the same time.")
 endif ()
-
-if (ENABLE_EXPORT)
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif (ENABLE_EXPORT)
 
 # Hardware acceleration for both PUSCH and PDSCH is enabled by default when using DPDK.
 if (ENABLE_DPDK)
@@ -111,6 +118,32 @@ else (ENABLE_DPDK)
     unset(ENABLE_PDSCH_HWACC CACHE)
     unset(ENABLE_PUSCH_HWACC CACHE)
 endif (ENABLE_DPDK)
+
+########################################################################
+# ENABLE_EXPORT
+########################################################################
+
+# ENABLE_EXPORT tells cmake to make some libaries available for other
+# software to link to. If ON, the code must be compiled in PIC mode.
+# We also add a dummy target that will depend on all the exported
+# libraries to simplify their compilation.
+if (ENABLE_EXPORT)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_custom_target(srsran_exported_libs)
+endif (ENABLE_EXPORT)
+
+# Simple macro that tags libraries to be exported and adds them to the
+# dependencies of the dummy target.
+macro(ADD_TO_EXPORTED_LIBS)
+  if(ENABLE_EXPORT)
+    # Tag libraries.
+    install(TARGETS ${ARGV} EXPORT srsran_export)
+    # Make libraries dependencies of the srsran_exported_libs dummy
+    # target, which can be called to compile all exported libraries
+    # at once.
+    add_dependencies(srsran_exported_libs ${ARGV})
+  endif(ENABLE_EXPORT)
+endmacro(ADD_TO_EXPORTED_LIBS)
 
 ########################################################################
 # Install Dirs
@@ -135,7 +168,7 @@ ADD_CXX_COMPILER_FLAG_IF_AVAILABLE(-Wnon-virtual-dtor HAVE_NON_VIRTUAL_DTOR)
 # Make sure all overridden methods are marked as override
 ADD_CXX_COMPILER_FLAG_IF_AVAILABLE(-Wsuggest-override HAVE_SUGGEST_OVERRIDE)
 
-## Avoid shadow variables which can be caused due to C code ported into C++
+# Avoid shadow variables which can be caused due to C code ported into C++
 ADD_CXX_COMPILER_FLAG_IF_AVAILABLE(-Wshadow HAVE_SHADOW)
 
 # Set compiler flags for different build types.
@@ -166,6 +199,10 @@ if (ENABLE_TSAN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
     add_definitions(-DENABLE_TSAN)
 endif (ENABLE_TSAN)
+
+if (FORCE_DEBUG_INFO)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+endif (FORCE_DEBUG_INFO)
 
 if (ENABLE_GCOV)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
@@ -291,7 +328,6 @@ if (AUTO_DETECT_ISA)
     if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
         set(GCC_ARCH armv8-a CACHE STRING "GCC compile for specific architecture.")
         message(STATUS "Detected aarch64 processor")
-        add_definitions(-DHAVE_NEON)
         set(HAVE_NEON True CACHE BOOL "NEON Instruction set is supported")
     else (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
         set(GCC_ARCH native CACHE STRING "GCC compile for specific architecture.")
@@ -303,23 +339,18 @@ if (AUTO_DETECT_ISA)
     ADD_CXX_COMPILER_FLAG_IF_AVAILABLE("-march=${GCC_ARCH}" HAVE_MARCH)
 
     if (HAVE_AVX2)
-        add_definitions(-DHAVE_AVX2)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
     endif (HAVE_AVX2)
     if (HAVE_AVX)
-        add_definitions(-DHAVE_AVX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
     endif (HAVE_AVX)
     if (HAVE_SSE)
-        add_definitions(-DHAVE_SSE)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")
     endif (HAVE_SSE)
     if (HAVE_FMA)
-        add_definitions(-DHAVE_FMA)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfma")
     endif (HAVE_FMA)
     if (HAVE_AVX512)
-        add_definitions(-DHAVE_AVX512)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512cd -mavx512bw -mavx512dq")
     endif (HAVE_AVX512)
 else (AUTO_DETECT_ISA)

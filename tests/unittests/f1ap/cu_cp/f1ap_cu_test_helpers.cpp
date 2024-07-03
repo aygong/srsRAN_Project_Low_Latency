@@ -22,7 +22,10 @@
 
 #include "f1ap_cu_test_helpers.h"
 #include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
+#include "srsran/asn1/rrc_nr/dl_ccch_msg.h"
+#include "srsran/asn1/rrc_nr/dl_ccch_msg_ies.h"
 #include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/f1ap/cu_cp/f1ap_cu_factory.h"
 #include "srsran/ran/five_qi.h"
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/support/async/async_test_utils.h"
@@ -43,7 +46,11 @@ f1ap_cu_test::f1ap_cu_test(const f1ap_configuration& f1ap_cfg)
   f1ap_logger.set_level(srslog::basic_levels::debug);
   srslog::init();
 
-  f1ap = create_f1ap(f1ap_cfg, f1ap_pdu_notifier, du_processor_notifier, f1ap_du_mgmt_notifier, timers, ctrl_worker);
+  // We enable Json logging by default for the purpose of testing.
+  f1ap_configuration tmp = f1ap_cfg;
+  tmp.json_log_enabled   = true;
+
+  f1ap = create_f1ap(tmp, f1ap_pdu_notifier, du_processor_notifier, timers, ctrl_worker);
 }
 
 f1ap_cu_test::~f1ap_cu_test()
@@ -94,6 +101,28 @@ f1ap_cu_test::test_ue& f1ap_cu_test::run_ue_context_setup()
   return test_ues[ue_index];
 }
 
+bool f1ap_cu_test::was_rrc_reject_sent()
+{
+  // Make sure that the last message was a DLRRCMessageTransfer
+  if (f1ap_pdu_notifier.last_f1ap_msg.pdu.type().value != asn1::f1ap::f1ap_pdu_c::types::init_msg) {
+    return false;
+  }
+  if (f1ap_pdu_notifier.last_f1ap_msg.pdu.init_msg().value.type().value !=
+      asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types::dl_rrc_msg_transfer) {
+    return false;
+  }
+
+  // Make sure that the DLRRCMessageTransfer contains an RRC Reject.
+  asn1::rrc_nr::dl_ccch_msg_s ccch;
+  {
+    asn1::cbit_ref bref{f1ap_pdu_notifier.last_f1ap_msg.pdu.init_msg().value.dl_rrc_msg_transfer()->rrc_container};
+    if (ccch.unpack(bref) != asn1::SRSASN_SUCCESS) {
+      return false;
+    }
+  }
+  return ccch.msg.c1().type().value == asn1::rrc_nr::dl_ccch_msg_type_c::c1_c_::types_opts::rrc_reject;
+}
+
 void f1ap_cu_test::tick()
 {
   this->timers.tick();
@@ -108,16 +137,16 @@ srsran::srs_cu_cp::create_ue_context_setup_request(const std::initializer_list<d
   req.ue_index = uint_to_ue_index(19);
 
   // sp cell id
-  req.sp_cell_id.nci      = 6576;
-  req.sp_cell_id.plmn_hex = "00f110";
+  req.sp_cell_id.nci     = nr_cell_identity::create(gnb_id_t{411, 22}, 0).value();
+  req.sp_cell_id.plmn_id = plmn_identity::test_value();
 
   // serv cell idx
   req.serv_cell_idx = 1;
 
   // cu to du to rrc info
-  req.cu_to_du_rrc_info.cg_cfg_info               = make_byte_buffer("deadbeef");
-  req.cu_to_du_rrc_info.ue_cap_rat_container_list = make_byte_buffer("deadbeef");
-  req.cu_to_du_rrc_info.meas_cfg                  = make_byte_buffer("deadbeef");
+  req.cu_to_du_rrc_info.cg_cfg_info               = make_byte_buffer("deadbeef").value();
+  req.cu_to_du_rrc_info.ue_cap_rat_container_list = make_byte_buffer("deadbeef").value();
+  req.cu_to_du_rrc_info.meas_cfg                  = make_byte_buffer("deadbeef").value();
 
   // drx cycle
   f1ap_drx_cycle drx_cycle;
@@ -136,6 +165,7 @@ srsran::srs_cu_cp::create_ue_context_setup_request(const std::initializer_list<d
     drb_item.qos_info.drb_qos.alloc_and_retention_prio.pre_emption_vulnerability = "not_pre_emptable";
     drb_item.qos_info.s_nssai.sst                                                = 1;
     drb_item.rlc_mod                                                             = rlc_mode::am;
+    drb_item.pdcp_sn_len                                                         = pdcp_sn_size::size12bits;
 
     req.drbs_to_be_setup_list.emplace(drb, drb_item);
   }

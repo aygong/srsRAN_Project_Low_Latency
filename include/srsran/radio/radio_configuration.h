@@ -24,6 +24,7 @@
 
 #include "srsran/adt/static_vector.h"
 #include "srsran/radio/radio_constants.h"
+#include "srsran/srslog/logger.h"
 #include "srsran/support/error_handling.h"
 
 namespace srsran {
@@ -96,6 +97,16 @@ enum class over_the_wire_format {
   SC8
 };
 
+/// Available radio transmission modes.
+enum class transmission_mode {
+  /// The radio continually transmits and the transmit chain is active even when there are no transmission requests.
+  continuous = 0,
+  /// The transmitter stops when there is no data to transmit.
+  discontinuous,
+  /// The radio transmits and receives from the same antenna port. It can only be used with TDD cell configurations.
+  same_port
+};
+
 /// Describes the necessary parameters to initialize a radio.
 struct radio {
   /// Clock configuration.
@@ -110,9 +121,9 @@ struct radio {
   double sampling_rate_hz;
   /// Indicates the baseband signal transport format between the device and the host.
   over_the_wire_format otw_format;
-  /// \brief Enables discontinuous transmission.
-  /// \remark Not all drivers and/or devices support this feature.
-  bool discontinuous_tx;
+  /// \brief Transmission mode.
+  /// \remark Not all drivers and/or devices support discontinuous transmission modes.
+  transmission_mode tx_mode;
   /// \brief Power ramping time of the transmit chain in microseconds.
   ///
   /// \note It is recommended to configure this parameter carefully, taking into account the characteristics of the
@@ -123,7 +134,7 @@ struct radio {
   /// \remark Not all driver and/or devices support this feature.
   std::string args;
   /// Logging level. Leave empty for default.
-  std::string log_level;
+  srslog::basic_levels log_level;
 };
 
 /// Converts a string into a clock source. No error or invalid type is returned if the string is not valid.
@@ -160,6 +171,21 @@ inline over_the_wire_format to_otw_format(const std::string& str)
     return over_the_wire_format::DEFAULT;
   }
   report_error("Invalid OTW format '{}'.", str);
+}
+
+/// Converts a string into a transmission mode. No error or invalid type is returned if the string is not valid.
+inline transmission_mode to_transmission_mode(const std::string& str)
+{
+  if (str == "continuous") {
+    return transmission_mode::continuous;
+  }
+  if (str == "discontinuous") {
+    return transmission_mode::discontinuous;
+  }
+  if (str == "same-port") {
+    return transmission_mode::same_port;
+  }
+  report_error("Invalid transmission mode '{}'.", str);
 }
 
 /// Interface for validating a given radio configuration.

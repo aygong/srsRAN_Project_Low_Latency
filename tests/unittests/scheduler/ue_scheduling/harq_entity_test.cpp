@@ -114,15 +114,17 @@ TEST_F(harq_entity_harq_1bit_tester, when_dtx_received_after_ack_then_dtx_is_ign
   }
 
   // ACK received.
-  auto result = this->harq_ent.dl_ack_info(pucch_slot, mac_harq_ack_report_status::ack, dai, nullopt);
-  ASSERT_EQ(result.h_id, this->h_dl.id);
-  ASSERT_EQ(result.update, dl_harq_process::status_update::no_update);
+  auto result = this->harq_ent.dl_ack_info(pucch_slot, mac_harq_ack_report_status::ack, dai, std::nullopt);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result->h_id, this->h_dl.id);
+  ASSERT_EQ(result->update, dl_harq_process::status_update::no_update);
 
   // DTX received one slot late.
   run_slot();
-  result = this->harq_ent.dl_ack_info(pucch_slot, mac_harq_ack_report_status::dtx, dai, nullopt);
-  ASSERT_EQ(result.h_id, this->h_dl.id);
-  ASSERT_EQ(result.update, dl_harq_process::status_update::acked);
+  result = this->harq_ent.dl_ack_info(pucch_slot, mac_harq_ack_report_status::dtx, dai, std::nullopt);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result->h_id, this->h_dl.id);
+  ASSERT_EQ(result->update, dl_harq_process::status_update::acked);
 }
 
 // Note: When two F1 PUCCHs are decoded (one with SR and the other without), there is a small chance that none of them
@@ -142,13 +144,15 @@ TEST_F(harq_entity_harq_1bit_tester, when_ack_received_after_nack_then_process_b
 
   // NACK received.
   auto result = this->harq_ent.dl_ack_info(pucch_slot, mac_harq_ack_report_status::nack, dai, 1.0F);
-  ASSERT_EQ(result.h_id, this->h_dl.id);
-  ASSERT_EQ(result.update, dl_harq_process::status_update::no_update);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result->h_id, this->h_dl.id);
+  ASSERT_EQ(result->update, dl_harq_process::status_update::no_update);
 
   // ACK received.
   result = this->harq_ent.dl_ack_info(pucch_slot, srsran::mac_harq_ack_report_status::ack, dai, 2.0F);
-  ASSERT_EQ(result.h_id, this->h_dl.id);
-  ASSERT_EQ(result.update, dl_harq_process::status_update::acked);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result->h_id, this->h_dl.id);
+  ASSERT_EQ(result->update, dl_harq_process::status_update::acked);
 
   // HARQ should be empty.
   ASSERT_TRUE(this->h_dl.empty());
@@ -219,13 +223,13 @@ TEST_P(harq_entity_2_harq_bits_tester, handle_pucchs)
   auto params = GetParam();
 
   // First PUCCH, 2 HARQ bits, different indexes.
-  harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[0][0], 0, nullopt);
-  harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[0][1], 1, nullopt);
+  harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[0][0], 0, std::nullopt);
+  harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[0][1], 1, std::nullopt);
 
   // Second PUCCH, 2 HARQ bits, different indexes.
   if (params.ack.size() > 1) {
-    harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[1][0], 0, nullopt);
-    harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[1][1], 1, nullopt);
+    harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[1][0], 0, std::nullopt);
+    harq_ent.dl_ack_info(pucch_slot, (mac_harq_ack_report_status)params.ack[1][1], 1, std::nullopt);
   }
 
   bool check_timeout = false;
@@ -308,9 +312,10 @@ TEST_F(harq_entity_harq_5bit_tester, when_5_harq_bits_are_acks_then_all_5_active
 
   // ACK received.
   for (unsigned i = 0; i != active_harqs; ++i) {
-    auto result = this->harq_ent.dl_ack_info(pucch_slot, srsran::mac_harq_ack_report_status::ack, i, nullopt);
-    ASSERT_NE(result.h_id, INVALID_HARQ_ID);
-    ASSERT_EQ(result.update, dl_harq_process::status_update::acked);
+    auto result = this->harq_ent.dl_ack_info(pucch_slot, srsran::mac_harq_ack_report_status::ack, i, std::nullopt);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_NE(result->h_id, INVALID_HARQ_ID);
+    ASSERT_EQ(result->update, dl_harq_process::status_update::acked);
   }
 
   for (unsigned i = 0; i != h_dls.size(); ++i) {
@@ -335,9 +340,10 @@ TEST_F(harq_entity_harq_5bit_tester, when_5_harq_bits_are_nacks_then_all_5_activ
 
   // NACK received.
   for (unsigned i = 0; i != active_harqs; ++i) {
-    auto result = this->harq_ent.dl_ack_info(pucch_slot, srsran::mac_harq_ack_report_status::nack, i, nullopt);
-    ASSERT_NE(result.h_id, INVALID_HARQ_ID);
-    ASSERT_EQ(result.update, dl_harq_process::status_update::nacked);
+    auto result = this->harq_ent.dl_ack_info(pucch_slot, srsran::mac_harq_ack_report_status::nack, i, std::nullopt);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_NE(result->h_id, INVALID_HARQ_ID);
+    ASSERT_EQ(result->update, dl_harq_process::status_update::nacked);
   }
 
   for (unsigned i = 0; i != h_dls.size(); ++i) {

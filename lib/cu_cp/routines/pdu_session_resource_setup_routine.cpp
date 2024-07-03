@@ -35,7 +35,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&       
                                const cu_cp_pdu_session_resource_setup_request   setup_msg,
                                const e1ap_bearer_context_modification_response& bearer_context_modification_response,
                                up_config_update&                                next_config,
-                               up_resource_manager&                             rrc_ue_up_resource_manager_,
+                               up_resource_manager&                             up_resource_mng_,
                                const security_indication_t&                     default_security_indication,
                                srslog::basic_logger&                            logger);
 
@@ -45,7 +45,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&      r
                                const cu_cp_pdu_session_resource_setup_request& setup_msg,
                                const e1ap_bearer_context_setup_response&       bearer_context_setup_response,
                                up_config_update&                               next_config,
-                               up_resource_manager&                            rrc_ue_up_resource_manager_,
+                               up_resource_manager&                            up_resource_mng_,
                                const security_indication_t&                    default_security_indication,
                                srslog::basic_logger&                           logger);
 
@@ -69,19 +69,19 @@ pdu_session_resource_setup_routine::pdu_session_resource_setup_routine(
     const ue_configuration&                         ue_cfg_,
     const srsran::security::sec_as_config&          security_cfg_,
     const security_indication_t&                    default_security_indication_,
-    du_processor_e1ap_control_notifier&             e1ap_ctrl_notif_,
-    du_processor_f1ap_ue_context_notifier&          f1ap_ue_ctxt_notif_,
+    e1ap_bearer_context_manager&                    e1ap_bearer_ctxt_mng_,
+    f1ap_ue_context_manager&                        f1ap_ue_ctxt_mng_,
     du_processor_rrc_ue_control_message_notifier&   rrc_ue_notifier_,
-    up_resource_manager&                            rrc_ue_up_resource_manager_,
+    up_resource_manager&                            up_resource_mng_,
     srslog::basic_logger&                           logger_) :
   setup_msg(setup_msg_),
   ue_cfg(ue_cfg_),
   security_cfg(security_cfg_),
   default_security_indication(default_security_indication_),
-  e1ap_ctrl_notifier(e1ap_ctrl_notif_),
-  f1ap_ue_ctxt_notifier(f1ap_ue_ctxt_notif_),
+  e1ap_bearer_ctxt_mng(e1ap_bearer_ctxt_mng_),
+  f1ap_ue_ctxt_mng(f1ap_ue_ctxt_mng_),
   rrc_ue_notifier(rrc_ue_notifier_),
-  rrc_ue_up_resource_manager(rrc_ue_up_resource_manager_),
+  up_resource_mng(up_resource_mng_),
   logger(logger_)
 {
 }
@@ -94,7 +94,7 @@ void pdu_session_resource_setup_routine::operator()(
   logger.debug("ue={}: \"{}\" initialized", setup_msg.ue_index, name());
 
   // Perform initial sanity checks on incoming message.
-  if (!rrc_ue_up_resource_manager.validate_request(setup_msg.pdu_session_res_setup_items)) {
+  if (!up_resource_mng.validate_request(setup_msg.pdu_session_res_setup_items)) {
     logger.info("ue={}: \"{}\" Invalid PduSessionResourceSetup", setup_msg.ue_index, name());
     CORO_EARLY_RETURN(handle_pdu_session_resource_setup_result(false));
   }
@@ -112,7 +112,7 @@ void pdu_session_resource_setup_routine::operator()(
 
   {
     // Calculate next user-plane configuration based on incoming setup message.
-    next_config = rrc_ue_up_resource_manager.calculate_update(setup_msg.pdu_session_res_setup_items);
+    next_config = up_resource_mng.calculate_update(setup_msg.pdu_session_res_setup_items);
   }
 
   // sanity check passed, decide whether we have to create a Bearer Context at the CU-UP or modify an existing one.
@@ -125,7 +125,7 @@ void pdu_session_resource_setup_routine::operator()(
 
     // call E1AP procedure
     CORO_AWAIT_VALUE(bearer_context_setup_response,
-                     e1ap_ctrl_notifier.on_bearer_context_setup_request(bearer_context_setup_request));
+                     e1ap_bearer_ctxt_mng.handle_bearer_context_setup_request(bearer_context_setup_request));
 
     // Handle BearerContextSetupResponse
     if (!handle_procedure_response(response_msg,
@@ -133,7 +133,7 @@ void pdu_session_resource_setup_routine::operator()(
                                    setup_msg,
                                    bearer_context_setup_response,
                                    next_config,
-                                   rrc_ue_up_resource_manager,
+                                   up_resource_mng,
                                    default_security_indication,
                                    logger)) {
       logger.warning("ue={}: \"{}\" failed to setup bearer at CU-UP", setup_msg.ue_index, name());
@@ -145,8 +145,9 @@ void pdu_session_resource_setup_routine::operator()(
     fill_initial_e1ap_bearer_context_modification_request(bearer_context_modification_request);
 
     // call E1AP procedure and wait for BearerContextModificationResponse
-    CORO_AWAIT_VALUE(bearer_context_modification_response,
-                     e1ap_ctrl_notifier.on_bearer_context_modification_request(bearer_context_modification_request));
+    CORO_AWAIT_VALUE(
+        bearer_context_modification_response,
+        e1ap_bearer_ctxt_mng.handle_bearer_context_modification_request(bearer_context_modification_request));
 
     // Handle BearerContextModificationResponse
     if (!handle_procedure_response(response_msg,
@@ -154,7 +155,7 @@ void pdu_session_resource_setup_routine::operator()(
                                    setup_msg,
                                    bearer_context_modification_response,
                                    next_config,
-                                   rrc_ue_up_resource_manager,
+                                   up_resource_mng,
                                    default_security_indication,
                                    logger)) {
       logger.warning("ue={}: \"{}\" failed to modify bearer at CU-UP", setup_msg.ue_index, name());
@@ -164,12 +165,12 @@ void pdu_session_resource_setup_routine::operator()(
 
   // Register required SRB and DRB resources at DU
   {
-    // prepare UE Context Modification Request and call F1 notifier
+    // prepare UE Context Modification Request and call F1
     ue_context_mod_request.ue_index = setup_msg.ue_index;
 
     // DRB setup have already added above.
     CORO_AWAIT_VALUE(ue_context_modification_response,
-                     f1ap_ue_ctxt_notifier.on_ue_context_modification_request(ue_context_mod_request));
+                     f1ap_ue_ctxt_mng.handle_ue_context_modification_request(ue_context_mod_request));
 
     // Handle UE Context Modification Response
     if (!handle_procedure_response(response_msg,
@@ -189,8 +190,9 @@ void pdu_session_resource_setup_routine::operator()(
     bearer_context_modification_request.ue_index = setup_msg.ue_index;
 
     // call E1AP procedure and wait for BearerContextModificationResponse
-    CORO_AWAIT_VALUE(bearer_context_modification_response,
-                     e1ap_ctrl_notifier.on_bearer_context_modification_request(bearer_context_modification_request));
+    CORO_AWAIT_VALUE(
+        bearer_context_modification_response,
+        e1ap_bearer_ctxt_mng.handle_bearer_context_modification_request(bearer_context_modification_request));
 
     // Handle BearerContextModificationResponse
     if (!handle_procedure_response(response_msg,
@@ -198,7 +200,7 @@ void pdu_session_resource_setup_routine::operator()(
                                    setup_msg,
                                    bearer_context_modification_response,
                                    next_config,
-                                   rrc_ue_up_resource_manager,
+                                   up_resource_mng,
                                    default_security_indication,
                                    logger)) {
       logger.warning("ue={}: \"{}\" failed to modify bearer at CU-UP", setup_msg.ue_index, name());
@@ -225,10 +227,11 @@ void pdu_session_resource_setup_routine::operator()(
                                   ue_context_modification_response.du_to_cu_rrc_info,
                                   nas_pdus,
                                   next_config.initial_context_creation ? rrc_ue_notifier.generate_meas_config()
-                                                                       : optional<rrc_meas_cfg>{},
+                                                                       : std::optional<rrc_meas_cfg>{},
                                   false,
                                   false,
                                   false,
+                                  {},
                                   logger)) {
         logger.warning("ue={}: \"{}\" Failed to fill RrcReconfiguration", setup_msg.ue_index, name());
         CORO_EARLY_RETURN(handle_pdu_session_resource_setup_result(false));
@@ -255,7 +258,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&       
                                const cu_cp_pdu_session_resource_setup_request   setup_msg,
                                const e1ap_bearer_context_modification_response& bearer_context_modification_response,
                                up_config_update&                                next_config,
-                               up_resource_manager&                             rrc_ue_up_resource_manager_,
+                               up_resource_manager&                             up_resource_mng_,
                                const security_indication_t&                     default_security_indication,
                                srslog::basic_logger&                            logger)
 {
@@ -266,7 +269,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&       
                          setup_msg.pdu_session_res_setup_items,
                          bearer_context_modification_response.pdu_session_resource_setup_list,
                          next_config,
-                         rrc_ue_up_resource_manager_,
+                         up_resource_mng_,
                          default_security_indication,
                          logger)) {
     return false;
@@ -295,7 +298,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&      r
                                const cu_cp_pdu_session_resource_setup_request& setup_msg,
                                const e1ap_bearer_context_setup_response&       bearer_context_setup_response,
                                up_config_update&                               next_config,
-                               up_resource_manager&                            rrc_ue_up_resource_manager_,
+                               up_resource_manager&                            up_resource_mng_,
                                const security_indication_t&                    default_security_indication,
                                srslog::basic_logger&                           logger)
 {
@@ -306,7 +309,7 @@ bool handle_procedure_response(cu_cp_pdu_session_resource_setup_response&      r
                          setup_msg.pdu_session_res_setup_items,
                          bearer_context_setup_response.pdu_session_resource_setup_list,
                          next_config,
-                         rrc_ue_up_resource_manager_,
+                         up_resource_mng_,
                          default_security_indication,
                          logger)) {
     return false;
@@ -404,7 +407,7 @@ pdu_session_resource_setup_routine::handle_pdu_session_resource_setup_result(boo
     for (const auto& pdu_session_to_add : next_config.pdu_sessions_to_setup_list) {
       result.pdu_sessions_added_list.push_back(pdu_session_to_add.second);
     }
-    rrc_ue_up_resource_manager.apply_config_update(result);
+    up_resource_mng.apply_config_update(result);
   } else {
     logger.info("ue={}: \"{}\" failed", setup_msg.ue_index, name());
 
@@ -423,14 +426,14 @@ bool pdu_session_resource_setup_routine::fill_e1ap_bearer_context_setup_request(
   e1ap_request.security_info.security_algorithm.ciphering_algo                 = security_cfg.cipher_algo;
   e1ap_request.security_info.security_algorithm.integrity_protection_algorithm = security_cfg.integ_algo;
   auto k_enc_buffer = byte_buffer::create(security_cfg.k_enc);
-  if (k_enc_buffer.is_error()) {
+  if (not k_enc_buffer.has_value()) {
     logger.warning("Unable to allocate byte_buffer");
     return false;
   }
   e1ap_request.security_info.up_security_key.encryption_key = std::move(k_enc_buffer.value());
   if (security_cfg.k_int.has_value()) {
     auto k_int_buffer = byte_buffer::create(security_cfg.k_int.value());
-    if (k_int_buffer.is_error()) {
+    if (not k_int_buffer.has_value()) {
       logger.warning("Unable to allocate byte_buffer");
       return false;
     }

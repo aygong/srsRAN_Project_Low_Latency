@@ -44,7 +44,7 @@ static constexpr unsigned PUCCH_FORMAT1_MIN_NSYMB = 4;
 // Valid PUCCH Format 1 configuration.
 const pucch_processor::format1_configuration base_format_1_config = {
     // Context.
-    nullopt,
+    std::nullopt,
     // Slot.
     {0, 9},
     // BWP size.
@@ -181,7 +181,7 @@ const std::vector<test_case_t> pucch_processor_validator_test_data = {
     },
 };
 
-class PucchProcessorFixture : public ::testing::TestWithParam<test_case_t>
+class PucchProcessorFormat1Fixture : public ::testing::TestWithParam<test_case_t>
 {
 protected:
   static std::unique_ptr<pucch_processor>     pucch_proc;
@@ -191,7 +191,7 @@ protected:
   {
     if (!(pucch_proc && pucch_validator)) {
       // Create factories required by the PUCCH demodulator factory.
-      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_factory_zf();
+      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_generic_factory();
       ASSERT_NE(equalizer_factory, nullptr) << "Cannot create equalizer factory.";
 
       std::shared_ptr<channel_modulation_factory> demod_factory = create_channel_modulation_sw_factory();
@@ -271,10 +271,10 @@ protected:
   }
 };
 
-std::unique_ptr<pucch_processor>     PucchProcessorFixture::pucch_proc;
-std::unique_ptr<pucch_pdu_validator> PucchProcessorFixture::pucch_validator;
+std::unique_ptr<pucch_processor>     PucchProcessorFormat1Fixture::pucch_proc;
+std::unique_ptr<pucch_pdu_validator> PucchProcessorFormat1Fixture::pucch_validator;
 
-TEST_P(PucchProcessorFixture, PucchProcessorValidatortest)
+TEST_P(PucchProcessorFormat1Fixture, PucchProcessorValidatortest)
 {
   ASSERT_NE(pucch_proc, nullptr) << "PUCCH processor not created.";
   ASSERT_NE(pucch_validator, nullptr) << "PUCCH validator not created.";
@@ -295,7 +295,7 @@ TEST_P(PucchProcessorFixture, PucchProcessorValidatortest)
 
 // Creates test suite that combines all possible parameters.
 INSTANTIATE_TEST_SUITE_P(PucchProcessorValidatortest,
-                         PucchProcessorFixture,
+                         PucchProcessorFormat1Fixture,
                          ::testing::ValuesIn(pucch_processor_validator_test_data));
 
 } // namespace

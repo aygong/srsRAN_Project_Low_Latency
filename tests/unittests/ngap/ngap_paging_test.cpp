@@ -52,7 +52,7 @@ protected:
     }
 
     auto& paging_item = cu_cp_paging_notifier.last_msg.tai_list_for_paging.front();
-    if (paging_item.tai.plmn_id != "00f110") {
+    if (paging_item.tai.plmn_id != plmn_identity::test_value()) {
       test_logger.error("PLMN mismatch {} != 00f110", paging_item.tai.plmn_id);
       return false;
     }
@@ -93,10 +93,10 @@ protected:
       return false;
     }
     if (cu_cp_paging_notifier.last_msg.ue_radio_cap_for_paging.value().ue_radio_cap_for_paging_of_nr !=
-        make_byte_buffer("deadbeef")) {
+        make_byte_buffer("deadbeef").value()) {
       test_logger.error("UE radio cap for paging mismatch {} != {}",
                         cu_cp_paging_notifier.last_msg.ue_radio_cap_for_paging.value().ue_radio_cap_for_paging_of_nr,
-                        make_byte_buffer("deadbeef"));
+                        make_byte_buffer("deadbeef").value());
       return false;
     }
 
@@ -125,12 +125,13 @@ protected:
     auto& cell_item = cu_cp_paging_notifier.last_msg.assist_data_for_paging.value()
                           .assist_data_for_recommended_cells.value()
                           .recommended_cells_for_paging.recommended_cell_list.front();
-    if (cell_item.ngran_cgi.plmn_hex != "00f110") {
-      test_logger.error("NR CGI PLMN mismatch {} != 00f110", cell_item.ngran_cgi.plmn_hex);
+    if (cell_item.ngran_cgi.plmn_id != plmn_identity::test_value()) {
+      test_logger.error("NR CGI PLMN mismatch {} != 00f110", cell_item.ngran_cgi.plmn_id);
       return false;
     }
-    if (cell_item.ngran_cgi.nci != 6576) {
-      test_logger.error("NR CGI NCI mismatch {} != {}", cell_item.ngran_cgi.nci, 6576);
+    nr_cell_identity nci = nr_cell_identity::create(gnb_id_t{411, 22}, 0).value();
+    if (cell_item.ngran_cgi.nci != nci) {
+      test_logger.error("NR CGI NCI mismatch {} != {}", cell_item.ngran_cgi.nci, nci);
       return false;
     }
     if (cell_item.time_stayed_in_cell.value() != 5) {
@@ -184,7 +185,7 @@ protected:
 
   bool was_error_indication_sent() const
   {
-    return msg_notifier.last_ngap_msgs.back().pdu.init_msg().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type() ==
            asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::error_ind;
   }
 };

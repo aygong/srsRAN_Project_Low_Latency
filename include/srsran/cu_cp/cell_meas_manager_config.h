@@ -39,18 +39,18 @@ namespace srs_cu_cp {
 /// Note that some optional values need to be provided by the DU upon F1Setup.
 
 struct serving_cell_meas_config {
-  nr_cell_id_t nci;    ///< The NR cell identifier.
-  gnb_id_t     gnb_id; ///< gNodeB identifier
+  nr_cell_identity nci;    ///< The NR cell identifier.
+  gnb_id_t         gnb_id; ///< gNodeB identifier
   /// If not set in config must be provided by config update after DU attach.
-  optional<pci_t>              pci;       ///< Physical cell identifier.
-  optional<nr_band>            band;      ///< NR band.
-  optional<rrc_ssb_mtc>        ssb_mtc;   ///< SSB measurement and timing config.
-  optional<unsigned>           ssb_arfcn; ///< SSB ARFCN.
-  optional<subcarrier_spacing> ssb_scs;   ///< SSB subcarrier spacing.
+  std::optional<pci_t>              pci;       ///< Physical cell identifier.
+  std::optional<nr_band>            band;      ///< NR band.
+  std::optional<rrc_ssb_mtc>        ssb_mtc;   ///< SSB measurement and timing config.
+  std::optional<unsigned>           ssb_arfcn; ///< SSB ARFCN.
+  std::optional<subcarrier_spacing> ssb_scs;   ///< SSB subcarrier spacing.
 };
 
 struct neighbor_cell_meas_config {
-  nr_cell_id_t                 nci;            ///< The NR cell identifier.
+  nr_cell_identity             nci;            ///< The NR cell identifier.
   std::vector<report_cfg_id_t> report_cfg_ids; ///< The configured report configs
 };
 
@@ -58,7 +58,7 @@ struct neighbor_cell_meas_config {
 /// Note that some optional values need to be provided by the DU upon F1Setup.
 struct cell_meas_config {
   serving_cell_meas_config               serving_cell_cfg;       ///< Serving cell measurement config
-  optional<report_cfg_id_t>              periodic_report_cfg_id; ///< The periodic report config
+  std::optional<report_cfg_id_t>         periodic_report_cfg_id; ///< The periodic report config
   std::vector<neighbor_cell_meas_config> ncells;                 ///< List of neighbor cells.
 };
 
@@ -67,7 +67,7 @@ bool is_complete(const serving_cell_meas_config& cfg);
 
 /// \brief Cell manager configuration.
 struct cell_meas_manager_cfg {
-  std::map<nr_cell_id_t, cell_meas_config>     cells; // Measurement related configs for all known cells.
+  std::map<nr_cell_identity, cell_meas_config> cells; // Measurement related configs for all known cells.
   std::map<report_cfg_id_t, rrc_report_cfg_nr> report_config_ids;
 };
 

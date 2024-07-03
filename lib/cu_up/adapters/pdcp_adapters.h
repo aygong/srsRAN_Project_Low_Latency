@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "srsran/f1u/cu_up/f1u_bearer.h"
 #include "srsran/pdcp/pdcp_rx.h"
 #include "srsran/pdcp/pdcp_tx.h"
 #include "srsran/sdap/sdap.h"
@@ -88,12 +87,12 @@ public:
   void connect_f1u(f1u_tx_sdu_handler& f1u_handler_) { f1u_handler = &f1u_handler_; }
   void disconnect_f1u() { f1u_handler = nullptr; }
 
-  void on_new_pdu(pdcp_tx_pdu pdu) override
+  void on_new_pdu(byte_buffer pdu, bool is_retx) override
   {
     if (f1u_handler == nullptr) {
       srslog::fetch_basic_logger("PDCP").info("Dropped DL PDU. F1-U handler is not connected");
     } else {
-      f1u_handler->handle_sdu(std::move(pdu));
+      f1u_handler->handle_sdu(std::move(pdu), is_retx);
     }
   }
 

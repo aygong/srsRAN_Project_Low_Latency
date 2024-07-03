@@ -42,15 +42,15 @@ public:
 
   const scheduler_expert_config& expert_cfg;
 
-  const du_cell_index_t                   cell_index;
-  const du_cell_group_index_t             cell_group_index;
-  const pci_t                             pci;
-  const unsigned                          nof_dl_prbs;
-  const unsigned                          nof_ul_prbs;
-  const unsigned                          nof_slots_per_frame;
-  const dl_config_common                  dl_cfg_common;
-  const ul_config_common                  ul_cfg_common;
-  const optional<tdd_ul_dl_config_common> tdd_cfg_common;
+  const du_cell_index_t                        cell_index;
+  const du_cell_group_index_t                  cell_group_index;
+  const pci_t                                  pci;
+  const unsigned                               nof_dl_prbs;
+  const unsigned                               nof_ul_prbs;
+  const unsigned                               nof_slots_per_frame;
+  const dl_config_common                       dl_cfg_common;
+  const ul_config_common                       ul_cfg_common;
+  const std::optional<tdd_ul_dl_config_common> tdd_cfg_common;
 
   /// Imported from mac_cell_configuration.
   carrier_configuration   dl_carrier;
@@ -66,6 +66,9 @@ public:
 
   /// List of nzp-CSI-RS resources.
   std::vector<nzp_csi_rs_resource> nzp_csi_rs_list;
+
+  /// List of RRM Policy members configured for this cell.
+  std::vector<slice_rrm_policy_config> rrm_policy_members;
 
   // Derived Parameters.
   ssb_pattern_case ssb_case;

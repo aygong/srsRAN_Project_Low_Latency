@@ -21,24 +21,43 @@
  */
 
 #include "asn1_helpers.h"
+#include "srsran/ran/bcd_helper.h"
 
 using namespace srsran;
 
-nr_cell_global_id_t srsran::cgi_from_asn1(const asn1::f1ap::nr_cgi_s& asn1_cgi)
+expected<nr_cell_global_id_t> srsran::cgi_from_asn1(const asn1::f1ap::nr_cgi_s& asn1_cgi)
 {
-  nr_cell_global_id_t cgi          = {};
-  uint32_t            encoded_plmn = asn1_cgi.plmn_id.to_number();
-  ngap_plmn_to_mccmnc(encoded_plmn, &cgi.mcc, &cgi.mnc);
+  auto plmn = plmn_identity::from_bytes(asn1_cgi.plmn_id.to_bytes());
+  if (not plmn.has_value()) {
+    return make_unexpected(plmn.error());
+  }
+  auto nci = nr_cell_identity::create(asn1_cgi.nr_cell_id.to_number());
+  if (not nci.has_value()) {
+    return make_unexpected(nci.error());
+  }
+  return nr_cell_global_id_t{plmn.value(), nci.value()};
+}
 
-  std::string mcc_string, mnc_string;
-  mcc_to_string(cgi.mcc, &mcc_string);
-  mnc_to_string(cgi.mnc, &mnc_string);
-  cgi.plmn = mcc_string + mnc_string;
+pdcp_sn_size srsran::pdcp_sn_size_from_f1ap_asn1(const asn1::f1ap::pdcp_sn_len_e& asn1_pdcp_sn_size)
+{
+  switch (asn1_pdcp_sn_size) {
+    case asn1::f1ap::pdcp_sn_len_opts::twelve_bits:
+      return pdcp_sn_size::size12bits;
+    case asn1::f1ap::pdcp_sn_len_opts::eighteen_bits:
+      return pdcp_sn_size::size18bits;
+    default:
+      return pdcp_sn_size::invalid;
+  }
+}
 
-  // Set PLMN hex string
-  cgi.plmn_hex = asn1_cgi.plmn_id.to_string();
-
-  cgi.nci = asn1_cgi.nr_cell_id.to_number();
-
-  return cgi;
+asn1::f1ap::pdcp_sn_len_e srsran::pdcp_sn_size_to_f1ap_asn1(pdcp_sn_size sn_size)
+{
+  switch (sn_size) {
+    case pdcp_sn_size::size12bits:
+      return asn1::f1ap::pdcp_sn_len_opts::twelve_bits;
+    case pdcp_sn_size::size18bits:
+      return asn1::f1ap::pdcp_sn_len_opts::eighteen_bits;
+    default:
+      return asn1::f1ap::pdcp_sn_len_opts::nulltype;
+  }
 }

@@ -28,6 +28,7 @@
 #include "srsran/fapi_adaptor/phy/messages/prach.h"
 #include "srsran/fapi_adaptor/phy/messages/pucch.h"
 #include "srsran/fapi_adaptor/phy/messages/pusch.h"
+#include "srsran/fapi_adaptor/phy/messages/srs.h"
 #include "srsran/fapi_adaptor/phy/messages/ssb.h"
 #include "srsran/instrumentation/traces/du_traces.h"
 #include "srsran/phy/support/prach_buffer_context.h"
@@ -35,6 +36,7 @@
 #include "srsran/phy/upper/downlink_processor.h"
 #include "srsran/phy/upper/uplink_request_processor.h"
 #include "srsran/phy/upper/uplink_slot_pdu_repository.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 using namespace fapi_adaptor;
@@ -167,6 +169,7 @@ struct uplink_pdus {
   static_vector<uplink_processor::pucch_pdu, MAX_PUCCH_PDUS_PER_SLOT> pucch;
   static_vector<uplink_processor::pusch_pdu, MAX_PUSCH_PDUS_PER_SLOT> pusch;
   static_vector<prach_buffer_context, MAX_PRACH_OCCASIONS_PER_SLOT>   prach;
+  static_vector<uplink_processor::srs_pdu, MAX_SRS_PDUS_PER_SLOT>     srs;
 };
 
 } // namespace
@@ -226,7 +229,7 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
         if (pdu.csi_rs_pdu.type != csi_rs_type::CSI_RS_NZP && pdu.csi_rs_pdu.type != csi_rs_type::CSI_RS_ZP) {
           logger.warning("Only NZP-CSI-RS and ZP-CSI-RS PDU types are supported. Skipping DL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
         // ZP-CSI does not need any further work to do.
         if (pdu.csi_rs_pdu.type == csi_rs_type::CSI_RS_ZP) {
@@ -237,7 +240,7 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
         if (!dl_pdu_validator.is_valid(csi_pdu)) {
           logger.warning("Upper PHY flagged a CSI-RS PDU as having an invalid configuration. Skipping DL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
         break;
       }
@@ -251,7 +254,7 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
                            "Skipping DL_TTI.request",
                            i_dci);
 
-            return {default_error_t{}};
+            return make_unexpected(default_error_t{});
           }
         }
         break;
@@ -262,7 +265,7 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
         if (!dl_pdu_validator.is_valid(pdsch_pdu)) {
           logger.warning("Upper PHY flagged a PDSCH PDU as having an invalid configuration. Skipping DL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
         break;
       }
@@ -272,7 +275,7 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
         if (!dl_pdu_validator.is_valid(ssb_pdu)) {
           logger.warning("Upper PHY flagged a SSB PDU as having an invalid configuration. Skipping DL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
         break;
       }
@@ -415,7 +418,7 @@ static expected<uplink_pdus> translate_ul_tti_pdus_to_phy_pdus(const fapi::ul_tt
           logger.warning(
               "Upper PHY flagged a PRACH PDU as having an invalid configuration. Skipping UL_TTI.request in slot");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
 
         break;
@@ -426,7 +429,7 @@ static expected<uplink_pdus> translate_ul_tti_pdus_to_phy_pdus(const fapi::ul_tt
         if (!is_pucch_pdu_valid(ul_pdu_validator, ul_pdu)) {
           logger.warning("Upper PHY flagged a PUCCH PDU as having an invalid configuration. Skipping UL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
 
         break;
@@ -437,15 +440,25 @@ static expected<uplink_pdus> translate_ul_tti_pdus_to_phy_pdus(const fapi::ul_tt
         if (!ul_pdu_validator.is_valid(ul_pdu.pdu)) {
           logger.warning("Upper PHY flagged a PUSCH PDU as having an invalid configuration. Skipping UL_TTI.request");
 
-          return {default_error_t{}};
+          return make_unexpected(default_error_t{});
         }
         break;
       }
-      case fapi::ul_pdu_type::SRS:
+      case fapi::ul_pdu_type::SRS: {
+        uplink_processor::srs_pdu& ul_pdu = pdus.srs.emplace_back();
+        convert_srs_fapi_to_phy(ul_pdu, pdu.srs_pdu, msg.sfn, msg.slot);
+        if (!ul_pdu_validator.is_valid(ul_pdu.config)) {
+          logger.warning("Upper PHY flagged a SRS PDU as having an invalid configuration. Skipping UL_TTI.request");
+
+          return make_unexpected(default_error_t{});
+        }
+        break;
+      }
       default:
         srsran_assert(0, "UL_TTI.request PDU type value '{}' not recognized.", static_cast<unsigned>(pdu.pdu_type));
     }
   }
+
   return pdus;
 }
 
@@ -483,21 +496,24 @@ void fapi_to_phy_translator::ul_tti_request(const fapi::ul_tti_request_message& 
     return;
   }
 
-  // Process the PRACHs
+  // Process the PRACHs.
   for (const auto& context : pdus.value().prach) {
     ul_request_processor.process_prach_request(context);
   }
 
-  if (pdus.value().pusch.empty() && pdus.value().pucch.empty()) {
+  if (pdus.value().pusch.empty() && pdus.value().pucch.empty() && pdus.value().srs.empty()) {
     return;
   }
 
-  // Add the PUCCH and PUSCH PDUs to the repository for later processing.
+  // Add the PUCCH, PUSCH and SRS PDUs to the repository for later processing.
   for (const auto& pdu : pdus.value().pusch) {
     ul_pdu_repository.add_pusch_pdu(slot, pdu);
   }
   for (const auto& pdu : pdus.value().pucch) {
     ul_pdu_repository.add_pucch_pdu(slot, pdu);
+  }
+  for (const auto& pdu : pdus.value().srs) {
+    ul_pdu_repository.add_srs_pdu(slot, pdu);
   }
 
   // Notify to capture uplink slot.

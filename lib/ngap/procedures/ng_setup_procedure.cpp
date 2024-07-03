@@ -22,13 +22,15 @@
 
 #include "ng_setup_procedure.h"
 #include "../ngap_asn1_helpers.h"
-#include "srsran/adt/variant.h"
 #include "srsran/ngap/ngap_setup.h"
 #include "srsran/support/async/async_timer.h"
+#include <variant>
 
 using namespace srsran;
 using namespace srsran::srs_cu_cp;
 using namespace asn1::ngap;
+
+constexpr std::chrono::milliseconds ng_setup_response_timeout{5000};
 
 ng_setup_procedure::ng_setup_procedure(ngap_context_t&           context_,
                                        const ngap_message&       request_,
@@ -55,7 +57,7 @@ void ng_setup_procedure::operator()(coro_context<async_task<ngap_ng_setup_result
 
   while (true) {
     // Subscribe to respective publisher to receive NG SETUP RESPONSE/FAILURE message.
-    transaction_sink.subscribe_to(ev_mng.ng_setup_outcome);
+    transaction_sink.subscribe_to(ev_mng.ng_setup_outcome, ng_setup_response_timeout);
 
     // Send request to AMF.
     amf_notifier.on_new_message(request);
@@ -100,6 +102,7 @@ bool ng_setup_procedure::retry_required()
   if (ng_setup_retry_no++ >= max_setup_retries) {
     // Number of retries exceeded, or there is no time to wait.
     logger.warning("\"{}\": Stopping procedure. Cause: Reached maximum number of NG Setup connection retries ({})",
+                   name(),
                    max_setup_retries);
     return false;
   }
@@ -117,7 +120,7 @@ ngap_ng_setup_result ng_setup_procedure::create_ng_setup_result()
 
     fill_ngap_ng_setup_result(res, transaction_sink.response());
 
-    for (const auto& guami_item : variant_get<ngap_ng_setup_response>(res).served_guami_list) {
+    for (const auto& guami_item : std::get<ngap_ng_setup_response>(res).served_guami_list) {
       context.served_guami_list.push_back(guami_item.guami);
     }
 

@@ -24,6 +24,7 @@
 #include "srsran/phy/support/support_factories.h"
 #include "srsran/phy/upper/channel_processors/channel_processor_factories.h"
 #include "srsran/ran/pucch/pucch_constants.h"
+#include "srsran/srsvec/conversion.h"
 #include "fmt/ostream.h"
 #include <gtest/gtest.h>
 
@@ -47,9 +48,15 @@ std::ostream& operator<<(std::ostream& os, test_case_t test_case)
   return os;
 }
 
-static bool operator==(const std::vector<log_likelihood_ratio>& a, const std::vector<log_likelihood_ratio>& b)
+std::ostream& operator<<(std::ostream& os, span<const log_likelihood_ratio> data)
 {
-  return std::equal(a.cbegin(), a.cend(), b.cbegin(), [](log_likelihood_ratio x, log_likelihood_ratio y) {
+  fmt::print(os, "[{}]", data);
+  return os;
+}
+
+static bool operator==(span<const log_likelihood_ratio> a, span<const log_likelihood_ratio> b)
+{
+  return std::equal(a.begin(), a.end(), b.begin(), [](log_likelihood_ratio x, log_likelihood_ratio y) {
     return ((x - y >= -1) && (x - y <= 1));
   });
 }
@@ -71,7 +78,7 @@ protected:
   {
     if (!demodulator) {
       // Create factories required by the PUCCH demodulator factory.
-      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_factory_zf();
+      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_generic_factory();
       ASSERT_NE(equalizer_factory, nullptr) << "Cannot create equalizer factory";
 
       std::shared_ptr<channel_modulation_factory> demod_factory = create_channel_modulation_sw_factory();
@@ -130,7 +137,7 @@ protected:
 
     // Set estimated channel.
     std::vector<cf_t> estimates = test_case.estimates.read();
-    srsvec::copy(channel_est.get_path_ch_estimate(0, 0), estimates);
+    srsvec::convert(channel_est.get_path_ch_estimate(0, 0), estimates);
 
     // Set noise variance.
     channel_est.set_noise_variance(test_case.context.noise_var, 0);
@@ -149,7 +156,7 @@ TEST_P(PucchDemodulatorFixture, PucchDemodulatorVectorTest)
   demodulator->demodulate(uci_data, rg_spy, channel_est, config);
 
   // Assert UCI codeword matches.
-  ASSERT_EQ(uci_expected, uci_data);
+  ASSERT_EQ(span<const log_likelihood_ratio>(uci_expected), span<const log_likelihood_ratio>(uci_data));
 }
 
 // Creates test suite that combines all possible parameters.

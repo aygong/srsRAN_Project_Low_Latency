@@ -93,33 +93,25 @@ private:
   /// \brief Buffer used to transfer channel modulation symbols from the resource grid to the equalizer.
   /// \remark The symbols are arranged in two dimensions, i.e., resource element and receive port.
   static_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                cf_t,
+                cbf16_t,
                 pucch_constants::MAX_NOF_RE * MAX_PORTS,
                 channel_equalizer::re_list::dims>
       ch_re;
 
   /// \brief Buffer used to store channel modulation resource elements at the equalizer output.
   /// \remark The symbols are arranged in two dimensions, i.e., resource element and transmit layer.
-  static_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                cf_t,
-                pucch_constants::MAX_NOF_RE,
-                channel_equalizer::re_list::dims>
-      eq_re;
+  static_vector<cf_t, pucch_constants::MAX_NOF_RE> eq_re;
 
   /// \brief Buffer used to transfer symbol noise variances at the equalizer output.
   /// \remark The symbols are arranged in two dimensions, i.e., resource element and transmit layer.
-  static_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                float,
-                pucch_constants::MAX_NOF_RE,
-                channel_equalizer::re_list::dims>
-      eq_noise_vars;
+  static_vector<float, pucch_constants::MAX_NOF_RE> eq_noise_vars;
 
   /// \brief Buffer used to transfer channel estimation coefficients from the channel estimate to the equalizer.
   /// \remark The channel estimation coefficients are arranged in three dimensions, i.e., resource element, receive port
   /// and transmit layer.
   static_tensor<std::underlying_type_t<channel_equalizer::ch_est_list::dims>(
                     channel_equalizer::ch_est_list::dims::nof_dims),
-                cf_t,
+                cbf16_t,
                 pucch_constants::MAX_NOF_RE * MAX_PORTS,
                 channel_equalizer::ch_est_list::dims>
       ch_estimates;
@@ -132,6 +124,8 @@ private:
   /// Indicates the Resource Elements containing control data symbols within a PRB, as per TS38.211 Section 6.4.1.3.2.2.
   const re_prb_mask format2_prb_re_mask = {true, false, true, true, false, true, true, false, true, true, false, true};
 
+  /// Temporary channel estimates for an OFDM symbol.
+  std::array<cf_t, MAX_RB * NRE> temp_ests_symbol;
   /// PRB mask indicating the used PRB within the resource grid.
   bounded_bitset<MAX_RB> prb_mask;
 };

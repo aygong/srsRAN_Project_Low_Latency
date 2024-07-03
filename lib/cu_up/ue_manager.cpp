@@ -25,23 +25,25 @@
 using namespace srsran;
 using namespace srs_cu_up;
 
-ue_manager::ue_manager(network_interface_config&            net_config_,
-                       n3_interface_config&                 n3_config_,
-                       e1ap_control_message_handler&        e1ap_,
-                       timer_manager&                       timers_,
-                       f1u_cu_up_gateway&                   f1u_gw_,
-                       gtpu_tunnel_tx_upper_layer_notifier& gtpu_tx_notifier_,
-                       gtpu_demux_ctrl&                     gtpu_rx_demux_,
-                       gtpu_teid_pool&                      f1u_teid_allocator_,
-                       cu_up_executor_pool&                 exec_pool_,
-                       dlt_pcap&                            gtpu_pcap_,
-                       srslog::basic_logger&                logger_) :
+ue_manager::ue_manager(network_interface_config&                   net_config_,
+                       n3_interface_config&                        n3_config_,
+                       e1ap_control_message_handler&               e1ap_,
+                       timer_manager&                              timers_,
+                       f1u_cu_up_gateway&                          f1u_gw_,
+                       gtpu_tunnel_common_tx_upper_layer_notifier& gtpu_tx_notifier_,
+                       gtpu_demux_ctrl&                            gtpu_rx_demux_,
+                       gtpu_teid_pool&                             n3_teid_allocator_,
+                       gtpu_teid_pool&                             f1u_teid_allocator_,
+                       cu_up_executor_pool&                        exec_pool_,
+                       dlt_pcap&                                   gtpu_pcap_,
+                       srslog::basic_logger&                       logger_) :
   net_config(net_config_),
   n3_config(n3_config_),
   e1ap(e1ap_),
   f1u_gw(f1u_gw_),
   gtpu_tx_notifier(gtpu_tx_notifier_),
   gtpu_rx_demux(gtpu_rx_demux_),
+  n3_teid_allocator(n3_teid_allocator_),
   f1u_teid_allocator(f1u_teid_allocator_),
   exec_pool(exec_pool_),
   gtpu_pcap(gtpu_pcap_),
@@ -91,6 +93,7 @@ ue_context* ue_manager::add_ue(const ue_context_cfg& ue_cfg)
                                                                      ue_ul_timer_factory,
                                                                      ue_ctrl_timer_factory,
                                                                      f1u_gw,
+                                                                     n3_teid_allocator,
                                                                      f1u_teid_allocator,
                                                                      gtpu_tx_notifier,
                                                                      gtpu_rx_demux,
@@ -133,4 +136,14 @@ ue_index_t ue_manager::get_next_ue_index()
     }
   }
   return INVALID_UE_INDEX;
+}
+
+void ue_manager::schedule_ue_async_task(ue_index_t ue_index, async_task<void> task)
+{
+  ue_context* ue_ctx = find_ue(ue_index);
+  if (ue_ctx == nullptr) {
+    logger.error("Cannot schedule UE task, could not find UE. ue_index={}", ue_index);
+    return;
+  }
+  ue_ctx->task_sched.schedule(std::move(task));
 }

@@ -47,24 +47,24 @@ protected:
 
   bool was_initial_context_setup_response_sent() const
   {
-    return msg_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
            asn1::ngap::ngap_elem_procs_o::successful_outcome_c::types_opts::init_context_setup_resp;
   }
 
   bool was_initial_context_setup_failure_sent() const
   {
-    return msg_notifier.last_ngap_msgs.back().pdu.unsuccessful_outcome().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.unsuccessful_outcome().value.type() ==
            asn1::ngap::ngap_elem_procs_o::unsuccessful_outcome_c::types_opts::init_context_setup_fail;
   }
 
   bool was_pdu_session_resource_setup_successful() const
   {
-    bool setup_present = msg_notifier.last_ngap_msgs.back()
+    bool setup_present = n2_gw.last_ngap_msgs.back()
                              .pdu.successful_outcome()
                              .value.init_context_setup_resp()
                              ->pdu_session_res_setup_list_cxt_res_present == true;
 
-    bool fail_present = msg_notifier.last_ngap_msgs.back()
+    bool fail_present = n2_gw.last_ngap_msgs.back()
                             .pdu.successful_outcome()
                             .value.init_context_setup_resp()
                             ->pdu_session_res_failed_to_setup_list_cxt_res_present == false;
@@ -74,7 +74,7 @@ protected:
 
   bool was_pdu_session_resource_setup_unsuccessful() const
   {
-    return msg_notifier.last_ngap_msgs.back()
+    return n2_gw.last_ngap_msgs.back()
                .pdu.unsuccessful_outcome()
                .value.init_context_setup_fail()
                ->pdu_session_res_failed_to_setup_list_cxt_fail_present == true;
@@ -82,16 +82,16 @@ protected:
 
   bool was_ue_context_release_request_sent() const
   {
-    if (msg_notifier.last_ngap_msgs.back().pdu.type() == asn1::ngap::ngap_pdu_c::types_opts::nulltype) {
+    if (n2_gw.last_ngap_msgs.back().pdu.type() == asn1::ngap::ngap_pdu_c::types_opts::nulltype) {
       return false;
     }
-    return msg_notifier.last_ngap_msgs.back().pdu.init_msg().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type() ==
            asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ue_context_release_request;
   }
 
   bool was_ue_context_release_complete_sent() const
   {
-    return msg_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
+    return n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.type() ==
            asn1::ngap::ngap_elem_procs_o::successful_outcome_c::types_opts::ue_context_release_complete;
   }
 
@@ -99,7 +99,7 @@ protected:
 
   bool was_ue_removed() const { return ngap->get_nof_ues() == 0; }
 
-  void clear_last_received_msg() { msg_notifier.last_ngap_msgs.back() = {}; }
+  void clear_last_received_msg() { n2_gw.last_ngap_msgs.back() = {}; }
 };
 
 /// Test Initial Context Setup Request
@@ -181,6 +181,8 @@ TEST_F(ngap_ue_context_management_procedure_test, when_invalid_initial_context_s
   ue_index_t ue_index = this->start_procedure();
 
   auto& ue = test_ues.at(ue_index);
+
+  ue.rrc_ue_security_handler.set_security_enabled(false);
 
   // Inject Initial Context Setup Request
   ngap_message init_context_setup_request =
@@ -411,35 +413,35 @@ TEST_F(ngap_ue_context_management_procedure_test, when_ue_context_is_tranfered_a
   ASSERT_NE(ran_id, ran_ue_id_t::invalid);
 
   // Clear NAS PDU.
-  ue.rrc_ue_notifier.last_nas_pdu.clear();
-  ASSERT_TRUE(ue.rrc_ue_notifier.last_nas_pdu.empty());
+  ue.rrc_ue_dl_nas_handler.last_nas_pdu.clear();
+  ASSERT_TRUE(ue.rrc_ue_dl_nas_handler.last_nas_pdu.empty());
 
   // Inject new DL NAS transport from core.
   ngap_message dl_nas_transport = generate_downlink_nas_transport_message(amf_id, ue.ran_ue_id.value());
   ngap->handle_message(dl_nas_transport);
 
   // Check NAS PDU has been passed to RRC.
-  ASSERT_FALSE(ue.rrc_ue_notifier.last_nas_pdu.empty());
+  ASSERT_FALSE(ue.rrc_ue_dl_nas_handler.last_nas_pdu.empty());
 
   // Clear PDU again.
-  ue.rrc_ue_notifier.last_nas_pdu.clear();
+  ue.rrc_ue_dl_nas_handler.last_nas_pdu.clear();
 
   // Create new UE object (with own RRC UE notifier).
   ue_index_t target_ue_index = create_ue_without_init_ue_message(rnti_t::MAX_CRNTI);
   ASSERT_NE(target_ue_index, ue_index_t::invalid);
   ASSERT_NE(target_ue_index, ue_index);
   auto& target_ue = test_ues.at(target_ue_index);
-  ASSERT_TRUE(target_ue.rrc_ue_notifier.last_nas_pdu.empty());
+  ASSERT_TRUE(target_ue.rrc_ue_dl_nas_handler.last_nas_pdu.empty());
 
   // Transfer NGAP UE context to new target UE.
-  ngap->update_ue_index(target_ue_index, ue_index);
+  ngap->update_ue_index(target_ue_index, ue_index, ue_mng.find_ue(target_ue_index)->get_ngap_cu_cp_ue_notifier());
 
   // Inject NAS message again.
   ngap->handle_message(dl_nas_transport);
 
   // Check that RRC notifier of initial UE has not been called.
-  ASSERT_TRUE(ue.rrc_ue_notifier.last_nas_pdu.empty());
+  ASSERT_TRUE(ue.rrc_ue_dl_nas_handler.last_nas_pdu.empty());
 
   // Verify that RRC notifier of target UE has indeed benn called.
-  ASSERT_FALSE(target_ue.rrc_ue_notifier.last_nas_pdu.empty());
+  ASSERT_FALSE(target_ue.rrc_ue_dl_nas_handler.last_nas_pdu.empty());
 }

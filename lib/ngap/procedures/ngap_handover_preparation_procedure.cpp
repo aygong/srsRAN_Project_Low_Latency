@@ -23,7 +23,7 @@
 #include "ngap_handover_preparation_procedure.h"
 #include "srsran/asn1/ngap/common.h"
 #include "srsran/ngap/ngap_message.h"
-#include "srsran/ran/bcd_helpers.h"
+#include "srsran/ran/bcd_helper.h"
 
 using namespace srsran;
 using namespace srsran::srs_cu_cp;
@@ -33,18 +33,18 @@ ngap_handover_preparation_procedure::ngap_handover_preparation_procedure(
     const ngap_handover_preparation_request& request_,
     const ngap_context_t&                    context_,
     const ngap_ue_ids&                       ue_ids_,
-    ngap_message_notifier&                   amf_notif_,
-    ngap_rrc_ue_control_notifier&            rrc_ue_notif_,
-    up_resource_manager&                     up_manager_,
+    ngap_message_notifier&                   amf_notifier_,
+    ngap_rrc_ue_control_notifier&            rrc_ue_notifier_,
+    ngap_cu_cp_notifier&                     cu_cp_notifier_,
     ngap_transaction_manager&                ev_mng_,
     timer_factory                            timers,
     ngap_ue_logger&                          logger_) :
   request(request_),
   context(context_),
   ue_ids(ue_ids_),
-  amf_notifier(amf_notif_),
-  rrc_ue_notifier(rrc_ue_notif_),
-  up_manager(up_manager_),
+  amf_notifier(amf_notifier_),
+  rrc_ue_notifier(rrc_ue_notifier_),
+  cu_cp_notifier(cu_cp_notifier_),
   ev_mng(ev_mng_),
   logger(logger_),
   tng_reloc_prep_timer(timers.create_timer())
@@ -58,7 +58,7 @@ void ngap_handover_preparation_procedure::operator()(coro_context<async_task<nga
   logger.log_debug("\"{}\" initialized", name());
 
   if (ue_ids.amf_ue_id == amf_ue_id_t::invalid || ue_ids.ran_ue_id == ran_ue_id_t::invalid) {
-    logger.log_error("Invalid NGAP id pair");
+    logger.log_error("\"{}\" failed. Cause: Invalid NGAP id pair");
     CORO_EARLY_RETURN(ngap_handover_preparation_response{false});
   }
 
@@ -79,11 +79,22 @@ void ngap_handover_preparation_procedure::operator()(coro_context<async_task<nga
   }
 
   if (transaction_sink.successful()) {
-    // Forward RRC Container
-    if (!forward_rrc_handover_command()) {
+    // Unpack transparent container to get RRC Handover Command
+    rrc_ho_cmd_pdu = get_rrc_handover_command();
+    if (rrc_ho_cmd_pdu.empty()) {
+      logger.log_warning("\"{}\" failed. Cause: Received invalid Handover Command", name());
       CORO_EARLY_RETURN(ngap_handover_preparation_response{false});
     }
-    logger.log_debug("\"{}\" finalized", name());
+
+    // Forward RRC Handover Command to DU Processor
+    CORO_AWAIT_VALUE(rrc_reconfig_success,
+                     cu_cp_notifier.on_new_handover_command(request.ue_index, std::move(rrc_ho_cmd_pdu)));
+    if (!rrc_reconfig_success) {
+      logger.log_warning("\"{}\" failed. Cause: Received invalid Handover Command", name());
+      CORO_EARLY_RETURN(ngap_handover_preparation_response{false});
+    }
+
+    logger.log_debug("\"{}\" finished successfully", name());
   }
 
   // Forward procedure result to DU manager.
@@ -92,18 +103,7 @@ void ngap_handover_preparation_procedure::operator()(coro_context<async_task<nga
 
 void ngap_handover_preparation_procedure::get_required_handover_context()
 {
-  ngap_ue_source_handover_context                           src_ctx;
-  const std::map<pdu_session_id_t, up_pdu_session_context>& pdu_sessions = up_manager.get_pdu_sessions_map();
-  // create a map of all PDU sessions and their associated QoS flows
-  for (const auto& pdu_session : pdu_sessions) {
-    std::vector<qos_flow_id_t> qos_flows;
-    for (const auto& drb : pdu_session.second.drbs) {
-      for (const auto& qos_flow : drb.second.qos_flows) {
-        qos_flows.push_back(qos_flow.first);
-      }
-    }
-    ho_ue_context.pdu_sessions.insert({pdu_session.first, qos_flows});
-  }
+  ho_ue_context.pdu_sessions  = request.pdu_sessions;
   ho_ue_context.rrc_container = rrc_ue_notifier.on_handover_preparation_message_required();
 }
 
@@ -133,14 +133,12 @@ void ngap_handover_preparation_procedure::send_handover_required()
 
 void ngap_handover_preparation_procedure::fill_asn1_target_ran_node_id(target_id_c& target_id)
 {
-  target_id.set_target_ran_node_id();
-  target_id.target_ran_node_id();
-  target_id.target_ran_node_id().global_ran_node_id.set(global_ran_node_id_c::types::global_gnb_id);
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().plmn_id.from_number(
-      plmn_string_to_bcd(context.plmn)); // cross-PLMN handover not supported
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().gnb_id.set_gnb_id();
-  target_id.target_ran_node_id().global_ran_node_id.global_gnb_id().gnb_id.gnb_id().from_number(
-      request.gnb_id.id, request.gnb_id.bit_length);
+  auto& target_node = target_id.set_target_ran_node_id();
+  target_node.global_ran_node_id.set(global_ran_node_id_c::types::global_gnb_id);
+  auto& global_gnb   = target_node.global_ran_node_id.global_gnb_id();
+  global_gnb.plmn_id = context.plmn.to_bytes();
+  global_gnb.gnb_id.set_gnb_id();
+  global_gnb.gnb_id.gnb_id().from_number(request.gnb_id.id, request.gnb_id.bit_length);
 }
 
 void ngap_handover_preparation_procedure::fill_asn1_pdu_session_res_list(
@@ -180,8 +178,8 @@ byte_buffer ngap_handover_preparation_procedure::fill_asn1_source_to_target_tran
   }
   nr_cgi_s& target_nr_cgi = transparent_container.target_cell_id.set_nr_cgi();
 
-  target_nr_cgi.plmn_id.from_number(plmn_string_to_bcd(context.plmn)); // cross-PLMN handover not supported
-  target_nr_cgi.nr_cell_id.from_number(request.nci);
+  target_nr_cgi.plmn_id = context.plmn.to_bytes();
+  target_nr_cgi.nr_cell_id.from_number(request.nci.value());
 
   last_visited_cell_item_s        last_visited_cell_item;
   last_visited_ngran_cell_info_s& ngran_cell = last_visited_cell_item.last_visited_cell_info.set_ngran_cell();
@@ -199,7 +197,7 @@ byte_buffer ngap_handover_preparation_procedure::fill_asn1_source_to_target_tran
   return buf;
 }
 
-bool ngap_handover_preparation_procedure::forward_rrc_handover_command()
+byte_buffer ngap_handover_preparation_procedure::get_rrc_handover_command()
 {
   auto& target_to_source_container_packed = transaction_sink.response()->target_to_source_transparent_container;
 
@@ -207,10 +205,9 @@ bool ngap_handover_preparation_procedure::forward_rrc_handover_command()
   asn1::cbit_ref bref({target_to_source_container_packed.begin(), target_to_source_container_packed.end()});
 
   if (target_to_source_container.unpack(bref) != asn1::SRSASN_SUCCESS) {
-    logger.log_error("Couldn't unpack target to source transparent container.");
-    return false;
+    logger.log_error("Couldn't unpack target to source transparent container");
+    return byte_buffer{};
   }
 
-  // Send RRC Container to RRC
-  return rrc_ue_notifier.on_new_rrc_handover_command(target_to_source_container.rrc_container.copy());
+  return std::move(target_to_source_container.rrc_container);
 }

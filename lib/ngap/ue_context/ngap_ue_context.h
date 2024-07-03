@@ -23,6 +23,7 @@
 #pragma once
 
 #include "ngap_ue_logger.h"
+#include "srsran/ngap/ngap.h"
 #include "srsran/ngap/ngap_types.h"
 #include "srsran/support/timers.h"
 #include <unordered_map>
@@ -37,19 +38,26 @@ struct ngap_ue_ids {
 };
 
 struct ngap_ue_context {
-  ngap_ue_ids    ue_ids;
-  uint64_t       aggregate_maximum_bit_rate_dl = 0;
-  unique_timer   pdu_session_setup_timer       = {};
-  bool           release_requested             = false;
-  bool           release_scheduled             = false;
+  ngap_ue_ids             ue_ids;
+  ngap_cu_cp_ue_notifier* ue                            = nullptr;
+  uint64_t                aggregate_maximum_bit_rate_dl = 0;
+  unique_timer            pdu_session_setup_timer       = {};
+  bool                    release_requested             = false;
+  bool                    release_scheduled             = false;
   byte_buffer    last_pdu_session_resource_modify_request; // To check if a received modify request is a duplicate
   ngap_ue_logger logger;
 
-  ngap_ue_context(ue_index_t ue_index_, ran_ue_id_t ran_ue_id_, timer_manager& timers_, task_executor& task_exec_) :
-    ue_ids({ue_index_, ran_ue_id_}), logger("NGAP", {ue_index_, ran_ue_id_})
+  ngap_ue_context(ue_index_t              ue_index_,
+                  ran_ue_id_t             ran_ue_id_,
+                  ngap_cu_cp_ue_notifier& ue_notifier_,
+                  timer_manager&          timers_,
+                  task_executor&          task_exec_) :
+    ue_ids({ue_index_, ran_ue_id_}), ue(&ue_notifier_), logger("NGAP", {ue_index_, ran_ue_id_})
   {
     pdu_session_setup_timer = timers_.create_unique_timer(task_exec_);
   }
+
+  [[nodiscard]] ngap_cu_cp_ue_notifier* get_cu_cp_ue() const { return ue; }
 };
 
 class ngap_ue_context_list
@@ -92,7 +100,7 @@ public:
 
   ngap_ue_context& operator[](ran_ue_id_t ran_ue_id)
   {
-    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue_id={}: NGAP UE context not found", ran_ue_id);
+    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue={}: NGAP UE context not found", ran_ue_id);
     return ues.at(ran_ue_id);
   }
 
@@ -101,7 +109,7 @@ public:
     srsran_assert(
         ue_index_to_ran_ue_id.find(ue_index) != ue_index_to_ran_ue_id.end(), "ue={}: RAN-UE-ID not found", ue_index);
     srsran_assert(ues.find(ue_index_to_ran_ue_id.at(ue_index)) != ues.end(),
-                  "ran_ue_id={}: NGAP UE context not found",
+                  "ran_ue={}: NGAP UE context not found",
                   ue_index_to_ran_ue_id.at(ue_index));
     return ues.at(ue_index_to_ran_ue_id.at(ue_index));
   }
@@ -109,32 +117,53 @@ public:
   ngap_ue_context& operator[](amf_ue_id_t amf_ue_id)
   {
     srsran_assert(amf_ue_id_to_ran_ue_id.find(amf_ue_id) != amf_ue_id_to_ran_ue_id.end(),
-                  "amf_ue_id={}: RAN-UE-ID not found",
+                  "amf_ue={}: RAN-UE-ID not found",
                   amf_ue_id);
     srsran_assert(ues.find(amf_ue_id_to_ran_ue_id.at(amf_ue_id)) != ues.end(),
-                  "ran_ue_id={}: NGAP UE context not found",
+                  "ran_ue={}: NGAP UE context not found",
                   amf_ue_id_to_ran_ue_id.at(amf_ue_id));
     return ues.at(amf_ue_id_to_ran_ue_id.at(amf_ue_id));
   }
 
-  ngap_ue_context& add_ue(ue_index_t ue_index, ran_ue_id_t ran_ue_id, timer_manager& timers, task_executor& task_exec)
+  ngap_ue_context* find(ran_ue_id_t ran_ue_id)
+  {
+    auto it = ues.find(ran_ue_id);
+    if (it == ues.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+  const ngap_ue_context* find(ran_ue_id_t ran_ue_id) const
+  {
+    auto it = ues.find(ran_ue_id);
+    if (it == ues.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+
+  ngap_ue_context& add_ue(ue_index_t              ue_index,
+                          ran_ue_id_t             ran_ue_id,
+                          ngap_cu_cp_ue_notifier& ue_notifier,
+                          timer_manager&          timers,
+                          task_executor&          task_exec)
   {
     srsran_assert(ue_index != ue_index_t::invalid, "Invalid ue_index={}", ue_index);
-    srsran_assert(ran_ue_id != ran_ue_id_t::invalid, "Invalid ran_ue_id={}", ran_ue_id);
+    srsran_assert(ran_ue_id != ran_ue_id_t::invalid, "Invalid ran_ue={}", ran_ue_id);
 
-    logger.debug("ue={} ran_ue_id={}: Adding NGAP UE context", ue_index, ran_ue_id);
+    logger.debug("ue={} ran_ue={}: NGAP UE context created", ue_index, ran_ue_id);
     ues.emplace(std::piecewise_construct,
                 std::forward_as_tuple(ran_ue_id),
-                std::forward_as_tuple(ue_index, ran_ue_id, timers, task_exec));
+                std::forward_as_tuple(ue_index, ran_ue_id, ue_notifier, timers, task_exec));
     ue_index_to_ran_ue_id.emplace(ue_index, ran_ue_id);
     return ues.at(ran_ue_id);
   }
 
   void update_amf_ue_id(ran_ue_id_t ran_ue_id, amf_ue_id_t amf_ue_id)
   {
-    srsran_assert(amf_ue_id != amf_ue_id_t::invalid, "Invalid amf_ue_id={}", amf_ue_id);
-    srsran_assert(ran_ue_id != ran_ue_id_t::invalid, "Invalid ran_ue_id={}", ran_ue_id);
-    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue_id={}: NGAP UE context not found", ran_ue_id);
+    srsran_assert(amf_ue_id != amf_ue_id_t::invalid, "Invalid amf_ue={}", amf_ue_id);
+    srsran_assert(ran_ue_id != ran_ue_id_t::invalid, "Invalid ran_ue={}", ran_ue_id);
+    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue={}: NGAP UE context not found", ran_ue_id);
 
     auto& ue = ues.at(ran_ue_id);
 
@@ -143,13 +172,13 @@ public:
       return;
     } else if (ue.ue_ids.amf_ue_id == amf_ue_id_t::invalid) {
       // If it was not set before, we add it
-      ue.logger.log_debug("Adding amf_ue_id={}", amf_ue_id);
+      ue.logger.log_debug("Setting AMF-UE-NGAP-ID={}", amf_ue_id);
       ue.ue_ids.amf_ue_id = amf_ue_id;
       amf_ue_id_to_ran_ue_id.emplace(amf_ue_id, ran_ue_id);
     } else if (ue.ue_ids.amf_ue_id != amf_ue_id) {
       // If it was set before, we update it
       amf_ue_id_t old_amf_ue_id = ue.ue_ids.amf_ue_id;
-      ue.logger.log_info("Updating AMF-UE-ID. New amf_ue_id={}", amf_ue_id);
+      ue.logger.log_info("Updating AMF-UE-NGAP-ID={}", amf_ue_id);
       ue.ue_ids.amf_ue_id = amf_ue_id;
       amf_ue_id_to_ran_ue_id.emplace(amf_ue_id, ran_ue_id);
       amf_ue_id_to_ran_ue_id.erase(old_amf_ue_id);
@@ -158,7 +187,7 @@ public:
     ue.logger.set_prefix({ue.ue_ids.ue_index, ran_ue_id, amf_ue_id});
   }
 
-  void update_ue_index(ue_index_t new_ue_index, ue_index_t old_ue_index)
+  void update_ue_index(ue_index_t new_ue_index, ue_index_t old_ue_index, ngap_cu_cp_ue_notifier& new_ue_notifier)
   {
     srsran_assert(new_ue_index != ue_index_t::invalid, "Invalid new_ue_index={}", new_ue_index);
     srsran_assert(old_ue_index != ue_index_t::invalid, "Invalid old_ue_index={}", old_ue_index);
@@ -168,10 +197,11 @@ public:
 
     ran_ue_id_t ran_ue_id = ue_index_to_ran_ue_id.at(old_ue_index);
 
-    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue_id={}: NGAP UE context not found", ran_ue_id);
+    srsran_assert(ues.find(ran_ue_id) != ues.end(), "ran_ue={}: NGAP UE context not found", ran_ue_id);
 
     // Update UE context
     ues.at(ran_ue_id).ue_ids.ue_index = new_ue_index;
+    ues.at(ran_ue_id).ue              = &new_ue_notifier;
 
     // Update lookups
     ue_index_to_ran_ue_id.emplace(new_ue_index, ran_ue_id);
@@ -197,7 +227,7 @@ public:
     ue_index_to_ran_ue_id.erase(ue_index);
 
     if (ues.find(ran_ue_id) == ues.end()) {
-      logger.warning("ran_ue_id={}: NGAP UE context not found", ran_ue_id);
+      logger.warning("ran_ue={}: NGAP UE context not found", ran_ue_id);
       return;
     }
 
@@ -221,8 +251,7 @@ public:
 
     // iterate over all ids starting with the next_ran_ue_id to find the available id
     while (true) {
-      // Only iterate over ue_index_to_ran_ue_id (size=MAX_NOF_UES_PER_DU)
-      // to avoid iterating over all possible values of ran_ue_id_t (size=2^32-1)
+      // Iterate over ue_index_to_ran_ue_id
       auto it = std::find_if(ue_index_to_ran_ue_id.begin(), ue_index_to_ran_ue_id.end(), [this](auto& u) {
         return u.second == next_ran_ue_id;
       });

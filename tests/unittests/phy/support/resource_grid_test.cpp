@@ -32,6 +32,13 @@ using namespace srsran;
 
 static std::mt19937 rgen(0);
 
+// Gets the tolerance from an expected value.
+static float get_tolerance(cf_t expected_value)
+{
+  // The tolerance is calculated from the complex number based in brain float (BF16) precision.
+  return std::max(std::abs(expected_value) / 256.0F, 1e-5F);
+}
+
 // Creates a resource grid.
 static std::unique_ptr<resource_grid> create_resource_grid(unsigned nof_ports, unsigned nof_symbols, unsigned nof_subc)
 {
@@ -67,156 +74,6 @@ void test_all_zero(unsigned nof_ports, unsigned nof_symbols, unsigned nof_subc)
         TESTASSERT(iszero(re.imag()), "Imaginary is not zero.");
       }
     }
-  }
-}
-
-void test_coordinates(unsigned nof_ports, unsigned nof_symbols, unsigned nof_subc, unsigned nof_elements)
-{
-  // Create grid and zero
-  std::unique_ptr<resource_grid> grid = create_resource_grid(nof_ports, nof_symbols, nof_subc);
-  grid->set_all_zero();
-
-  // Random distributions
-  std::uniform_int_distribution<unsigned> port_dist(0, nof_ports - 1);
-  std::uniform_int_distribution<uint8_t>  symbol_dist(0, nof_symbols - 1);
-  std::uniform_int_distribution<uint16_t> subc_dist(0, nof_subc - 1);
-  std::uniform_real_distribution<float>   value_dist(-1.0, +1.0);
-
-  std::vector<resource_grid_coordinate> coordinates(nof_elements);
-  std::vector<cf_t>                     symbols_gold(nof_elements);
-
-  // Generate random elements
-  unsigned port_gold = port_dist(rgen);
-  for (unsigned i = 0; i != nof_elements; ++i) {
-    // Generate coordinate, making sure there are no double entries
-    bool doubled;
-    do {
-      doubled        = false;
-      coordinates[i] = {symbol_dist(rgen), subc_dist(rgen)};
-
-      // Check if the coordinate exists
-      for (unsigned j = 0; j != i && !doubled; ++j) {
-        doubled = (coordinates[i] == coordinates[j]);
-      }
-    } while (doubled);
-
-    // Create random value
-    symbols_gold[i] = {value_dist(rgen), value_dist(rgen)};
-  }
-
-  // Put elements in resource grid
-  grid->get_writer().put(port_gold, coordinates, symbols_gold);
-
-  // Assert grid
-  for (unsigned port = 0; port != nof_ports; ++port) {
-    // Verify the grid for the port is NOT empty.
-    TESTASSERT_EQ(port != port_gold, grid->get_reader().is_empty(port));
-
-    for (unsigned symbol = 0; symbol != nof_symbols; ++symbol) {
-      // Get resource grid data for the given symbol
-      std::vector<cf_t> rg_data(nof_subc);
-      grid->get_reader().get(rg_data, port, symbol, 0);
-
-      for (unsigned subc = 0; subc != nof_subc; ++subc) {
-        cf_t gold  = {0.0, 0.0};
-        cf_t value = rg_data[subc];
-
-        // Try to find the RE in coordinates
-        resource_grid_coordinate coordinate = {symbol, subc};
-        for (unsigned i = 0; i != nof_elements; ++i) {
-          if (port == port_gold && coordinates[i] == coordinate) {
-            gold = symbols_gold[i];
-            break;
-          }
-        }
-
-        TESTASSERT_EQ(gold.real(), value.real());
-        TESTASSERT_EQ(gold.imag(), value.imag());
-      }
-    }
-  }
-}
-
-void test_mask(unsigned nof_ports, unsigned nof_symbols, unsigned nof_subc, unsigned nof_elements)
-{
-  // Create grid and zero
-  std::unique_ptr<resource_grid> grid = create_resource_grid(nof_ports, nof_symbols, nof_subc);
-  grid->set_all_zero();
-
-  std::uniform_int_distribution<unsigned> port_dist(0, nof_ports - 1);
-  std::uniform_int_distribution<unsigned> symbol_dist(0, nof_symbols - 1);
-  std::uniform_int_distribution<unsigned> subc_dist(0, nof_subc - 1);
-  std::uniform_real_distribution<float>   value_dist(-1.0, +1.0);
-
-  // Put elements in grid
-  unsigned                  symbol_idx = symbol_dist(rgen);
-  srsvec::aligned_vec<cf_t> symbols_gold(nof_elements);
-  srsvec::aligned_vec<bool> mask(nof_subc);
-
-  // Reset mask
-  srsvec::zero(mask);
-
-  // Fill mask and generate symbols
-  unsigned port_gold = port_dist(rgen);
-  for (unsigned i = 0; i != nof_elements; ++i) {
-    unsigned subc = 0;
-
-    // Select a subcarrier that has not been set yet
-    do {
-      subc = subc_dist(rgen);
-    } while (mask[subc]);
-
-    // Create random allocation
-    mask[subc]      = true;
-    symbols_gold[i] = {value_dist(rgen), value_dist(rgen)};
-  }
-
-  // Put elements
-  span<const cf_t> symbol_buffer_put = grid->get_writer().put(port_gold, symbol_idx, 0, mask, symbols_gold);
-
-  // Make sure all symbols are used
-  TESTASSERT(symbol_buffer_put.empty());
-
-  // Assert grid
-  unsigned count = 0;
-  for (unsigned port = 0; port != nof_ports; ++port) {
-    // Verify the grid for the port is NOT empty.
-    TESTASSERT_EQ(port != port_gold, grid->get_reader().is_empty(port));
-
-    for (unsigned symbol = 0; symbol != nof_symbols; ++symbol) {
-      // Get resource grid data for the given symbol
-      std::vector<cf_t> rg_data(nof_subc);
-      grid->get_reader().get(rg_data, port, symbol, 0);
-
-      for (unsigned subc = 0; subc != nof_subc; ++subc) {
-        cf_t gold  = {0.0, 0.0};
-        cf_t value = rg_data[subc];
-
-        if (port == port_gold && symbol == symbol_idx && mask[subc]) {
-          gold = symbols_gold[count];
-          count++;
-        }
-
-        TESTASSERT_EQ(gold.real(), value.real());
-        TESTASSERT_EQ(gold.imag(), value.imag());
-      }
-    }
-  }
-
-  // Get elements
-  srsvec::aligned_vec<cf_t> symbols(nof_elements);
-  span<cf_t>                symbol_buffer_get = grid->get_reader().get(symbols, port_gold, symbol_idx, 0, mask);
-
-  // Make sure all symbols are used
-  TESTASSERT(symbol_buffer_get.empty(), "Symbol buffer - not empty.");
-
-  // Assert symbols
-  for (unsigned i = 0; i != nof_elements; ++i) {
-    cf_t gold  = symbols_gold[i];
-    cf_t value = symbols[i];
-
-    TESTASSERT_EQ(gold.real(), value.real());
-    TESTASSERT_EQ(gold.imag(), value.imag());
   }
 }
 
@@ -277,8 +134,8 @@ void test_mask_bitset(unsigned nof_ports, unsigned nof_symbols, unsigned nof_sub
           count++;
         }
 
-        TESTASSERT_EQ(gold.real(), value.real());
-        TESTASSERT_EQ(gold.imag(), value.imag());
+        float error = std::abs(gold - value);
+        TESTASSERT(error < get_tolerance(gold), "{} != {}", gold, value);
       }
     }
   }
@@ -295,8 +152,8 @@ void test_mask_bitset(unsigned nof_ports, unsigned nof_symbols, unsigned nof_sub
     cf_t gold  = symbols_gold[i];
     cf_t value = symbols[i];
 
-    TESTASSERT_EQ(gold.real(), value.real());
-    TESTASSERT_EQ(gold.imag(), value.imag());
+    float error = std::abs(gold - value);
+    TESTASSERT(error < get_tolerance(gold), "{} != {}", gold, value);
   }
 }
 
@@ -349,8 +206,8 @@ void test_consecutive(unsigned nof_ports, unsigned nof_symbols, unsigned nof_sub
           count++;
         }
 
-        TESTASSERT_EQ(gold.real(), value.real());
-        TESTASSERT_EQ(gold.imag(), value.imag());
+        float error = std::abs(gold - value);
+        TESTASSERT(error < get_tolerance(gold), "{} != {}", gold, value);
       }
     }
   }
@@ -364,18 +221,18 @@ void test_consecutive(unsigned nof_ports, unsigned nof_symbols, unsigned nof_sub
     cf_t gold  = symbols_gold[i];
     cf_t value = symbols[i];
 
-    TESTASSERT_EQ(gold.real(), value.real());
-    TESTASSERT_EQ(gold.imag(), value.imag());
+    float error = std::abs(gold - value);
+    TESTASSERT(error < get_tolerance(gold), "{} != {}", gold, value);
   }
 
   // Test view contents
-  span<const cf_t> view = grid->get_reader().get_view(port_gold, symbol_idx).subspan(k_init, nof_subc - k_init);
+  span<const cbf16_t> view = grid->get_reader().get_view(port_gold, symbol_idx).subspan(k_init, nof_subc - k_init);
   for (unsigned i = 0; i != nof_elements; ++i) {
     cf_t gold  = symbols_gold[i];
-    cf_t value = view[i];
+    cf_t value = to_cf(view[i]);
 
-    TESTASSERT_EQ(gold.real(), value.real());
-    TESTASSERT_EQ(gold.imag(), value.imag());
+    float error = std::abs(gold - value);
+    TESTASSERT(error < get_tolerance(gold), "{} != {}", gold, value);
   }
 }
 
@@ -390,8 +247,6 @@ int main()
         test_all_zero(nof_ports, nof_symbols, nof_subc);
         // Test symbolic number of elements
         for (unsigned nof_elements : {1, 2, 4, 8, 16, 32}) {
-          test_coordinates(nof_ports, nof_symbols, nof_subc, nof_elements);
-          test_mask(nof_ports, nof_symbols, nof_subc, nof_elements);
           test_mask_bitset(nof_ports, nof_symbols, nof_subc, nof_elements);
           test_consecutive(nof_ports, nof_symbols, nof_subc, nof_elements);
         }

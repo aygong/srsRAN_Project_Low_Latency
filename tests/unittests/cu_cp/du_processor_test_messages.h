@@ -22,19 +22,20 @@
 
 #pragma once
 
-#include "lib/cu_cp/du_processor/du_processor_impl_interface.h"
 #include "srsran/cu_cp/cu_cp_types.h"
-#include "srsran/e1ap/common/e1ap_types.h"
 #include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/cu_cp/du_setup_notifier.h"
+#include "srsran/f1ap/cu_cp/f1ap_cu.h"
 
 namespace srsran {
 namespace srs_cu_cp {
 
 /// \brief Generate a valid dummy F1 Setup Request.
-void generate_valid_f1_setup_request(du_setup_request& setup_request,
-                                     gnb_du_id_t       gnb_du_id = int_to_gnb_du_id(0x11),
-                                     unsigned          nrcell_id = 6576,
-                                     pci_t             pci       = 0);
+void generate_valid_f1_setup_request(
+    du_setup_request& setup_request,
+    gnb_du_id_t       gnb_du_id = int_to_gnb_du_id(0x11),
+    nr_cell_identity  nrcell_id = nr_cell_identity::create(gnb_id_t{411, 22}, 0).value(),
+    pci_t             pci       = 0);
 
 /// \brief Generate a dummy F1 Setup Request base to extend.
 void generate_f1_setup_request_base(du_setup_request& setup_request);
@@ -48,41 +49,10 @@ void         generate_f1_setup_request_with_too_many_cells(du_setup_request& set
 /// \param[in] c_rnti The C-RNTI to use.
 /// \param[in] nrcell_id The NR Cell Id to use.
 /// \return The dummy UE Creation Message.
-ue_rrc_context_creation_request
-generate_ue_rrc_context_creation_request(ue_index_t ue_index, rnti_t c_rnti, unsigned nrcell_id);
-
-/// \brief Generate a dummy UE Context Release Command.
-/// \param[in] ue_index The UE Index to use.
-/// \return The dummy UE Context Release Command.
-cu_cp_ue_context_release_command generate_ue_context_release_command(ue_index_t ue_index);
-
-/// \brief Generate a dummy PDU Session Resource Setup request.
-cu_cp_pdu_session_resource_setup_request generate_pdu_session_resource_setup(unsigned num_pdu_sessions = 1,
-                                                                             unsigned num_qos_flows    = 1);
-
-/// \brief Generate a dummy PDU Session Resource Release Command.
-cu_cp_pdu_session_resource_release_command generate_pdu_session_resource_release();
-
-/// \brief Generate a dummy PDU Session Resource Modification Request.
-cu_cp_pdu_session_resource_modify_request generate_pdu_session_resource_modification(unsigned psi = 1,
-                                                                                     unsigned qfi = 2);
-
-/// \brief Generate a dummy PDU Session Resource Modification Request with QoS flow to remove item.
-cu_cp_pdu_session_resource_modify_request
-generate_pdu_session_resource_modification_with_qos_flow_removal(qos_flow_id_t flow_id);
-
-/// \brief Generate a dummy E1AP Bearer Context Setup Response.
-e1ap_bearer_context_setup_response generate_e1ap_bearer_context_setup_response(gnb_cu_cp_ue_e1ap_id_t cu_cp_ue_e1ap_id,
-                                                                               gnb_cu_up_ue_e1ap_id_t cu_up_ue_e1ap_id);
-
-/// \brief Generate a dummy E1AP Bearer Context Modification Response.
-e1ap_bearer_context_modification_response
-generate_e1ap_bearer_context_modification_response(gnb_cu_cp_ue_e1ap_id_t cu_cp_ue_e1ap_id,
-                                                   gnb_cu_up_ue_e1ap_id_t cu_up_ue_e1ap_id);
-
-/// \brief Generate a dummy CU-CP UE Context Modification Response.
-f1ap_ue_context_modification_response generate_f1ap_ue_context_modification_response(gnb_cu_ue_f1ap_id_t cu_ue_f1ap_id,
-                                                                                     gnb_du_ue_f1ap_id_t du_ue_f1ap_id);
+ue_rrc_context_creation_request generate_ue_rrc_context_creation_request(
+    ue_index_t       ue_index,
+    rnti_t           c_rnti,
+    nr_cell_identity nrcell_id = nr_cell_identity::create(gnb_id_t{411, 22}, 0).value());
 
 } // namespace srs_cu_cp
 } // namespace srsran

@@ -29,17 +29,19 @@
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
 #include "srsran/f1u/cu_up/f1u_gateway.h"
 #include "srsran/gtpu/gtpu_teid_pool.h"
+#include "srsran/support/async/fifo_async_task_scheduler.h"
 #include <map>
 #include <utility>
 
-namespace srsran {
-namespace srs_cu_up {
+namespace srsran::srs_cu_up {
+
+constexpr uint16_t UE_TASK_QUEUE_SIZE = 1024;
 
 /// \brief UE context setup configuration
 struct ue_context_cfg {
   security::sec_as_config                          security_info;
   activity_notification_level_t                    activity_level;
-  optional<std::chrono::seconds>                   ue_inactivity_timeout;
+  std::optional<std::chrono::seconds>              ue_inactivity_timeout;
   std::map<five_qi_t, srs_cu_up::cu_up_qos_config> qos;
 };
 
@@ -47,20 +49,23 @@ struct ue_context_cfg {
 class ue_context : public pdu_session_manager_ctrl
 {
 public:
-  ue_context(ue_index_t                           index_,
-             ue_context_cfg                       cfg_,
-             e1ap_control_message_handler&        e1ap_,
-             network_interface_config&            net_config_,
-             n3_interface_config&                 n3_config_,
-             std::unique_ptr<ue_executor_mapper>  ue_exec_mapper_,
-             timer_factory                        ue_dl_timer_factory_,
-             timer_factory                        ue_ul_timer_factory_,
-             timer_factory                        ue_ctrl_timer_factory_,
-             f1u_cu_up_gateway&                   f1u_gw_,
-             gtpu_teid_pool&                      f1u_teid_allocator_,
-             gtpu_tunnel_tx_upper_layer_notifier& gtpu_tx_notifier_,
-             gtpu_demux_ctrl&                     gtpu_rx_demux_,
-             dlt_pcap&                            gtpu_pcap) :
+  ue_context(ue_index_t                                  index_,
+             ue_context_cfg                              cfg_,
+             e1ap_control_message_handler&               e1ap_,
+             network_interface_config&                   net_config_,
+             n3_interface_config&                        n3_config_,
+             std::unique_ptr<ue_executor_mapper>         ue_exec_mapper_,
+             timer_factory                               ue_dl_timer_factory_,
+             timer_factory                               ue_ul_timer_factory_,
+             timer_factory                               ue_ctrl_timer_factory_,
+             f1u_cu_up_gateway&                          f1u_gw_,
+             gtpu_teid_pool&                             n3_teid_allocator_,
+             gtpu_teid_pool&                             f1u_teid_allocator_,
+             gtpu_tunnel_common_tx_upper_layer_notifier& gtpu_tx_notifier_,
+             gtpu_demux_ctrl&                            gtpu_rx_demux_,
+             dlt_pcap&                                   gtpu_pcap) :
+    task_sched(UE_TASK_QUEUE_SIZE),
+    ue_exec_mapper(std::move(ue_exec_mapper_)),
     index(index_),
     cfg(std::move(cfg_)),
     logger("CU-UP", {index_}),
@@ -76,15 +81,15 @@ public:
                         ue_ul_timer_factory_,
                         ue_ctrl_timer_factory_,
                         f1u_gw_,
+                        n3_teid_allocator_,
                         f1u_teid_allocator_,
                         gtpu_tx_notifier_,
                         gtpu_rx_demux_,
-                        ue_exec_mapper_->dl_pdu_executor(),
-                        ue_exec_mapper_->ul_pdu_executor(),
-                        ue_exec_mapper_->ctrl_executor(),
-                        ue_exec_mapper_->crypto_executor(),
+                        ue_exec_mapper->dl_pdu_executor(),
+                        ue_exec_mapper->ul_pdu_executor(),
+                        ue_exec_mapper->ctrl_executor(),
+                        ue_exec_mapper->crypto_executor(),
                         gtpu_pcap),
-    ue_exec_mapper(std::move(ue_exec_mapper_)),
     ue_dl_timer_factory(ue_dl_timer_factory_),
     ue_ul_timer_factory(ue_ul_timer_factory_),
     ue_ctrl_timer_factory(ue_ctrl_timer_factory_)
@@ -109,6 +114,9 @@ public:
     return ue_exec_mapper->stop();
   }
 
+  // security management
+  void set_security_config(const security::sec_as_config& security_info) { cfg.security_info = security_info; }
+
   // pdu_session_manager_ctrl
   pdu_session_setup_result setup_pdu_session(const e1ap_pdu_session_res_to_setup_item& session) override
   {
@@ -125,20 +133,21 @@ public:
   }
   size_t get_nof_pdu_sessions() override { return pdu_session_manager.get_nof_pdu_sessions(); }
 
-  ue_index_t get_index() const { return index; };
+  [[nodiscard]] ue_index_t get_index() const { return index; };
 
-  const cu_up_ue_logger& get_logger() const { return logger; };
+  [[nodiscard]] const cu_up_ue_logger& get_logger() const { return logger; };
+
+  fifo_async_task_scheduler task_sched;
+
+  std::unique_ptr<ue_executor_mapper> ue_exec_mapper;
 
 private:
-  ue_index_t     index;
-  ue_context_cfg cfg;
-
+  ue_index_t      index;
+  ue_context_cfg  cfg;
   cu_up_ue_logger logger;
 
   e1ap_control_message_handler& e1ap;
   pdu_session_manager_impl      pdu_session_manager;
-
-  std::unique_ptr<ue_executor_mapper> ue_exec_mapper;
 
   timer_factory ue_dl_timer_factory;
   timer_factory ue_ul_timer_factory;
@@ -162,5 +171,4 @@ private:
   }
 };
 
-} // namespace srs_cu_up
-} // namespace srsran
+} // namespace srsran::srs_cu_up

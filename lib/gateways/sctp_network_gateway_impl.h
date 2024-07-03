@@ -22,27 +22,25 @@
 
 #pragma once
 
+#include "sctp_network_gateway_common_impl.h"
 #include "srsran/gateways/sctp_network_gateway.h"
-
-#include <sys/socket.h>
+#include "srsran/support/io/io_broker.h"
+#include "srsran/support/io/sctp_socket.h"
 
 namespace srsran {
 
-constexpr uint32_t network_gateway_sctp_max_len = 9100;
-
-class sctp_network_gateway_impl final : public sctp_network_gateway
+class sctp_network_gateway_impl final : public sctp_network_gateway_common_impl, public sctp_network_gateway
 {
 public:
-  explicit sctp_network_gateway_impl(sctp_network_gateway_config            config_,
-                                     sctp_network_gateway_control_notifier& ctrl_notfier_,
+  explicit sctp_network_gateway_impl(const sctp_network_connector_config&   config_,
+                                     sctp_network_gateway_control_notifier& ctrl_notifier_,
                                      network_gateway_data_notifier&         data_notifier_);
-  virtual ~sctp_network_gateway_impl() { close_socket(); }
 
   /// \brief Create and connect socket to given address.
   bool create_and_connect() override;
 
   /// \brief Return socket file descriptor.
-  int get_socket_fd() override;
+  int get_socket_fd() override { return socket.fd().value(); }
 
   /// \brief Trigger receive call on socket.
   void receive() override;
@@ -51,53 +49,28 @@ public:
   void handle_pdu(const byte_buffer& pdu) override;
 
   // network_gateway_controller interface
-  /// \brief Create and bind socket to given address.
   bool create_and_bind() override;
 
-  /// \brief Start listening on socket.
   bool listen() override;
 
   /// \brief Return the port on which the socket is listening.
-  optional<uint16_t> get_listen_port() override;
+  std::optional<uint16_t> get_listen_port() override;
+
+  /// \brief Subscribe to IO broker for automatic IO Rx notifications.
+  bool subscribe_to(io_broker& broker) override;
 
 private:
-  bool is_initialized();
-
-  bool set_sockopts();
-
-  /// \brief Recreate and reconnect socket to given address.
-  bool recreate_and_reconnect() override;
-
   // internal helpers
   using socket_buffer_type = uint8_t;
   void handle_data(span<socket_buffer_type> payload);
   void handle_notification(span<socket_buffer_type> payload);
+  void handle_connection_loss();
 
-  // socket helpers
-  bool set_non_blocking();
-  bool set_receive_timeout(unsigned rx_timeout_sec);
-  bool set_reuse_addr();
-  bool subscripe_to_events();
-  bool close_socket();
-
-  sctp_network_gateway_config            config; /// configuration
+  sctp_network_connector_config          config;
   sctp_network_gateway_control_notifier& ctrl_notifier;
   network_gateway_data_notifier&         data_notifier;
-  srslog::basic_logger&                  logger;
 
-  int sock_fd = -1;
-
-  sockaddr_storage client_addr        = {}; // the local address
-  socklen_t        client_addrlen     = 0;
-  int              client_ai_family   = 0;
-  int              client_ai_socktype = 0;
-  int              client_ai_protocol = 0;
-
-  sockaddr_storage server_addr        = {}; // the server address when operating as client
-  socklen_t        server_addrlen     = 0;
-  int              server_ai_family   = 0;
-  int              server_ai_socktype = 0;
-  int              server_ai_protocol = 0;
+  bool client_mode = false;
 
   sockaddr_storage msg_src_addr    = {}; // message source address
   socklen_t        msg_src_addrlen = 0;

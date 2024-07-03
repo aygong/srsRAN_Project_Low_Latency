@@ -33,6 +33,8 @@
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
 #include "srsran/ran/qos/qos_info.h"
 #include "srsran/ran/rnti.h"
+#include "srsran/ran/rrm.h"
+#include "srsran/ran/s_nssai.h"
 #include "srsran/ran/sib/sib_configuration.h"
 #include "srsran/ran/slot_pdu_capacity_constants.h"
 #include "srsran/ran/slot_point.h"
@@ -45,6 +47,7 @@
 #include "srsran/scheduler/config/logical_channel_config.h"
 #include "srsran/scheduler/config/serving_cell_config.h"
 #include "srsran/scheduler/config/si_scheduling_config.h"
+#include "srsran/scheduler/config/slice_rrm_policy_config.h"
 #include "srsran/scheduler/scheduler_dci.h"
 
 namespace srsran {
@@ -73,7 +76,7 @@ struct sched_cell_configuration_request_message {
   ul_config_common ul_cfg_common;
 
   /// Defines the TDD DL-UL pattern and periodicity. If no value is set, the cell is in FDD mode.
-  optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
+  std::optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
 
   /// Imported from mac_cell_configuration (NR Cell Configuration, O-RAN WG8, Section 9.2.1.1).
   subcarrier_spacing    scs_common;
@@ -90,7 +93,7 @@ struct sched_cell_configuration_request_message {
   unsigned sib1_payload_size;
 
   /// Scheduling of SI messages.
-  optional<si_scheduling_config> si_scheduling;
+  std::optional<si_scheduling_config> si_scheduling;
 
   /// List of PUCCH guardbands.
   std::vector<sched_grid_resource> pucch_guardbands;
@@ -101,6 +104,9 @@ struct sched_cell_configuration_request_message {
   /// List of nzp-CSI-RS resources common to all UEs.
   std::vector<nzp_csi_rs_resource> nzp_csi_rs_res_list;
 
+  /// List of RAN slices to support in the scheduler.
+  std::vector<slice_rrm_policy_config> rrm_policy_members;
+
   unsigned ntn_cs_koffset = 0;
 };
 
@@ -108,36 +114,44 @@ struct sched_cell_configuration_request_message {
 struct sched_ue_resource_alloc_config {
   /// Minimum and maximum PDSCH grant sizes for the given UE.
   prb_interval pdsch_grant_size_limits{0, MAX_NOF_PRBS};
+  /// Boundaries within which PDSCH needs to be allocated.
+  crb_interval pdsch_crb_limits{0, MAX_NOF_PRBS};
   /// Minimum and maximum PUSCH grant sizes for the given UE.
   prb_interval pusch_grant_size_limits{0, MAX_NOF_PRBS};
+  /// Boundaries within which PUSCH needs to be allocated.
+  crb_interval pusch_crb_limits{0, MAX_NOF_PRBS};
   /// Maximum PDSCH HARQ retransmissions.
   unsigned max_pdsch_harq_retxs = 4;
   /// Maximum PUSCH HARQ retransmissions.
   unsigned max_pusch_harq_retxs = 4;
+  // RRM policy for the UE.
+  rrm_policy_ratio_group rrm_policy_group;
 };
 
-/// QoS parameters associated with a DRB provided to the scheduler.
-struct sched_drb_qos_info {
+/// QoS and slicing information associated with a DRB provided to the scheduler.
+struct sched_drb_info {
   /// Logical Channel ID.
   lcid_t lcid;
+  /// Single Network Slice Selection Assistance Information (S-NSSAI).
+  s_nssai_t s_nssai;
   /// QoS characteristics associated with the logical channel.
   qos_characteristics qos_info;
   /// QoS information present only for GBR QoS flows.
-  optional<gbr_qos_info_t> gbr_qos_info;
+  std::optional<gbr_qos_info_t> gbr_qos_info;
 };
 
 /// Request for a new UE configuration provided to the scheduler during UE creation or reconfiguration.
 struct sched_ue_config_request {
   /// List of configured Logical Channels. See \c mac-LogicalChannelConfig, TS38.331.
-  optional<std::vector<logical_channel_config>> lc_config_list;
+  std::optional<std::vector<logical_channel_config>> lc_config_list;
   /// List of configured Scheduling Request resources. See \c schedulingRequestConfig, TS38.331.
-  optional<std::vector<scheduling_request_to_addmod>> sched_request_config_list;
+  std::optional<std::vector<scheduling_request_to_addmod>> sched_request_config_list;
   /// UE-dedicated configuration for the PCell and SCells.
-  optional<std::vector<cell_config_dedicated>> cells;
+  std::optional<std::vector<cell_config_dedicated>> cells;
   /// Resource allocation configuration for the given UE.
-  optional<sched_ue_resource_alloc_config> res_alloc_cfg;
-  /// List of QoS information for DRBs.
-  std::vector<sched_drb_qos_info> drb_qos_list;
+  std::optional<sched_ue_resource_alloc_config> res_alloc_cfg;
+  /// List of QoS and slicing information for DRBs.
+  std::vector<sched_drb_info> drb_info_list;
 };
 
 /// Request to create a new UE in scheduler.
@@ -202,6 +216,7 @@ public:
   virtual void handle_ue_creation_request(const sched_ue_creation_request_message& ue_request)       = 0;
   virtual void handle_ue_reconfiguration_request(const sched_ue_reconfiguration_message& ue_request) = 0;
   virtual void handle_ue_removal_request(du_ue_index_t ue_index)                                     = 0;
+  virtual void handle_ue_config_applied(du_ue_index_t ue_index)                                      = 0;
 };
 
 /// Interface used by scheduler to notify MAC that a configuration is complete.

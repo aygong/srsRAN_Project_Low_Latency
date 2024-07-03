@@ -61,10 +61,11 @@ static bounded_bitset<MAX_NSYMB_PER_SLOT> dmrs_symbol_mask =
     {false, false, true, false, false, false, false, false, false, false, false, false, false, false};
 
 #ifdef DPDK_FOUND
-static bool        test_harq     = false;
-static std::string hal_log_level = "ERROR";
-static bool        std_out_sink  = true;
-static std::string eal_arguments = "";
+static bool                 dedicated_queue = true;
+static bool                 test_harq       = false;
+static srslog::basic_levels hal_log_level   = srslog::basic_levels::error;
+static bool                 std_out_sink    = true;
+static std::string          eal_arguments   = "";
 #endif // DPDK_FOUND
 
 // Test profile structure, initialized with default profile values.
@@ -87,14 +88,17 @@ static test_profile selected_profile = {};
 
 static void usage(const char* prog)
 {
-  fmt::print("Usage: {} [-T X] [-e] [-i X] [-x] [-y] [-z error|warning|info|debug] [-h] [eal_args ...]\n", prog);
-  fmt::print("\t-T Hardware-accelerated PUSCH decoder type [acc100][Default {}]\n", hwacc_decoder_type);
-  fmt::print("\t-e Use LDPC decoder early stop [Default {}]\n", use_early_stop);
-  fmt::print("\t-i X Number of LDPC iterations [Default X = {}]\n", nof_ldpc_iterations);
+  fmt::print("Usage: {} [-T X] [-e] [-i X] [-w] [-x] [-y] [-z error|warning|info|debug] [-h] [eal_args ...]\n", prog);
+  fmt::print("\t-T       Hardware-accelerated PUSCH decoder type [acc100][Default {}]\n", hwacc_decoder_type);
+  fmt::print("\t-e       Use LDPC decoder early stop [Default {}]\n", use_early_stop);
+  fmt::print("\t-i       Number of LDPC iterations [Default {}]\n", nof_ldpc_iterations);
 #ifdef DPDK_FOUND
-  fmt::print("\t-x Use the host's memory for the soft-buffer [Default {}]\n", !ext_softbuffer);
-  fmt::print("\t-y Force logging output written to a file [Default {}]\n", std_out_sink ? "std_out" : "file");
-  fmt::print("\t-z Force DEBUG logging level for the hal [Default {}]\n", hal_log_level);
+  fmt::print("\t-w       Force shared hardware-queue use [Default {}]\n",
+             dedicated_queue ? "dedicated_queue" : "shared_queue");
+  fmt::print("\t-x       Use the host's memory for the soft-buffer [Default {}]\n", !ext_softbuffer);
+  fmt::print("\t-y       Force logging output written to a file [Default {}]\n", std_out_sink ? "std_out" : "file");
+  fmt::print("\t-z       Force DEBUG logging level for the HAL [Default {}]\n", hal_log_level);
+  fmt::print("\teal_args EAL arguments\n");
 #endif // DPDK_FOUND
   fmt::print("\t-h This help\n");
 }
@@ -135,7 +139,7 @@ static std::string capture_eal_args(int* argc, char*** argv)
 static int parse_args(int argc, char** argv)
 {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "T:ei:xyz:h")) != -1) {
+  while ((opt = getopt(argc, argv, "T:ei:wxyz:h")) != -1) {
     switch (opt) {
       case 'T':
         hwacc_decoder_type = std::string(optarg);
@@ -147,15 +151,20 @@ static int parse_args(int argc, char** argv)
         nof_ldpc_iterations = strtol(optarg, nullptr, 10);
         break;
 #ifdef DPDK_FOUND
+      case 'w':
+        dedicated_queue = false;
+        break;
       case 'x':
         ext_softbuffer = false;
         break;
       case 'y':
         std_out_sink = false;
         break;
-      case 'z':
-        hal_log_level = std::string(optarg);
+      case 'z': {
+        auto level    = srslog::str_to_basic_level(std::string(optarg));
+        hal_log_level = level.has_value() ? level.value() : srslog::basic_levels::error;
         break;
+      }
 #endif // DPDK_FOUND
       case 'h':
       default:
@@ -186,6 +195,8 @@ static std::shared_ptr<pusch_decoder_factory> create_generic_pusch_decoder_facto
   pusch_decoder_factory_sw_config.decoder_factory   = ldpc_decoder_factory;
   pusch_decoder_factory_sw_config.dematcher_factory = ldpc_rate_dematcher_factory;
   pusch_decoder_factory_sw_config.segmenter_factory = segmenter_rx_factory;
+  pusch_decoder_factory_sw_config.nof_prb           = MAX_RB;
+  pusch_decoder_factory_sw_config.nof_layers        = pusch_constants::MAX_NOF_LAYERS;
   return create_pusch_decoder_factory_sw(pusch_decoder_factory_sw_config);
 }
 
@@ -197,7 +208,7 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
   srslog::set_default_sink(*log_sink);
   srslog::init();
   srslog::basic_logger& logger = srslog::fetch_basic_logger("HAL", false);
-  logger.set_level(srslog::str_to_basic_level(hal_log_level));
+  logger.set_level(hal_log_level);
 
   // Pointer to a dpdk-based hardware-accelerator interface.
   static std::unique_ptr<dpdk::dpdk_eal> dpdk_interface = nullptr;
@@ -219,16 +230,17 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
   // Interfacing to a shared external HARQ buffer context repository.
   unsigned nof_cbs                   = MAX_NOF_SEGMENTS;
   uint64_t acc100_ext_harq_buff_size = bbdev_accelerator->get_harq_buff_size_bytes();
-  std::shared_ptr<ext_harq_buffer_context_repository> harq_buffer_context =
-      create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, test_harq);
+  std::shared_ptr<hal::ext_harq_buffer_context_repository> harq_buffer_context =
+      hal::create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, test_harq);
   TESTASSERT(harq_buffer_context);
 
   // Set the hardware-accelerator configuration.
-  hw_accelerator_pusch_dec_configuration hw_decoder_config;
+  hal::hw_accelerator_pusch_dec_configuration hw_decoder_config;
   hw_decoder_config.acc_type            = "acc100";
   hw_decoder_config.bbdev_accelerator   = bbdev_accelerator;
   hw_decoder_config.ext_softbuffer      = ext_softbuffer;
   hw_decoder_config.harq_buffer_context = harq_buffer_context;
+  hw_decoder_config.dedicated_queue     = dedicated_queue;
 
   // ACC100 hardware-accelerator implementation.
   return create_hw_accelerator_pusch_dec_factory(hw_decoder_config);

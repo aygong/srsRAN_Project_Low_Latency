@@ -24,6 +24,7 @@
 
 #include "srsran/adt/optional.h"
 #include "srsran/mac/mac_cell_result.h"
+#include "srsran/srslog/logger.h"
 #include <vector>
 
 namespace srsran {
@@ -33,7 +34,7 @@ struct mac_pdsch_precoding_info {
   /// \brief CSI-RS report.
   ///
   /// This field is empty in case of omnidirectional precoding.
-  optional<csi_report_pmi> report;
+  std::optional<csi_report_pmi> report;
 };
 
 struct mac_pdcch_precoding_info {};

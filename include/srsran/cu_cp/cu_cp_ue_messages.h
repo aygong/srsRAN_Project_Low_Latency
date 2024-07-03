@@ -26,7 +26,7 @@
 #include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/cu_cp/cu_cp_types.h"
-#include "srsran/cu_cp/up_resource_manager.h"
+#include "srsran/cu_cp/up_context.h"
 #include "srsran/rrc/meas_types.h"
 #include "srsran/security/security.h"
 
@@ -36,7 +36,7 @@ namespace srs_cu_cp {
 /// \brief RRC context transfered from one UE object to the other during mobility.
 struct rrc_ue_transfer_context {
   security::security_context            sec_context;
-  optional<rrc_meas_cfg>                meas_cfg;
+  std::optional<rrc_meas_cfg>           meas_cfg;
   up_context                            up_ctx;
   static_vector<srb_id_t, MAX_NOF_SRBS> srbs; // List of active SRBs (TODO: add PDCP config).
   byte_buffer                           handover_preparation_info;

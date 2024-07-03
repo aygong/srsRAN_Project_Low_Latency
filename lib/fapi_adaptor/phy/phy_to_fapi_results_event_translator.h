@@ -24,6 +24,7 @@
 
 #include "srsran/fapi/slot_data_message_notifier.h"
 #include "srsran/phy/upper/upper_phy_rx_results_notifier.h"
+#include "srsran/srslog/logger.h"
 #include <functional>
 
 namespace srsran {
@@ -74,6 +75,8 @@ private:
   srslog::basic_logger& logger;
   /// FAPI slot-based, data-specific message notifier.
   std::reference_wrapper<fapi::slot_data_message_notifier> data_notifier;
+  /// dBFS calibration value.
+  const float dBFS_calibration_value = 1;
 };
 
 } // namespace fapi_adaptor

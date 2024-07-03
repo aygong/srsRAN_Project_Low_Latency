@@ -60,20 +60,19 @@ protected:
 
     // create CU-CP config
     srs_cu_cp::cu_cp_configuration cu_cfg;
-    cu_cfg.ngap_config.gnb_id              = {411, 32};
+    cu_cfg.ngap_config.gnb_id              = {411, 22};
     cu_cfg.ngap_config.tac                 = 7;
     cu_cfg.cu_cp_executor                  = &workers.ctrl_exec;
-    cu_cfg.ngap_notifier                   = &*amf;
+    cu_cfg.n2_gw                           = &*amf;
     cu_cfg.timers                          = &timers;
     cu_cfg.statistics_report_period        = std::chrono::seconds(1);
-    cu_cfg.ue_config.max_nof_supported_ues = cu_cfg.max_nof_dus * srsran::srs_cu_cp::MAX_NOF_UES_PER_DU;
-    cu_cfg.rrc_config.gnb_id               = {411, 32};
+    cu_cfg.ue_config.max_nof_supported_ues = cu_cfg.max_nof_ues;
+    cu_cfg.rrc_config.gnb_id               = {411, 22};
 
     // create CU-CP.
     cu_cp_obj = create_cu_cp(cu_cfg);
 
     // Create AMF response to NG Setup.
-    amf->attach_cu_cp_pdu_handler(cu_cp_obj->get_ng_handler().get_ngap_message_handler());
     amf->enqueue_next_tx_pdu(srs_cu_cp::generate_ng_setup_response());
 
     // Start CU-CP.
@@ -88,6 +87,7 @@ protected:
     srsran::srs_du::du_high_configuration du_cfg{};
     du_cfg.exec_mapper = &workers.exec_mapper;
     du_cfg.f1c_client  = &f1c_gw;
+    du_cfg.f1u_gw      = &f1u_gw;
     du_cfg.phy_adapter = &phy;
     du_cfg.timers      = &timers;
     du_cfg.cells       = {config_helpers::make_default_du_cell_config()};
@@ -101,11 +101,18 @@ protected:
     du_obj->start();
   }
 
+  ~cu_du_test() override
+  {
+    // flush logger after each test
+    srslog::flush();
+  }
+
 public:
   du_high_worker_manager workers;
   timer_manager          timers;
   srslog::basic_logger&  test_logger = srslog::fetch_basic_logger("TEST");
   f1c_test_local_gateway f1c_gw{};
+  f1u_test_local_gateway f1u_gw{};
 
   std::unique_ptr<srs_cu_cp::mock_amf> amf{srs_cu_cp::create_mock_amf()};
   std::unique_ptr<srs_cu_cp::cu_cp>    cu_cp_obj;

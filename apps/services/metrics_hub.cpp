@@ -21,6 +21,7 @@
  */
 
 #include "metrics_hub.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -55,21 +56,32 @@ rlc_metrics_source* metrics_hub::get_rlc_metrics_source(std::string source_name_
   return nullptr;
 }
 
-void scheduler_ue_metrics_source::report_metrics(span<const scheduler_ue_metrics> ue_metrics)
+scheduler_ue_metrics_source::scheduler_ue_metrics_source(std::string source_name_) :
+  metrics_hub_source(source_name_),
+  logger(srslog::fetch_basic_logger("ALL")),
+  metrics_pool(metric_pool_initial_capacity)
+{
+}
+
+void scheduler_ue_metrics_source::report_metrics(const scheduler_cell_metrics& metrics)
 {
   srsran_assert(executor != nullptr, "Task executor must not be nullptr");
-  std::vector<scheduler_ue_metrics> ue_metrics_copy(ue_metrics.begin(), ue_metrics.end());
-  if (not executor->execute([this, ue_metrics_copy]() {
+
+  // Fetch a metrics report object from the pool.
+  // Note: We are trying to reuse the pre-existing allocated memory in the cached_metrics object.
+  auto cached_metrics = metrics_pool.get();
+  *cached_metrics     = metrics;
+
+  if (not executor->execute([this, cached_metrics = std::move(cached_metrics)]() {
         for (auto& subscriber : subscribers) {
-          span<const scheduler_ue_metrics> ue_metrics_span(ue_metrics_copy);
-          subscriber->report_metrics(ue_metrics_span);
+          subscriber->report_metrics(*cached_metrics);
         }
       })) {
-    srslog::fetch_basic_logger("ALL").warning("Failed to dispatch scheduler UE metrics");
+    logger.warning("Failed to dispatch scheduler UE metrics");
   }
 }
 
-void scheduler_ue_metrics_source::add_subscriber(scheduler_ue_metrics_notifier& subscriber)
+void scheduler_ue_metrics_source::add_subscriber(scheduler_metrics_notifier& subscriber)
 {
   subscribers.push_back(&subscriber);
 }

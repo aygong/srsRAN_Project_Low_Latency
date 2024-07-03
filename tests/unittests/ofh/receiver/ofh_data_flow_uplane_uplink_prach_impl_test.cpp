@@ -91,13 +91,13 @@ public:
     buffer_context.pusch_scs        = srsran::subcarrier_spacing::kHz30;
     buffer_context.start_symbol     = 0;
 
-    repo->add(buffer_context, buffer);
+    repo->add(buffer_context, buffer, std::nullopt, std::nullopt);
 
     results.uplane_results.params.slot      = slot;
     results.uplane_results.params.symbol_id = 0;
     results.eaxc                            = 4;
     auto& section                           = results.uplane_results.sections.emplace_back();
-    section.iq_samples.resize(MAX_NOF_PRBS * NRE);
+    section.iq_samples.resize(MAX_NOF_PRBS * NOF_SUBCARRIERS_PER_RB);
 
     ul_cplane_context context;
     context.prb_start              = 0;
@@ -110,7 +110,7 @@ public:
 
     // Fill the contexts
     ul_cplane_context_repo_ptr->add(slot, eaxc, context);
-    prach_context_repo->add(buffer_context, buffer);
+    prach_context_repo->add(buffer_context, buffer, std::nullopt, std::nullopt);
   }
 
   data_flow_uplane_uplink_prach_impl_config get_config()
@@ -156,7 +156,7 @@ public:
     section.nof_prbs                  = 273;
     section.use_current_symbol_number = true;
     section.is_every_rb_used          = true;
-    section.iq_samples.resize(MAX_NOF_PRBS * NRE);
+    section.iq_samples.resize(MAX_NOF_PRBS * NOF_SUBCARRIERS_PER_RB);
 
     return deco_results;
   }

@@ -133,7 +133,8 @@ public:
   explicit lower_phy_rx_symbol_notifier_spy(const std::string& log_level = "warning") :
     logger(srslog::fetch_basic_logger("Rx Notifier"))
   {
-    logger.set_level(srslog::str_to_basic_level(log_level));
+    auto value = srslog::str_to_basic_level(log_level);
+    logger.set_level(value.has_value() ? value.value() : srslog::basic_levels::none);
   }
 
   // See interface for documentation.
@@ -158,12 +159,6 @@ public:
     rx_prach_event& event = rx_prach_events.back();
     event.context         = context;
     event.buffer          = &buffer;
-  }
-
-  // See interface for documentation.
-  void on_rx_srs_symbol(const lower_phy_rx_symbol_context& context) override
-  {
-    logger.debug(context.slot.sfn(), context.slot.slot_index(), "Sector {} - On Rx SRS Symbol.", context.sector);
   }
 
   /// \brief Gets the total number of events of any kind.

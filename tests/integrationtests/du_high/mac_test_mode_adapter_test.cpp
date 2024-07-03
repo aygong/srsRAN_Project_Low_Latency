@@ -31,12 +31,12 @@
 using namespace srsran;
 
 struct mac_event_interceptor {
-  optional<mac_ul_sched_result> next_ul_sched_res;
+  std::optional<mac_ul_sched_result> next_ul_sched_res;
 
-  optional<mac_ue_create_request> last_ue_created;
+  std::optional<mac_ue_create_request> last_ue_created;
 
-  optional<mac_uci_indication_message> last_uci;
-  optional<mac_crc_indication_message> last_crc;
+  std::optional<mac_uci_indication_message> last_uci;
+  std::optional<mac_crc_indication_message> last_crc;
 };
 
 class phy_dummy : public mac_result_notifier, public mac_cell_result_notifier
@@ -107,7 +107,9 @@ public:
   {
     return launch_no_op_task(mac_ue_delete_response{});
   }
-  bool             handle_ul_ccch_msg(du_ue_index_t ue_index, byte_buffer pdu) override { return true; }
+  bool handle_ul_ccch_msg(du_ue_index_t ue_index, byte_buffer pdu) override { return true; }
+  void handle_ue_config_applied(du_ue_index_t ue_index) override {}
+
   void             handle_rx_data_indication(mac_rx_data_indication pdu) override {}
   void             handle_paging_information(const paging_information& msg) override {}
   async_task<void> start() override { return launch_no_op_task(); }
@@ -242,13 +244,13 @@ TEST_P(mac_test_mode_adapter_test, when_test_mode_ue_has_pucch_grants_then_uci_i
   ASSERT_EQ(mac_events.last_uci->sl_rx, sl_rx);
   ASSERT_EQ(mac_events.last_uci->ucis.size(), 1);
   ASSERT_EQ(mac_events.last_uci->ucis[0].rnti, this->params.test_ue_cfg.rnti);
-  ASSERT_TRUE(variant_holds_alternative<mac_uci_pdu::pucch_f0_or_f1_type>(mac_events.last_uci->ucis[0].pdu));
-  const auto& f1 = variant_get<mac_uci_pdu::pucch_f0_or_f1_type>(mac_events.last_uci->ucis[0].pdu);
+  ASSERT_TRUE(std::holds_alternative<mac_uci_pdu::pucch_f0_or_f1_type>(mac_events.last_uci->ucis[0].pdu));
+  const auto& f1 = std::get<mac_uci_pdu::pucch_f0_or_f1_type>(mac_events.last_uci->ucis[0].pdu);
   ASSERT_FALSE(f1.sr_info.has_value());
   ASSERT_TRUE(f1.harq_info.has_value());
   ASSERT_EQ(f1.harq_info->harqs.size(), 1);
   ASSERT_EQ(f1.harq_info->harqs[0], uci_pucch_f0_or_f1_harq_values::ack);
-  ASSERT_TRUE(f1.ul_sinr.value() > 0);
+  ASSERT_TRUE(f1.ul_sinr_dB.value() > 0);
 }
 
 TEST_P(mac_test_mode_adapter_test, when_test_mode_ue_has_pusch_grants_then_crc_indications_are_auto_forwarded_to_mac)
@@ -280,7 +282,7 @@ TEST_P(mac_test_mode_adapter_test, when_test_mode_ue_has_pusch_grants_then_crc_i
   ASSERT_EQ(mac_events.last_crc->crcs[0].rnti, this->params.test_ue_cfg.rnti);
   ASSERT_EQ(mac_events.last_crc->crcs[0].harq_id, ulgrant.pusch_cfg.harq_id);
   ASSERT_TRUE(mac_events.last_crc->crcs[0].tb_crc_success);
-  ASSERT_TRUE(mac_events.last_crc->crcs[0].ul_sinr_metric.value() > 0);
+  ASSERT_TRUE(mac_events.last_crc->crcs[0].ul_sinr_dB.value() > 0);
 }
 
 TEST_P(mac_test_mode_adapter_test, when_uci_is_forwarded_to_mac_then_test_mode_csi_params_are_enforced)
@@ -316,13 +318,13 @@ TEST_P(mac_test_mode_adapter_test, when_uci_is_forwarded_to_mac_then_test_mode_c
   ASSERT_EQ(mac_events.last_uci->sl_rx, sl_rx);
   ASSERT_EQ(mac_events.last_uci->ucis.size(), 1);
   ASSERT_EQ(mac_events.last_uci->ucis[0].rnti, this->params.test_ue_cfg.rnti);
-  ASSERT_TRUE(variant_holds_alternative<mac_uci_pdu::pucch_f2_or_f3_or_f4_type>(mac_events.last_uci->ucis[0].pdu));
-  const auto& f2 = variant_get<mac_uci_pdu::pucch_f2_or_f3_or_f4_type>(mac_events.last_uci->ucis[0].pdu);
+  ASSERT_TRUE(std::holds_alternative<mac_uci_pdu::pucch_f2_or_f3_or_f4_type>(mac_events.last_uci->ucis[0].pdu));
+  const auto& f2 = std::get<mac_uci_pdu::pucch_f2_or_f3_or_f4_type>(mac_events.last_uci->ucis[0].pdu);
   // check SR info.
   ASSERT_TRUE(f2.sr_info.has_value());
   ASSERT_EQ(f2.sr_info->size(), 1);
   ASSERT_FALSE(f2.sr_info->test(0)); // SR not detected.
-  ASSERT_TRUE(f2.ul_sinr.value() > 0);
+  ASSERT_TRUE(f2.ul_sinr_dB.value() > 0);
   // check HARQ info.
   ASSERT_TRUE(f2.harq_info.has_value());
   ASSERT_TRUE(f2.harq_info->is_valid);
@@ -346,11 +348,11 @@ TEST_P(mac_test_mode_adapter_test, when_uci_is_forwarded_to_mac_then_test_mode_c
   } else {
     ASSERT_EQ(*report.ri, params.test_ue_cfg.ri);
     if (params.nof_ports == 2) {
-      ASSERT_TRUE(variant_holds_alternative<csi_report_pmi::two_antenna_port>(report.pmi->type));
-      ASSERT_EQ(variant_get<csi_report_pmi::two_antenna_port>(report.pmi->type).pmi, params.test_ue_cfg.pmi);
+      ASSERT_TRUE(std::holds_alternative<csi_report_pmi::two_antenna_port>(report.pmi->type));
+      ASSERT_EQ(std::get<csi_report_pmi::two_antenna_port>(report.pmi->type).pmi, params.test_ue_cfg.pmi);
     } else {
-      ASSERT_TRUE(variant_holds_alternative<csi_report_pmi::typeI_single_panel_4ports_mode1>(report.pmi->type));
-      auto& t = variant_get<csi_report_pmi::typeI_single_panel_4ports_mode1>(report.pmi->type);
+      ASSERT_TRUE(std::holds_alternative<csi_report_pmi::typeI_single_panel_4ports_mode1>(report.pmi->type));
+      auto& t = std::get<csi_report_pmi::typeI_single_panel_4ports_mode1>(report.pmi->type);
       ASSERT_EQ(t.i_1_1, params.test_ue_cfg.i_1_1);
       if (t.i_1_3.has_value()) {
         ASSERT_EQ(*t.i_1_3, params.test_ue_cfg.i_1_3);

@@ -25,7 +25,6 @@
 #include "rrc_cell_context.h"
 #include "rrc_ue.h"
 #include "srsran/cu_cp/cell_meas_manager_config.h"
-#include "srsran/ran/band_helper.h"
 
 namespace srsran {
 namespace srs_cu_cp {
@@ -45,15 +44,15 @@ public:
 };
 
 struct rrc_ue_creation_message {
-  ue_index_t                        ue_index;
-  rnti_t                            c_rnti;
-  rrc_cell_context                  cell;
-  rrc_pdu_f1ap_notifier*            f1ap_pdu_notifier;
-  rrc_ue_context_update_notifier*   rrc_ue_cu_cp_notifier;
-  rrc_ue_measurement_notifier*      measurement_notifier;
-  byte_buffer                       du_to_cu_container;
-  rrc_ue_task_scheduler*            ue_task_sched;
-  optional<rrc_ue_transfer_context> rrc_context;
+  ue_index_t                             ue_index;
+  rnti_t                                 c_rnti;
+  rrc_cell_context                       cell;
+  rrc_pdu_f1ap_notifier*                 f1ap_pdu_notifier;
+  rrc_ue_context_update_notifier*        rrc_ue_cu_cp_notifier;
+  rrc_ue_measurement_notifier*           measurement_notifier;
+  rrc_ue_cu_cp_ue_notifier*              cu_cp_ue_notifier;
+  byte_buffer                            du_to_cu_container;
+  std::optional<rrc_ue_transfer_context> rrc_context;
 };
 
 /// \brief Interface class to the main RRC DU object to manage RRC UEs.
@@ -64,11 +63,11 @@ public:
   rrc_du_ue_repository()          = default;
   virtual ~rrc_du_ue_repository() = default;
 
-  /// Creates a new RRC UE object and returns a handle to it.
-  virtual rrc_ue_interface* add_ue(up_resource_manager& resource_mng, const rrc_ue_creation_message& msg) = 0;
+  /// \brief Get the RRC Reject message to send to the UE.
+  virtual byte_buffer get_rrc_reject() = 0;
 
-  /// Get a RRC UE object.
-  virtual rrc_ue_interface* find_ue(ue_index_t ue_index) = 0;
+  /// Creates a new RRC UE object and returns a handle to it.
+  virtual rrc_ue_interface* add_ue(const rrc_ue_creation_message& msg) = 0;
 
   /// Send RRC Release to all UEs connected to this DU.
   virtual void release_ues() = 0;
@@ -83,15 +82,16 @@ public:
   /// \brief Request to update the measurement related parameters for the given cell id.
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] serv_cell_cfg_ The serving cell meas config to update.
-  /// \param[in] ncells_ Optional neigbor cells to replace the current neighbor cells with.
-  virtual bool on_cell_config_update_request(nr_cell_id_t nci, const serving_cell_meas_config& serv_cell_cfg_) = 0;
+  virtual bool on_cell_config_update_request(nr_cell_identity nci, const serving_cell_meas_config& serv_cell_cfg_) = 0;
 };
 
 /// Handle RRC UE removal
-class rrc_ue_removal_handler
+class rrc_ue_handler
 {
 public:
-  virtual ~rrc_ue_removal_handler() = default;
+  virtual ~rrc_ue_handler() = default;
+
+  virtual rrc_ue_interface* find_ue(ue_index_t ue_index) = 0;
 
   /// Remove a RRC UE object.
   /// \param[in] ue_index The index of the UE object to remove.
@@ -112,7 +112,7 @@ public:
 /// Combined entry point for the RRC DU handling.
 class rrc_du_interface : public rrc_du_cell_manager,
                          public rrc_du_ue_repository,
-                         public rrc_ue_removal_handler,
+                         public rrc_ue_handler,
                          public rrc_du_statistics_handler
 {
 public:
@@ -120,7 +120,7 @@ public:
 
   virtual rrc_du_cell_manager&       get_rrc_du_cell_manager()       = 0;
   virtual rrc_du_ue_repository&      get_rrc_du_ue_repository()      = 0;
-  virtual rrc_ue_removal_handler&    get_rrc_ue_removal_handler()    = 0;
+  virtual rrc_ue_handler&            get_rrc_ue_handler()            = 0;
   virtual rrc_du_statistics_handler& get_rrc_du_statistics_handler() = 0;
 };
 

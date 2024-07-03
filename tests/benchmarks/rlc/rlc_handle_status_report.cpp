@@ -21,6 +21,7 @@
  */
 
 #include "lib/rlc/rlc_tx_am_entity.h"
+#include "tests/test_doubles/pdcp/pdcp_pdu_generator.h"
 #include "srsran/support/benchmark_utils.h"
 #include "srsran/support/executors/manual_task_worker.h"
 #include <getopt.h>
@@ -45,8 +46,9 @@ public:
 
   // rlc_tx_upper_layer_data_notifier interface
   void on_transmitted_sdu(uint32_t max_tx_pdcp_sn) override {}
-
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override {}
+  void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override {}
+  void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override {}
 
   // rlc_tx_upper_layer_control_notifier interface
   void on_protocol_failure() override {}
@@ -97,11 +99,13 @@ void benchmark_status_pdu_handling(rlc_am_status_pdu status, const bench_params&
   // Set Tx config
   rlc_tx_am_config config;
   config.sn_field_length = rlc_am_sn_size::size18bits;
+  config.pdcp_sn_len     = pdcp_sn_size::size18bits;
   config.t_poll_retx     = 45;
   config.max_retx_thresh = 4;
   config.poll_pdu        = 4;
   config.poll_byte       = 25;
   config.queue_size      = 4096;
+  config.max_window      = 0;
 
   // Create test frame
   auto tester = std::make_unique<rlc_tx_am_test_frame>(config.sn_field_length);
@@ -114,13 +118,13 @@ void benchmark_status_pdu_handling(rlc_am_status_pdu status, const bench_params&
   std::unique_ptr<rlc_tx_am_entity> rlc = nullptr;
 
   auto& logger = srslog::fetch_basic_logger("RLC");
-  logger.set_level(srslog::str_to_basic_level("warning"));
+  logger.set_level(srslog::basic_levels::warning);
 
   null_rlc_pcap pcap;
 
   // Run benchmark
   auto context = [&rlc, &tester, config, &timers, &pcell_worker, &ue_worker, &pcap]() {
-    rlc = std::make_unique<rlc_tx_am_entity>(0,
+    rlc = std::make_unique<rlc_tx_am_entity>(gnb_du_id_t::min,
                                              du_ue_index_t::MIN_DU_UE_INDEX,
                                              srb_id_t::srb0,
                                              config,
@@ -137,17 +141,8 @@ void benchmark_status_pdu_handling(rlc_am_status_pdu status, const bench_params&
     rlc->set_status_provider(tester.get());
 
     for (int i = 0; i < 2048; i++) {
-      rlc_sdu sdu;
-      auto    pdcp_hdr = byte_buffer::create({0x80, 0x00, 0x16});
-      report_error_if_not(!pdcp_hdr.is_error(), "Failed to allocate byte_buffer");
-      byte_buffer pdcp_hdr_buf = std::move(pdcp_hdr.value());
-      auto        sdu_buf      = byte_buffer::create({0x00, 0x01, 0x02, 0x04});
-      report_error_if_not(!sdu_buf.is_error(), "Failed to allocate byte_buffer");
-      byte_buffer sdu_buffer = std::move(sdu_buf.value());
-      sdu.pdcp_sn            = i;
-      sdu.buf                = std::move(pdcp_hdr_buf);
-      report_error_if_not(sdu.buf.append(std::move(sdu_buffer)), "Failed to allocate SDU");
-      rlc->handle_sdu(std::move(sdu));
+      byte_buffer sdu = test_helpers::create_pdcp_pdu(config.pdcp_sn_len, i, 7, 0);
+      rlc->handle_sdu(std::move(sdu), false);
       std::array<uint8_t, 100> pdu_buf;
       rlc->pull_pdu(pdu_buf);
     }

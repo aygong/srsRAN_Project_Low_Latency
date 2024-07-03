@@ -36,11 +36,10 @@ static constexpr unsigned get_sequence_length(unsigned m_srs_b, srs_resource_con
   return (m_srs_b * N_RB_SC) / static_cast<unsigned>(comb_size);
 }
 
-srs_information
-srsran::get_srs_information(const srs_resource_configuration& resource, unsigned i_antenna_port, unsigned i_symbol)
+srs_information srsran::get_srs_information(const srs_resource_configuration& resource, unsigned i_antenna_port)
 {
   // Select BW configuration.
-  optional<srs_configuration> srs_bw_config =
+  std::optional<srs_configuration> srs_bw_config =
       srs_configuration_get(resource.configuration_index.value(), resource.bandwidth_index.value());
   srsran_assert(srs_bw_config.has_value(),
                 "Invalid combination of c-SRS (i.e., {}) and b-SRS (i.e., {})",
@@ -83,7 +82,7 @@ srsran::get_srs_information(const srs_resource_configuration& resource, unsigned
   unsigned k0_bar = resource.freq_shift.value() * N_RB_SC + k_tc;
   unsigned sum    = 0;
   for (unsigned b = 0; b <= resource.bandwidth_index; ++b) {
-    optional<srs_configuration> bw_config = srs_configuration_get(resource.configuration_index.value(), b);
+    std::optional<srs_configuration> bw_config = srs_configuration_get(resource.configuration_index.value(), b);
     srsran_assert(bw_config, "Invalid configuration.");
 
     unsigned M_srs = get_sequence_length(bw_config->m_srs, resource.comb_size);
@@ -94,6 +93,7 @@ srsran::get_srs_information(const srs_resource_configuration& resource, unsigned
 
   // Fill derived parameters.
   srs_information info;
+  info.n_cs_max                   = n_cs_max;
   info.sequence_length            = sequence_length;
   info.sequence_group             = u;
   info.sequence_number            = v;

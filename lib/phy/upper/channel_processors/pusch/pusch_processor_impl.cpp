@@ -100,94 +100,6 @@ private:
 // Dummy PUSCH decoder buffer. Used for PUSCH transmissions without SCH data.
 static pusch_decoder_buffer_dummy decoder_buffer_dummy;
 
-bool pusch_processor_validator_impl::is_valid(const pusch_processor::pdu_t& pdu) const
-{
-  unsigned nof_symbols_slot = get_nsymb_per_slot(pdu.cp);
-
-  // The BWP size exceeds the grid size.
-  if ((pdu.bwp_start_rb + pdu.bwp_size_rb) > ce_dims.nof_prb) {
-    return false;
-  }
-
-  // The implementation only works with a single transmit layer.
-  if (pdu.nof_tx_layers > ce_dims.nof_tx_layers) {
-    return false;
-  }
-
-  // The number of receive ports cannot exceed the maximum dimensions.
-  if (pdu.rx_ports.size() > ce_dims.nof_rx_ports) {
-    return false;
-  }
-
-  // The frequency allocation is not compatible with the BWP parameters.
-  if (!pdu.freq_alloc.is_bwp_valid(pdu.bwp_start_rb, pdu.bwp_size_rb)) {
-    return false;
-  }
-
-  // Currently, none of the UCI field sizes can exceed 11 bit.
-  static constexpr unsigned max_uci_len = 11;
-  if ((pdu.uci.nof_harq_ack > max_uci_len) || (pdu.uci.nof_csi_part1 > max_uci_len)) {
-    return false;
-  }
-
-  // CSI Part 2 must not be present if CSI Part 1 is not present.
-  if ((pdu.uci.nof_csi_part1 == 0) && !pdu.uci.csi_part2_size.entries.empty()) {
-    return false;
-  }
-
-  // CSI Part 2 size parameters must be compatible with the CSI Part 1 number of bits.
-  if (!pdu.uci.csi_part2_size.is_valid(pdu.uci.nof_csi_part1)) {
-    return false;
-  }
-
-  // The number of symbols carrying DM-RS must be greater than zero.
-  if (pdu.dmrs_symbol_mask.size() != nof_symbols_slot) {
-    return false;
-  }
-
-  // The number of symbols carrying DM-RS must be greater than zero.
-  if (pdu.dmrs_symbol_mask.none()) {
-    return false;
-  }
-
-  // The index of the first OFDM symbol carrying DM-RS shall be equal to or greater than the first symbol allocated to
-  // transmission.
-  int first_dmrs_symbol_index = pdu.dmrs_symbol_mask.find_lowest(true);
-  if (static_cast<unsigned>(first_dmrs_symbol_index) < pdu.start_symbol_index) {
-    return false;
-  }
-
-  // The index of the last OFDM symbol carrying DM-RS shall not be larger than the last symbol allocated to
-  // transmission.
-  int last_dmrs_symbol_index = pdu.dmrs_symbol_mask.find_highest(true);
-  if (static_cast<unsigned>(last_dmrs_symbol_index) >= (pdu.start_symbol_index + pdu.nof_symbols)) {
-    return false;
-  }
-
-  // None of the occupied symbols must exceed the slot size.
-  if (nof_symbols_slot < (pdu.start_symbol_index + pdu.nof_symbols)) {
-    return false;
-  }
-
-  // Only DM-RS Type 1 is supported.
-  if (pdu.dmrs != dmrs_type::TYPE1) {
-    return false;
-  }
-
-  // Only two CDM groups without data is supported.
-  if (pdu.nof_cdm_groups_without_data != 2) {
-    return false;
-  }
-
-  // DC position is outside the channel estimate dimensions.
-  interval<unsigned> dc_position_range(0, ce_dims.nof_prb * NRE);
-  if (pdu.dc_position.has_value() && !dc_position_range.contains(pdu.dc_position.value())) {
-    return false;
-  }
-
-  return true;
-}
-
 pusch_processor_impl::pusch_processor_impl(configuration& config) :
   thread_local_dependencies_pool(std::move(config.thread_local_dependencies_pool)),
   decoder(std::move(config.decoder)),
@@ -276,7 +188,7 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
              i_symbol != i_symbol_end;
              ++i_symbol) {
           // Extract channel estimates for the OFDM symbol, port and layer.
-          span<cf_t> ce = ch_estimate.get_symbol_ch_estimate(i_symbol, i_port, i_layer);
+          span<cbf16_t> ce = ch_estimate.get_symbol_ch_estimate(i_symbol, i_port, i_layer);
 
           // Set DC to zero.
           ce[dc_position] = 0;
@@ -325,12 +237,16 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   csi_part1_feedback.connect_notifier(notifier_adaptor);
 
   if (has_sch_data) {
+    units::bits tbs            = units::bytes(data.size()).to_bits();
+    unsigned    nof_codeblocks = ldpc::compute_nof_codeblocks(tbs, pdu.codeword.value().ldpc_base_graph);
+    units::bits Nref           = ldpc::compute_N_ref(pdu.tbs_lbrm, nof_codeblocks);
+
     // Prepare decoder configuration.
     pusch_decoder::configuration decoder_config;
     decoder_config.base_graph          = pdu.codeword.value().ldpc_base_graph;
     decoder_config.rv                  = pdu.codeword.value().rv;
     decoder_config.mod                 = pdu.mcs_descr.modulation;
-    decoder_config.Nref                = pdu.tbs_lbrm_bytes * 8;
+    decoder_config.Nref                = Nref.value();
     decoder_config.nof_layers          = pdu.nof_tx_layers;
     decoder_config.nof_ldpc_iterations = dec_nof_iterations;
     decoder_config.use_early_stop      = dec_enable_early_stop;
@@ -382,6 +298,9 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
 
 void pusch_processor_impl::assert_pdu(const pusch_processor::pdu_t& pdu, const channel_estimate& ch_estimate) const
 {
+  using namespace units::literals;
+  interval<unsigned, true> nof_tx_layers_range(1, ch_estimate.capacity().nof_tx_layers);
+
   // Make sure the configuration is supported.
   srsran_assert((pdu.bwp_start_rb + pdu.bwp_size_rb) <= ch_estimate.capacity().nof_prb,
                 "The sum of the BWP start (i.e., {}) and size (i.e., {}) exceeds the maximum grid size (i.e., {} PRB).",
@@ -390,11 +309,10 @@ void pusch_processor_impl::assert_pdu(const pusch_processor::pdu_t& pdu, const c
                 ch_estimate.capacity().nof_prb);
   srsran_assert(pdu.dmrs == dmrs_type::TYPE1, "Only DM-RS Type 1 is currently supported.");
   srsran_assert(pdu.nof_cdm_groups_without_data == 2, "Only two CDM groups without data are currently supported.");
-  srsran_assert(
-      pdu.nof_tx_layers <= ch_estimate.capacity().nof_tx_layers,
-      "The number of transmit layers (i.e., {}) exceeds the maximum number of transmission layers (i.e., {}).",
-      pdu.nof_tx_layers,
-      ch_estimate.capacity().nof_tx_layers);
+  srsran_assert(nof_tx_layers_range.contains(pdu.nof_tx_layers),
+                "The number of transmit layers (i.e., {}) is out of the range {}.",
+                pdu.nof_tx_layers,
+                nof_tx_layers_range);
   srsran_assert(pdu.rx_ports.size() <= ch_estimate.capacity().nof_rx_ports,
                 "The number of receive ports (i.e., {}) exceeds the maximum number of receive ports (i.e., {}).",
                 pdu.rx_ports.size(),
@@ -404,6 +322,7 @@ void pusch_processor_impl::assert_pdu(const pusch_processor::pdu_t& pdu, const c
                 "CSI Part 1 UCI field length (i.e., {}) does not correspond with the CSI Part 2 (i.e., {})",
                 pdu.uci.nof_csi_part1,
                 pdu.uci.csi_part2_size);
+  srsran_assert(pdu.tbs_lbrm > 0_bytes, "Invalid LBRM size (0 bytes).");
 
   // Check DC is whithin the CE.
   if (pdu.dc_position.has_value()) {

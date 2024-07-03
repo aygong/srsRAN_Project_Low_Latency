@@ -1,8 +1,10 @@
 
 #pragma once
 
+#include "srsran/support/compiler.h"
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -40,14 +42,13 @@ struct type_storage {
   }
 
   /// Get created object handle. UB if object is not created
-  // Note: In C++17, std::launder is required
   T& get() noexcept
   {
-    return reinterpret_cast<T&>(buffer);
+    return *std::launder(reinterpret_cast<T*>(buffer));
   }
   const T& get() const noexcept
   {
-    return reinterpret_cast<const T&>(buffer);
+    return *std::launder(reinterpret_cast<const T*>(buffer));
   }
 
   void* addr() noexcept

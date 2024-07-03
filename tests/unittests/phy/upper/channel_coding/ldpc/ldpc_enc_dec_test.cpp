@@ -336,8 +336,8 @@ TEST_P(LDPCEncDecFixture, LDPCDecTestZeroLLR)
   // Check that a codeblock with all zero LLR returns message of all ones and an empty output.
   std::vector<log_likelihood_ratio> llrs(max_cb_length);
   srsvec::zero(llrs);
-  dynamic_bit_buffer decoded(msg_length);
-  optional<unsigned> n_iters = decoder_test->decode(decoded, llrs, nullptr, cfg_dec);
+  dynamic_bit_buffer      decoded(msg_length);
+  std::optional<unsigned> n_iters = decoder_test->decode(decoded, llrs, nullptr, cfg_dec);
   ASSERT_FALSE(n_iters.has_value()) << "Without CRC calculator, the decoder should not return a number of iteration.";
   ASSERT_TRUE(all_ones(decoded));
 }
@@ -360,18 +360,18 @@ TEST_P(LDPCEncDecFixture, LDPCDecTestAlmostZeroLLR)
 INSTANTIATE_TEST_SUITE_P(LDPCEncDecSuite,
                          LDPCEncDecFixture,
                          ::testing::Combine(::testing::Values("generic"
-#ifdef HAVE_AVX2
+#ifdef __AVX2__
                                                               ,
                                                               "avx2"
-#endif // HAVE_AVX2
-#ifdef HAVE_AVX512
+#endif // __AVX2__
+#ifdef __AVX512F__
                                                               ,
                                                               "avx512"
-#endif // HAVE_AVX512
-#ifdef HAVE_NEON
+#endif // __AVX512F__
+#ifdef __ARM_NEON
                                                               ,
                                                               "neon"
-#endif // HAVE_NEON
+#endif // __ARM_NEON
                                                               ),
                                             ::testing::ValuesIn(ldpc_encoder_test_data)));
 } // namespace

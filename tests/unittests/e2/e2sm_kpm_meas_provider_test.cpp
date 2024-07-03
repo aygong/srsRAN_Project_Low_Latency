@@ -21,11 +21,9 @@
  */
 
 #include "lib/e2/common/e2ap_asn1_packer.h"
-#include "lib/e2/common/e2ap_asn1_utils.h"
 #include "lib/e2/e2sm/e2sm_kpm/e2sm_kpm_du_meas_provider_impl.h"
 #include "tests/unittests/e2/common/e2_test_helpers.h"
-#include "srsran/support/async/async_test_utils.h"
-#include "srsran/support/test_utils.h"
+#include "srsran/support/srsran_test.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -50,10 +48,10 @@ class e2_rlc_metrics_notifier : public e2_du_metrics_notifier, public e2_du_metr
 public:
   void get_metrics(scheduler_ue_metrics& ue_metrics) override {}
 
-  void report_metrics(span<const scheduler_ue_metrics> ue_metrics) override
+  void report_metrics(const scheduler_cell_metrics& metrics) override
   {
     if (e2_meas_provider) {
-      e2_meas_provider->report_metrics(ue_metrics);
+      e2_meas_provider->report_metrics(metrics);
     }
   }
 
@@ -199,9 +197,9 @@ TEST_F(e2sm_kpm_meas_provider_test, e2sm_kpm_ind_three_drb_rlc_metrics)
   }
 
   // Define E2SM_KPM action format 5.
-  e2sm_kpm_action_definition_s action_def;
+  asn1::e2sm::e2sm_kpm_action_definition_s action_def;
   action_def.ric_style_type = 5;
-  e2sm_kpm_action_definition_format5_s& action_def_f5 =
+  asn1::e2sm::e2sm_kpm_action_definition_format5_s& action_def_f5 =
       action_def.action_definition_formats.set_action_definition_format5();
 
   action_def_f5.matching_ue_id_list.resize(nof_ues);
@@ -209,15 +207,15 @@ TEST_F(e2sm_kpm_meas_provider_test, e2sm_kpm_ind_three_drb_rlc_metrics)
     action_def_f5.matching_ue_id_list[i].ue_id.set_gnb_du_ue_id() = generate_ueid_gnb_du(ue_ids[i]);
   }
 
-  e2sm_kpm_action_definition_format1_s& subscript_info = action_def_f5.sub_info;
-  subscript_info.cell_global_id_present                = false;
-  subscript_info.granul_period                         = 100;
+  asn1::e2sm::e2sm_kpm_action_definition_format1_s& subscript_info = action_def_f5.sub_info;
+  subscript_info.cell_global_id_present                            = false;
+  subscript_info.granul_period                                     = 100;
 
-  meas_info_item_s meas_info_item;
+  asn1::e2sm::meas_info_item_s meas_info_item;
   meas_info_item.meas_type.set_meas_name().from_string("DRB.RlcPacketDropRateDl");
-  label_info_item_s label_info_item;
+  asn1::e2sm::label_info_item_s label_info_item{};
   label_info_item.meas_label.no_label_present = true;
-  label_info_item.meas_label.no_label         = meas_label_s::no_label_opts::true_value;
+  label_info_item.meas_label.no_label         = asn1::e2sm::meas_label_s::no_label_opts::true_value;
   meas_info_item.label_info_list.push_back(label_info_item);
   subscript_info.meas_info_list.push_back(meas_info_item);
   meas_info_item.meas_type.set_meas_name().from_string("DRB.RlcSduTransmittedVolumeDL");
@@ -265,8 +263,8 @@ TEST_F(e2sm_kpm_meas_provider_test, e2sm_kpm_ind_three_drb_rlc_metrics)
   byte_buffer ind_msg_bytes = report_service->get_indication_message();
 
   // Decode RIC Indication and check the content.
-  e2sm_kpm_ind_msg_s ric_ind_msg;
-  asn1::cbit_ref     ric_ind_bref(ind_msg_bytes);
+  asn1::e2sm::e2sm_kpm_ind_msg_s ric_ind_msg;
+  asn1::cbit_ref                 ric_ind_bref(ind_msg_bytes);
   if (ric_ind_msg.unpack(ric_ind_bref) != asn1::SRSASN_SUCCESS) {
     test_logger.debug("e2sm_kpm: RIC indication msg could not be unpacked");
     return;
@@ -326,18 +324,18 @@ TEST_F(e2sm_kpm_meas_provider_test, e2sm_kpm_ind_e2_level_rlc_metrics)
   }
 
   // Define E2SM_KPM action format 1.
-  e2sm_kpm_action_definition_s action_def;
+  asn1::e2sm::e2sm_kpm_action_definition_s action_def;
   action_def.ric_style_type = 1;
-  e2sm_kpm_action_definition_format1_s& action_def_f1 =
+  asn1::e2sm::e2sm_kpm_action_definition_format1_s& action_def_f1 =
       action_def.action_definition_formats.set_action_definition_format1();
   action_def_f1.cell_global_id_present = false;
   action_def_f1.granul_period          = 100;
 
-  meas_info_item_s meas_info_item{};
+  asn1::e2sm::meas_info_item_s meas_info_item{};
   meas_info_item.meas_type.set_meas_name().from_string("DRB.RlcPacketDropRateDl"); // Dummy metric not supported.
-  label_info_item_s label_info_item{};
+  asn1::e2sm::label_info_item_s label_info_item{};
   label_info_item.meas_label.no_label_present = true;
-  label_info_item.meas_label.no_label         = meas_label_s::no_label_opts::true_value;
+  label_info_item.meas_label.no_label         = asn1::e2sm::meas_label_s::no_label_opts::true_value;
   meas_info_item.label_info_list.push_back(label_info_item);
   action_def_f1.meas_info_list.push_back(meas_info_item);
   meas_info_item.meas_type.set_meas_name().from_string("DRB.RlcSduTransmittedVolumeDL");
@@ -377,8 +375,8 @@ TEST_F(e2sm_kpm_meas_provider_test, e2sm_kpm_ind_e2_level_rlc_metrics)
   byte_buffer ind_msg_bytes = report_service->get_indication_message();
 
   // Decode RIC Indication and check the content.
-  e2sm_kpm_ind_msg_s ric_ind_msg;
-  asn1::cbit_ref     ric_ind_bref(ind_msg_bytes);
+  asn1::e2sm::e2sm_kpm_ind_msg_s ric_ind_msg;
+  asn1::cbit_ref                 ric_ind_bref(ind_msg_bytes);
   if (ric_ind_msg.unpack(ric_ind_bref) != asn1::SRSASN_SUCCESS) {
     test_logger.debug("e2sm_kpm: RIC indication msg could not be unpacked");
     return;

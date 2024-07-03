@@ -21,8 +21,13 @@
  */
 
 #include "f1ap_du_test_helpers.h"
-#include "../common/f1ap_cu_test_messages.h"
+#include "lib/f1ap/common/f1ap_asn1_utils.h"
+#include "test_doubles/f1ap/f1ap_test_messages.h"
+#include "unittests/f1ap/common/f1ap_du_test_messages.h"
 #include "srsran/asn1/f1ap/common.h"
+#include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
+#include "srsran/du/du_cell_config_helpers.h"
+#include "srsran/support/async/async_test_utils.h"
 #include "srsran/support/test_utils.h"
 
 using namespace srsran;
@@ -39,7 +44,7 @@ f1_setup_request_message srsran::srs_du::generate_f1_setup_request_message()
   f1_setup_request_message      request_msg = {};
   du_manager_params::ran_params ran_params;
   ran_params.gnb_du_name  = "srsgnb";
-  ran_params.gnb_du_id    = 1;
+  ran_params.gnb_du_id    = (gnb_du_id_t)1;
   ran_params.rrc_version  = 1;
   ran_params.du_bind_addr = transport_layer_address::create_from_string("127.0.0.1");
   du_cell_config cell     = config_helpers::make_default_du_cell_config();
@@ -68,7 +73,9 @@ asn1::f1ap::drbs_to_be_setup_item_s srsran::srs_du::generate_drb_am_setup_item(d
       qos_flow_level_qos_params_s::reflective_qos_attribute_opts::subject_to;
   drb_info.snssai.sst.from_string("01");
   drb_info.snssai.sd.from_string("0027db");
-  drb.rlc_mode.value = rlc_mode_opts::rlc_am;
+  drb.rlc_mode.value         = rlc_mode_opts::rlc_am;
+  drb.ie_exts_present        = true;
+  drb.ie_exts.dl_pdcp_sn_len = pdcp_sn_len_opts::twelve_bits;
   drb.ul_up_tnl_info_to_be_setup_list.resize(1);
   auto& gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
   auto  addr    = transport_layer_address::create_from_string("127.0.0.1");
@@ -128,7 +135,10 @@ asn1::f1ap::drbs_to_be_setup_mod_item_s srsran::srs_du::generate_drb_am_mod_item
       qos_flow_level_qos_params_s::reflective_qos_attribute_opts::subject_to;
   drb_info.snssai.sst.from_string("01");
   drb_info.snssai.sd.from_string("0027db");
-  drb.rlc_mode.value = rlc_mode_opts::rlc_am;
+  drb.rlc_mode.value                 = rlc_mode_opts::rlc_am;
+  drb.ie_exts_present                = true;
+  drb.ie_exts.dl_pdcp_sn_len_present = true;
+  drb.ie_exts.dl_pdcp_sn_len         = pdcp_sn_len_opts::twelve_bits;
   drb.ul_up_tnl_info_to_be_setup_list.resize(1);
   auto& gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
   auto  addr    = transport_layer_address::create_from_string("127.0.0.1");
@@ -215,11 +225,16 @@ namespace {
 class dummy_f1ap_tx_pdu_notifier : public f1ap_message_notifier
 {
 public:
-  dummy_f1ap_tx_pdu_notifier(f1ap_message& last_tx_pdu_) : last_tx_pdu(last_tx_pdu_) {}
+  dummy_f1ap_tx_pdu_notifier(f1ap_message& last_tx_pdu_, unique_task on_disconnect_) :
+    last_tx_pdu(last_tx_pdu_), on_disconnect(std::move(on_disconnect_))
+  {
+  }
+  ~dummy_f1ap_tx_pdu_notifier() override { on_disconnect(); }
 
   void on_new_message(const f1ap_message& msg) override { last_tx_pdu = msg; }
 
   f1ap_message& last_tx_pdu;
+  unique_task   on_disconnect;
 };
 
 } // namespace
@@ -228,7 +243,7 @@ std::unique_ptr<f1ap_message_notifier>
 dummy_f1c_connection_client::handle_du_connection_request(std::unique_ptr<f1ap_message_notifier> du_rx_pdu_notifier_)
 {
   du_rx_pdu_notifier = std::move(du_rx_pdu_notifier_);
-  return std::make_unique<dummy_f1ap_tx_pdu_notifier>(last_tx_f1ap_pdu);
+  return std::make_unique<dummy_f1ap_tx_pdu_notifier>(last_tx_f1ap_pdu, [this]() { du_rx_pdu_notifier.reset(); });
 }
 
 //////////////////////////////////
@@ -244,6 +259,8 @@ f1ap_du_test::f1ap_du_test()
 
 f1ap_du_test::~f1ap_du_test()
 {
+  run_f1_removal_procedure();
+
   // flush logger after each test
   srslog::flush();
 }
@@ -265,6 +282,23 @@ void f1ap_du_test::run_f1_setup_procedure()
   f1ap_message f1_setup_response = generate_f1_setup_response_message(transaction_id);
   test_logger.info("Injecting F1SetupResponse");
   f1ap->handle_message(f1_setup_response);
+}
+
+void f1ap_du_test::run_f1_removal_procedure()
+{
+  // Launch F1 Removal procedure.
+  async_task<void>         t = f1ap->handle_f1_removal_request();
+  lazy_task_launcher<void> t_launcher(t);
+
+  // Inject F1 removal response.
+  f1ap_message f1_removal_response = test_helpers::generate_f1_removal_response(f1c_gw.last_tx_f1ap_pdu);
+  test_logger.info("Injecting F1RemovalResponse");
+  f1ap->handle_message(f1_removal_response);
+
+  // Wait for F1 Removal procedure to complete with the TNL association removal.
+  while (not t_launcher.ready()) {
+    ctrl_worker.run_pending_tasks();
+  }
 }
 
 f1ap_du_test::ue_test_context* f1ap_du_test::run_f1ap_ue_create(du_ue_index_t ue_index)

@@ -34,8 +34,22 @@
 #include "srsran/ran/sch/sch_mcs.h"
 #include "srsran/ran/sib/sib_configuration.h"
 #include "srsran/ran/slot_pdu_capacity_constants.h"
+#include <chrono>
+#include <variant>
 
 namespace srsran {
+
+/// \brief Proportional fair policy scheduler expert parameters.
+struct time_pf_scheduler_expert_config {
+  /// Fairness Coefficient to use in Proportional Fair policy scheduler.
+  double pf_sched_fairness_coeff = 2.0F;
+};
+
+/// \brief Round-Robin policy scheduler expert parameters.
+struct time_rr_scheduler_expert_config {};
+
+/// \brief Policy scheduler expert parameters.
+using policy_scheduler_expert_config = std::variant<time_rr_scheduler_expert_config, time_pf_scheduler_expert_config>;
 
 /// \brief UE scheduling statically configurable expert parameters.
 struct scheduler_ue_expert_config {
@@ -57,6 +71,8 @@ struct scheduler_ue_expert_config {
   bool enable_csi_rs_pdsch_multiplexing;
   /// Set boundaries, in number of RBs, for UE PDSCH grants.
   interval<unsigned> pdsch_nof_rbs{1, MAX_NOF_PRBS};
+  /// Set boundaries, in number of RBs, for UE PUSCH grants.
+  interval<unsigned> pusch_nof_rbs{1, MAX_NOF_PRBS};
   /// Measurements periodicity in nof. slots over which the new Timing Advance Command is computed.
   unsigned ta_measurement_slot_period{80};
   /// Timing Advance Command (T_A) offset threshold above which Timing Advance Command is triggered. Possible valid
@@ -87,7 +103,7 @@ struct scheduler_ue_expert_config {
   float olla_dl_target_bler{0.01};
   /// Maximum CQI offset that the OLLA algorithm can apply to the reported CQI.
   float olla_max_cqi_offset{4.0};
-  /// UL SNR offset increment in dBs used in OLLA algorithm. If set to zero, OLLA is disabled.
+  /// UL SNR offset increment in dB used in OLLA algorithm. If set to zero, OLLA is disabled.
   float olla_ul_snr_inc{0.001};
   /// UL Target BLER to be achieved with OLLA.
   float olla_ul_target_bler{0.01};
@@ -97,8 +113,14 @@ struct scheduler_ue_expert_config {
   uint8_t dl_harq_la_cqi_drop_threshold{2};
   /// Threshold for drop in nof. layers of the first HARQ transmission above which HARQ retransmission is cancelled.
   uint8_t dl_harq_la_ri_drop_threshold{1};
-  // Automatic HARQ acknowledgement (used for NTN cases with no HARQ feedback)
+  /// Automatic HARQ acknowledgement (used for NTN cases with no HARQ feedback)
   bool auto_ack_harq{false};
+  /// Boundaries in RB interval for resource allocation of UE PDSCHs.
+  crb_interval pdsch_crb_limits{0, MAX_NOF_PRBS};
+  /// Boundaries in RB interval for resource allocation of UE PUSCHs.
+  crb_interval pusch_crb_limits{0, MAX_NOF_PRBS};
+  /// Expert parameters to be passed to the policy scheduler.
+  policy_scheduler_expert_config strategy_cfg = time_rr_scheduler_expert_config{};
 };
 
 /// \brief System Information scheduling statically configurable expert parameters.

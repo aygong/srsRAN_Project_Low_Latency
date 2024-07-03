@@ -22,7 +22,9 @@
 
 #include "uci_scheduler_impl.h"
 #include "../cell/resource_grid.h"
+#include "../support/sched_result_helpers.h"
 #include "uci_allocator_impl.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -141,7 +143,7 @@ void uci_scheduler_impl::add_ue(const ue_cell_configuration& ue_cfg)
     const unsigned csi_report_cfg_idx = 0;
     const auto&    csi_report_cfg = ue_cfg.cfg_dedicated().csi_meas_cfg.value().csi_report_cfg_list[csi_report_cfg_idx];
     const auto&    period_pucch =
-        variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(csi_report_cfg.report_cfg_type);
+        std::get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(csi_report_cfg.report_cfg_type);
 
     unsigned period_slots = csi_report_periodicity_to_uint(period_pucch.report_slot_period);
     add_resource(ue_cfg.crnti, period_pucch.report_slot_offset, period_slots, false);
@@ -192,7 +194,7 @@ void uci_scheduler_impl::rem_ue(const ue_cell_configuration& ue_cfg)
     const unsigned csi_report_cfg_idx = 0;
     const auto&    csi_report_cfg = ue_cfg.cfg_dedicated().csi_meas_cfg.value().csi_report_cfg_list[csi_report_cfg_idx];
     const auto&    period_pucch =
-        variant_get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(csi_report_cfg.report_cfg_type);
+        std::get<csi_report_config::periodic_or_semi_persistent_report_on_pucch>(csi_report_cfg.report_cfg_type);
 
     unsigned period_slots = csi_report_periodicity_to_uint(period_pucch.report_slot_period);
     rem_resource(ue_cfg.crnti, period_pucch.report_slot_offset, period_slots, false);
@@ -259,6 +261,22 @@ void uci_scheduler_impl::schedule_updated_ues_ucis(cell_resource_allocator& cell
     // Schedule UCI up to the farthest slot.
     for (unsigned n = 0; n != cell_alloc.max_ul_slot_alloc_delay; ++n) {
       auto& slot_ucis = periodic_uci_slot_wheel[(cell_alloc.slot_tx() + n).to_uint() % periodic_uci_slot_wheel.size()];
+
+      // Skip UCI scheduling for this UE and slot, if the maximum number of PUCCHs has been reached.
+      if (not has_space_for_uci_pdu(cell_alloc[n].result, rnti, cell_cfg.expert_cfg.ue)) {
+        if (logger.debug.enabled()) {
+          // If we want more detailed logs on the skipped allocations.
+          for (const periodic_uci_info& uci_info : slot_ucis) {
+            if (uci_info.rnti == rnti) {
+              logger.debug("cell={} c-rnti={}: Skipped UCI scheduling for slot={}. Cause: Max PUCCHs has been reached",
+                           cell_cfg.cell_index,
+                           rnti,
+                           cell_alloc[n].slot);
+            }
+          }
+        }
+        continue;
+      }
 
       for (const periodic_uci_info& uci_info : slot_ucis) {
         if (uci_info.rnti == rnti) {

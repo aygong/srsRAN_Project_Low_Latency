@@ -30,16 +30,18 @@ using namespace asn1::rrc_nr;
 
 reestablishment_context_modification_routine::reestablishment_context_modification_routine(
     ue_index_t                                    ue_index_,
-    du_processor_e1ap_control_notifier&           e1ap_ctrl_notif_,
-    du_processor_f1ap_ue_context_notifier&        f1ap_ue_ctxt_notif_,
+    const srsran::security::sec_as_config&        security_cfg_,
+    e1ap_bearer_context_manager&                  e1ap_bearer_ctxt_mng_,
+    f1ap_ue_context_manager&                      f1ap_ue_ctxt_mng_,
     du_processor_rrc_ue_control_message_notifier& rrc_ue_notifier_,
-    up_resource_manager&                          rrc_ue_up_resource_manager_,
+    up_resource_manager&                          up_resource_mng_,
     srslog::basic_logger&                         logger_) :
   ue_index(ue_index_),
-  e1ap_ctrl_notifier(e1ap_ctrl_notif_),
-  f1ap_ue_ctxt_notifier(f1ap_ue_ctxt_notif_),
+  security_cfg(security_cfg_),
+  e1ap_bearer_ctxt_mng(e1ap_bearer_ctxt_mng_),
+  f1ap_ue_ctxt_mng(f1ap_ue_ctxt_mng_),
   rrc_ue_notifier(rrc_ue_notifier_),
-  rrc_ue_up_resource_manager(rrc_ue_up_resource_manager_),
+  up_resource_mng(up_resource_mng_),
   logger(logger_)
 {
 }
@@ -55,8 +57,9 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
     generate_bearer_context_modification_request_for_new_ul_tnl();
 
     // call E1AP procedure and wait for BearerContextModificationResponse
-    CORO_AWAIT_VALUE(bearer_context_modification_response,
-                     e1ap_ctrl_notifier.on_bearer_context_modification_request(bearer_context_modification_request));
+    CORO_AWAIT_VALUE(
+        bearer_context_modification_response,
+        e1ap_bearer_ctxt_mng.handle_bearer_context_modification_request(bearer_context_modification_request));
 
     // Handle BearerContextModificationResponse and fill subsequent UE context modification
     if (!generate_ue_context_modification_request(
@@ -73,13 +76,14 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
     ue_context_mod_request.ue_index = ue_index;
 
     CORO_AWAIT_VALUE(ue_context_modification_response,
-                     f1ap_ue_ctxt_notifier.on_ue_context_modification_request(ue_context_mod_request));
+                     f1ap_ue_ctxt_mng.handle_ue_context_modification_request(ue_context_mod_request));
 
     // Handle UE Context Modification Response
     if (!generate_bearer_context_modification(bearer_context_modification_request,
                                               bearer_context_modification_response,
                                               ue_context_modification_response,
-                                              rrc_ue_up_resource_manager)) {
+                                              up_resource_mng,
+                                              true)) {
       logger.warning("ue={}: \"{}\" failed to modify UE context at DU", ue_index, name());
       CORO_EARLY_RETURN(false);
     }
@@ -91,8 +95,9 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
     bearer_context_modification_request.ue_index = ue_index;
 
     // call E1AP procedure and wait for BearerContextModificationResponse
-    CORO_AWAIT_VALUE(bearer_context_modification_response,
-                     e1ap_ctrl_notifier.on_bearer_context_modification_request(bearer_context_modification_request));
+    CORO_AWAIT_VALUE(
+        bearer_context_modification_response,
+        e1ap_bearer_ctxt_mng.handle_bearer_context_modification_request(bearer_context_modification_request));
 
     // Handle BearerContextModificationResponse
     if (!generate_ue_context_modification_request(
@@ -114,9 +119,9 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
 
       // convert pdu session context
       std::map<pdu_session_id_t, up_pdu_session_context_update> pdu_sessions_to_setup_list;
-      for (const auto& pdu_session_id : rrc_ue_up_resource_manager.get_pdu_sessions()) {
+      for (const auto& pdu_session_id : up_resource_mng.get_pdu_sessions()) {
         up_pdu_session_context_update context_update{pdu_session_id};
-        context_update.drb_to_add = rrc_ue_up_resource_manager.get_pdu_session_context(pdu_session_id).drbs;
+        context_update.drb_to_add = up_resource_mng.get_pdu_session_context(pdu_session_id).drbs;
 
         pdu_sessions_to_setup_list.emplace(pdu_session_id, context_update);
       }
@@ -131,6 +136,7 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
                                   true /* Reestablish SRBs */,
                                   true /* Reestablish DRBs */,
                                   false /* don't update keys */,
+                                  {},
                                   logger)) {
         logger.warning("ue={}: \"{}\" Failed to fill RrcReconfiguration", ue_index, name());
         CORO_EARLY_RETURN(false);
@@ -156,13 +162,13 @@ bool reestablishment_context_modification_routine::generate_bearer_context_modif
   bearer_context_modification_request.new_ul_tnl_info_required = true;
 
   // Request new UL TNL info for all DRBs
-  std::vector<pdu_session_id_t>          pdu_session_ids              = rrc_ue_up_resource_manager.get_pdu_sessions();
+  std::vector<pdu_session_id_t>          pdu_session_ids              = up_resource_mng.get_pdu_sessions();
   e1ap_ng_ran_bearer_context_mod_request ngran_bearer_context_mod_req = {};
   for (const pdu_session_id_t& psi : pdu_session_ids) {
     e1ap_pdu_session_res_to_modify_item pdu_sess_mod_item;
     pdu_sess_mod_item.pdu_session_id = psi;
 
-    const std::map<drb_id_t, up_drb_context>& drbs = rrc_ue_up_resource_manager.get_pdu_session_context(psi).drbs;
+    const std::map<drb_id_t, up_drb_context>& drbs = up_resource_mng.get_pdu_session_context(psi).drbs;
     for (const std::pair<const drb_id_t, up_drb_context>& drb : drbs) {
       logger.debug("{}, {}: Requesting new UL TNL for DRB", psi, drb.first);
       e1ap_drb_to_modify_item_ng_ran drb_to_mod = {};
@@ -207,7 +213,7 @@ bool reestablishment_context_modification_routine::generate_ue_context_modificat
       item.transfer.qos_flow_add_or_modify_response_list.emplace();
 
       // re-establish old flows
-      const up_drb_context& drb_up_context = rrc_ue_up_resource_manager.get_drb_context(e1ap_drb_item.drb_id);
+      const up_drb_context& drb_up_context = up_resource_mng.get_drb_context(e1ap_drb_item.drb_id);
 
       for (const auto& flow : drb_up_context.qos_flows) {
         qos_flow_add_or_mod_response_item qos_flow;
@@ -226,7 +232,8 @@ bool reestablishment_context_modification_routine::generate_ue_context_modificat
         }
 
         // Add rlc mode
-        drb_setup_mod_item.rlc_mod = rlc_mode::am; // TODO: is this coming from FiveQI mapping?
+        drb_setup_mod_item.rlc_mod     = drb_up_context.rlc_mod;
+        drb_setup_mod_item.pdcp_sn_len = drb_up_context.pdcp_cfg.tx.sn_size;
 
         // fill QoS info
         drb_setup_mod_item.qos_info.drb_qos    = drb_up_context.qos_params;
@@ -268,7 +275,26 @@ bool reestablishment_context_modification_routine::generate_bearer_context_modif
     return false;
   }
 
-  // Start with empty message.
+  // Fill security info
+  bearer_ctxt_mod_req.security_info.emplace();
+  bearer_ctxt_mod_req.security_info->security_algorithm.ciphering_algo                 = security_cfg.cipher_algo;
+  bearer_ctxt_mod_req.security_info->security_algorithm.integrity_protection_algorithm = security_cfg.integ_algo;
+  auto k_enc_buffer = byte_buffer::create(security_cfg.k_enc);
+  if (not k_enc_buffer.has_value()) {
+    logger.warning("Unable to allocate byte_buffer");
+    return false;
+  }
+  bearer_ctxt_mod_req.security_info->up_security_key.encryption_key = std::move(k_enc_buffer.value());
+  if (security_cfg.k_int.has_value()) {
+    auto k_int_buffer = byte_buffer::create(security_cfg.k_int.value());
+    if (not k_int_buffer.has_value()) {
+      logger.warning("Unable to allocate byte_buffer");
+      return false;
+    }
+    bearer_ctxt_mod_req.security_info->up_security_key.integrity_protection_key = std::move(k_int_buffer.value());
+  }
+
+  // Fill NG-RAN specific info.
   e1ap_ng_ran_bearer_context_mod_request& e1ap_bearer_context_mod =
       bearer_ctxt_mod_req.ng_ran_bearer_context_mod_request.emplace();
 

@@ -39,7 +39,7 @@ target_link_libraries(srsvec_binary_test srsvec srslog)
 add_test(srsvec_binary_test srsvec_binary_test)
 
 add_executable(srsvec_convert_test srsvec_convert_test.cpp)
-target_link_libraries(srsvec_convert_test srsvec srslog)
+target_link_libraries(srsvec_convert_test srsvec srslog gtest gtest_main)
 add_test(srsvec_convert_test srsvec_convert_test)
 
 add_executable(srsvec_division_test srsvec_division_test.cpp)

@@ -25,9 +25,18 @@
 #include "srsran/mac/config/mac_config_helpers.h"
 #include "srsran/rlc/rlc_srb_config_factory.h"
 #include "srsran/scheduler/config/serving_cell_config_factory.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 using namespace srs_du;
+
+constexpr bool equals(const rlc_mode& lhs, const drb_rlc_mode& rhs)
+{
+  return (lhs == rlc_mode::am && rhs == drb_rlc_mode::am) ||
+         (lhs == rlc_mode::um_bidir && rhs == drb_rlc_mode::um_bidir) ||
+         (lhs == rlc_mode::um_unidir_dl && rhs == drb_rlc_mode::um_unidir_dl) ||
+         (lhs == rlc_mode::um_unidir_ul && rhs == drb_rlc_mode::um_unidir_ul);
+}
 
 /// \brief Finds an unused LCID for DRBs given a list of UE configured RLC bearers.
 static lcid_t find_empty_lcid(const std::vector<rlc_bearer_config>& rlc_bearers)
@@ -100,7 +109,7 @@ ue_ran_resource_configurator du_ran_resource_manager_impl::create_ue_resource_co
 
   // UE initialized PCell.
   error_type<std::string> err = allocate_cell_resources(ue_index, pcell_index, SERVING_CELL_PCELL_IDX);
-  if (err.is_error()) {
+  if (not err.has_value()) {
     ue_res_pool.erase(ue_index);
     return ue_ran_resource_configurator{std::unique_ptr<du_ue_ran_resource_updater_impl>{nullptr}, err.error()};
   }
@@ -196,11 +205,35 @@ du_ran_resource_manager_impl::update_context(du_ue_index_t                      
     logger.debug("Getting RLC and MAC config for {} from {}", drb.drb_id, drb.five_qi);
     const du_qos_config& qos = qos_config.at(drb.five_qi);
 
+    if (!equals(qos.rlc.mode, drb.mode)) {
+      logger.warning("RLC mode mismatch for {}. QoS config for {} configures {} but CU-UP requested {}",
+                     drb.drb_id,
+                     drb.five_qi,
+                     qos.rlc.mode,
+                     drb.mode);
+      resp.failed_drbs.push_back(drb.drb_id);
+      continue;
+    }
+
     ue_mcg.rlc_bearers.emplace_back();
     ue_mcg.rlc_bearers.back().lcid    = lcid;
     ue_mcg.rlc_bearers.back().drb_id  = drb.drb_id;
     ue_mcg.rlc_bearers.back().rlc_cfg = qos.rlc;
     ue_mcg.rlc_bearers.back().mac_cfg = qos.mac;
+
+    // Update pdcp_sn_len in RLC config
+    auto& rlc_cfg = ue_mcg.rlc_bearers.back().rlc_cfg;
+    switch (rlc_cfg.mode) {
+      case rlc_mode::am:
+        rlc_cfg.am.tx.pdcp_sn_len = drb.pdcp_sn_len;
+        break;
+      case rlc_mode::um_bidir:
+      case rlc_mode::um_unidir_dl:
+        rlc_cfg.um.tx.pdcp_sn_len = drb.pdcp_sn_len;
+        break;
+      default:
+        break;
+    }
   }
   // >> Sort by LCID.
   std::sort(ue_mcg.rlc_bearers.begin(), ue_mcg.rlc_bearers.end(), [](const auto& lhs, const auto& rhs) {
@@ -211,14 +244,14 @@ du_ran_resource_manager_impl::update_context(du_ue_index_t                      
   if (not ue_mcg.cells.contains(0) or ue_mcg.cells[0].serv_cell_cfg.cell_index != pcell_idx) {
     // >> PCell changed. Allocate new PCell resources.
     error_type<std::string> outcome = allocate_cell_resources(ue_index, pcell_idx, SERVING_CELL_PCELL_IDX);
-    if (outcome.is_error()) {
+    if (not outcome.has_value()) {
       resp.procedure_error = outcome;
       return resp;
     }
   }
   for (const f1ap_scell_to_setup& sc : upd_req.scells_to_setup) {
     // >> SCells Added/Modified. Allocate new SCell resources.
-    if (allocate_cell_resources(ue_index, sc.cell_index, sc.serv_cell_index).is_error()) {
+    if (not allocate_cell_resources(ue_index, sc.cell_index, sc.serv_cell_index).has_value()) {
       resp.failed_scells.push_back(sc.serv_cell_index);
     }
   }
@@ -260,8 +293,7 @@ error_type<std::string> du_ran_resource_manager_impl::allocate_cell_resources(du
     ue_res.pcg_cfg.pdsch_harq_codebook = pdsch_harq_ack_codebook::dynamic;
 
     if (not pucch_res_mng.alloc_resources(ue_res)) {
-      return error_type<std::string>(
-          fmt::format("Unable to allocate dedicated PUCCH resources for cell={}", cell_index));
+      return make_unexpected(fmt::format("Unable to allocate dedicated PUCCH resources for cell={}", cell_index));
     }
   } else {
     srsran_assert(not ue_res.cells.contains(serv_cell_index), "Reallocation of SCell detected");

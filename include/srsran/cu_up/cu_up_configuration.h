@@ -24,8 +24,8 @@
 
 #include "srsran/cu_up/cu_up_executor_pool.h"
 #include "srsran/e1ap/common/e1ap_common.h"
-#include "srsran/e1ap/cu_up/e1ap_connection_client.h"
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
+#include "srsran/e1ap/gateways/e1_connection_client.h"
 #include "srsran/f1u/cu_up/f1u_gateway.h"
 #include "srsran/gtpu/gtpu_config.h"
 #include "srsran/gtpu/ngu_gateway.h"
@@ -46,6 +46,10 @@ struct network_interface_config {
 
   /// Local IP address to bind for connection from UPF to receive downlink user-plane traffic (N3 interface).
   std::string n3_bind_addr = "127.0.1.1";
+
+  /// External IP address that is advertised to receive GTP-U packets from UPF via N3 interface.
+  /// It defaults to \c n3_bind_addr but may differ in case the CU-UP is behind a NAT.
+  std::string n3_ext_addr = "auto";
 
   /// Interface name to bind the N3. `auto` does not force a specific interface and uses a normal `bind()`.
   std::string n3_bind_interface = "auto";
@@ -69,8 +73,8 @@ struct n3_interface_config {
 };
 
 struct e1ap_config_params {
-  e1ap_connection_client*  e1ap_conn_client = nullptr;
-  e1ap_connection_manager* e1ap_conn_mng    = nullptr;
+  e1_connection_client*    e1_conn_client = nullptr;
+  e1ap_connection_manager* e1ap_conn_mng  = nullptr;
 };
 
 /// Configuration passed to CU-UP.

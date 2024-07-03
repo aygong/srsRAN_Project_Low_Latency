@@ -50,7 +50,7 @@ protected:
       detector_factory_spy = std::make_shared<pucch_detector_factory_spy>();
 
       // Create factories required by the PUCCH demodulator factory.
-      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_factory_zf();
+      std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_generic_factory();
       ASSERT_NE(equalizer_factory, nullptr) << "Cannot create equalizer factory.";
 
       std::shared_ptr<channel_modulation_factory> demod_factory = create_channel_modulation_sw_factory();
@@ -209,7 +209,7 @@ TEST_P(PucchProcessorFormat1Fixture, UnitTest)
   ASSERT_EQ(detector_entry.config.start_symbol_index, config.start_symbol_index);
   ASSERT_EQ(detector_entry.config.nof_symbols, config.nof_symbols);
   ASSERT_EQ(detector_entry.config.group_hopping, pucch_group_hopping::NEITHER);
-  ASSERT_EQ(detector_entry.config.port, config.ports.front());
+  ASSERT_EQ(detector_entry.config.ports, config.ports);
   ASSERT_EQ(detector_entry.config.beta_pucch, 1.0F);
   ASSERT_EQ(detector_entry.config.time_domain_occ, config.time_domain_occ);
   ASSERT_EQ(detector_entry.config.initial_cyclic_shift, config.initial_cyclic_shift);

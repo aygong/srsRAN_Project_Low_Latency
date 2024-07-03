@@ -38,6 +38,9 @@ public:
   /// \brief Schedule asynchronous task that is specific to a UE.
   virtual void schedule_async_task(du_ue_index_t ue_index, async_task<void>&& task) = 0;
 
+  /// Handle the stop of the DU activity and transition away from the operation stage.
+  virtual void handle_du_stop_request() = 0;
+
   /// \brief Request a currently unused and unallocated UE index from the DU.
   virtual du_ue_index_t find_unused_du_ue_index() = 0;
 
@@ -57,6 +60,9 @@ public:
 
   /// \brief Handle the transfer of resources of old UE to new Reestablishing UE and deletion of the old UE context.
   virtual void handle_ue_reestablishment(du_ue_index_t new_ue_index, du_ue_index_t old_ue_index) = 0;
+
+  /// Handle the confirmation that the UE has applied the last received RRC config.
+  virtual void handle_ue_config_applied(du_ue_index_t ue_index) = 0;
 };
 
 class du_manager_interface_query

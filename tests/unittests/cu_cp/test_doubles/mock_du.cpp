@@ -27,6 +27,7 @@
 #include "srsran/cu_cp/cu_cp_f1c_handler.h"
 #include "srsran/f1ap/common/f1ap_message.h"
 #include "srsran/support/error_handling.h"
+#include <future>
 #include <unordered_map>
 
 using namespace srsran;
@@ -43,6 +44,14 @@ public:
   {
     tx_pdu_notifier = cu_cp_f1c.handle_new_du_connection(std::make_unique<rx_pdu_notifier>(*this));
   }
+  ~synchronized_mock_du() override
+  {
+    // Destroy the Tx notifier used by the DU, which should trigger a DU removal in the CU-CP.
+    tx_pdu_notifier.reset();
+
+    // Wait for the CU-CP to signal the destruction of the Rx notifier.
+    rx_pdu_notifier_destroyed.wait();
+  }
 
   bool connected() const { return tx_pdu_notifier != nullptr; }
 
@@ -57,7 +66,7 @@ public:
 
         gnb_du_ue_f1ap_id_t du_ue_id = int_to_gnb_du_ue_f1ap_id(rrcmsg->gnb_du_ue_f1ap_id);
         report_fatal_error_if_not(
-            ue_contexts.insert(std::make_pair(du_ue_id, ue_context{du_ue_id, nullopt, {0, 0, 0}})).second,
+            ue_contexts.insert(std::make_pair(du_ue_id, ue_context{du_ue_id, std::nullopt, {0, 0, 0}})).second,
             "DU UE ID already exists");
       } else if (msg.pdu.init_msg().value.type().value ==
                  asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types_opts::ul_rrc_msg_transfer) {
@@ -90,8 +99,8 @@ public:
     }
 
     // Update gNB-CU-UE-F1AP-ID in the UE context.
-    optional<gnb_du_ue_f1ap_id_t> gnb_du_ue_f1ap_id = srsran::get_gnb_du_ue_f1ap_id(msg.pdu);
-    optional<gnb_cu_ue_f1ap_id_t> gnb_cu_ue_f1ap_id = srsran::get_gnb_cu_ue_f1ap_id(msg.pdu);
+    std::optional<gnb_du_ue_f1ap_id_t> gnb_du_ue_f1ap_id = srsran::get_gnb_du_ue_f1ap_id(msg.pdu);
+    std::optional<gnb_cu_ue_f1ap_id_t> gnb_cu_ue_f1ap_id = srsran::get_gnb_cu_ue_f1ap_id(msg.pdu);
     if (gnb_du_ue_f1ap_id.has_value()) {
       auto& ue_ctx = ue_contexts.at(gnb_du_ue_f1ap_id.value());
       if (gnb_cu_ue_f1ap_id.has_value()) {
@@ -106,18 +115,27 @@ private:
   class rx_pdu_notifier final : public f1ap_message_notifier
   {
   public:
-    rx_pdu_notifier(synchronized_mock_du& parent_) : parent(parent_) {}
+    rx_pdu_notifier(synchronized_mock_du& parent_) : parent(parent_)
+    {
+      parent.rx_pdu_notifier_destroyed = rx_pdu_dtor_signal.get_future();
+    }
+    ~rx_pdu_notifier() override
+    {
+      // Signal to the mock DU that the Rx PDU notifier was deleted by the CU-CP.
+      rx_pdu_dtor_signal.set_value();
+    }
 
     void on_new_message(const f1ap_message& msg) override { parent.handle_rx_pdu(msg); }
 
   private:
     synchronized_mock_du& parent;
+    std::promise<void>    rx_pdu_dtor_signal;
   };
 
   struct ue_context {
-    gnb_du_ue_f1ap_id_t           du_ue_id;
-    optional<gnb_cu_ue_f1ap_id_t> cu_ue_id;
-    std::array<uint32_t, 3>       srb_ul_pdcp_sn{0, 0, 0};
+    gnb_du_ue_f1ap_id_t                du_ue_id;
+    std::optional<gnb_cu_ue_f1ap_id_t> cu_ue_id;
+    std::array<uint32_t, 3>            srb_ul_pdcp_sn{0, 0, 0};
   };
 
   void handle_rx_pdu(const f1ap_message& msg)
@@ -125,7 +143,9 @@ private:
     report_fatal_error_if_not(rx_pdus.push_blocking(msg), "queue is full");
   }
 
-  cu_cp_f1c_handler&                                  cu_cp_f1c;
+  cu_cp_f1c_handler& cu_cp_f1c;
+  // Used to signal the Rx PDU notifier destruction by the CU-CP.
+  std::future<void>                                   rx_pdu_notifier_destroyed;
   std::unique_ptr<f1ap_message_notifier>              tx_pdu_notifier;
   std::unordered_map<gnb_du_ue_f1ap_id_t, ue_context> ue_contexts;
 

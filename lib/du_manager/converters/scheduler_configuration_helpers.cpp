@@ -68,6 +68,8 @@ srsran::srs_du::make_sched_cell_config_req(du_cell_index_t          cell_index,
       sched_req.si_scheduling->si_messages[i].period_radio_frames =
           du_cfg.si_config->si_sched_info[i].si_period_radio_frames;
       sched_req.si_scheduling->si_messages[i].msg_len = si_payload_sizes[i + 1];
+      sched_req.si_scheduling->si_messages[i].si_window_position =
+          du_cfg.si_config->si_sched_info[i].si_window_position;
     }
   }
 
@@ -111,8 +113,10 @@ sched_ue_config_request srsran::srs_du::create_scheduler_ue_config_request(const
     sched_lc_ch.lc_sr_delay_timer_applied = bearer.second->mac_cfg.lc_sr_delay_applied;
     sched_lc_ch.sr_id.emplace(bearer.second->mac_cfg.sr_id);
 
-    sched_cfg.drb_qos_list.emplace_back(sched_drb_qos_info{
-        .lcid = bearer.second->lcid, .qos_info = bearer.second->qos_info, .gbr_qos_info = bearer.second->gbr_qos_info});
+    sched_cfg.drb_info_list.emplace_back(sched_drb_info{.lcid         = bearer.second->lcid,
+                                                        .s_nssai      = bearer.second->s_nssai,
+                                                        .qos_info     = bearer.second->qos_info,
+                                                        .gbr_qos_info = bearer.second->gbr_qos_info});
   }
 
   return sched_cfg;

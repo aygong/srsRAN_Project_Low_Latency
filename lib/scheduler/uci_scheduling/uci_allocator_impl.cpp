@@ -27,6 +27,7 @@
 #include "srsran/ran/csi_report/csi_report_on_pucch_helpers.h"
 #include "srsran/ran/csi_report/csi_report_on_pusch_helpers.h"
 #include "srsran/ran/csi_report/csi_report_pusch_size.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -44,7 +45,7 @@ uci_allocator_impl::~uci_allocator_impl() = default;
 static void update_uci_on_pusch_harq_offsets(uci_info::harq_info& uci_harq, const uci_on_pusch& uci_cfg)
 {
   // We assume the configuration contains the values for beta_offsets.
-  const auto& beta_offsets = variant_get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
+  const auto& beta_offsets = std::get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
 
   // The values of \c beta_offsets are set according to Section 9.3, TS38.213.
   const uint16_t harq_ack_nof_bits = uci_harq.harq_ack_nof_bits;
@@ -71,7 +72,7 @@ static void add_csi_to_uci_on_pusch(uci_info::csi_info& uci_csi, const ue_cell_c
     const auto& uci_cfg = ue_cell_cfg.cfg_dedicated().ul_config.value().init_ul_bwp.pusch_cfg.value().uci_cfg.value();
 
     // We assume the configuration contains the values for beta_offsets.
-    const auto& beta_offsets = variant_get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
+    const auto& beta_offsets = std::get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
 
     // The values of \c beta_offsets are set according to Section 9.3, TS 38.213.
     if (uci_csi.csi_part1_nof_bits <= 11) {
@@ -92,7 +93,7 @@ static void add_csi_to_uci_on_pusch(uci_info::csi_info& uci_csi, const ue_cell_c
     const auto& uci_cfg = ue_cell_cfg.cfg_dedicated().ul_config.value().init_ul_bwp.pusch_cfg.value().uci_cfg.value();
 
     // We assume the configuration contains the values for beta_offsets.
-    const auto& beta_offsets = variant_get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
+    const auto& beta_offsets = std::get<uci_on_pusch::beta_offsets_semi_static>(uci_cfg.beta_offsets_cfg.value());
 
     // The values of \c beta_offsets are set according to Section 9.3, TS 38.213.
     if (uci_csi.csi_part1_nof_bits <= 11) {
@@ -127,12 +128,13 @@ unsigned uci_allocator_impl::get_min_pdsch_to_ack_slot_distance(slot_point pdsch
   return min_k1;
 }
 
-optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue_helper(cell_resource_allocator&     res_alloc,
-                                                                      rnti_t                       crnti,
-                                                                      const ue_cell_configuration& ue_cell_cfg,
-                                                                      unsigned                     k0,
-                                                                      unsigned                     k1,
-                                                                      const pdcch_dl_information*  fallback_dci_info)
+std::optional<uci_allocation>
+uci_allocator_impl::alloc_uci_harq_ue_helper(cell_resource_allocator&     res_alloc,
+                                             rnti_t                       crnti,
+                                             const ue_cell_configuration& ue_cell_cfg,
+                                             unsigned                     k0,
+                                             unsigned                     k1,
+                                             const pdcch_dl_information*  fallback_dci_info)
 {
   cell_slot_resource_allocator& slot_alloc = res_alloc[k0 + k1 + res_alloc.cfg.ntn_cs_koffset];
 
@@ -150,7 +152,7 @@ optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue_helper(cell_resou
 
   const bool fallback_mode = fallback_dci_info != nullptr;
 
-  optional<unsigned> pucch_res_indicator;
+  std::optional<unsigned> pucch_res_indicator;
   if (fallback_mode) {
     const auto* pucch_harq_grant_it = std::find_if(
         slot_alloc.result.ul.pucchs.begin(), slot_alloc.result.ul.pucchs.end(), [crnti](const pucch_info& pucch_grant) {
@@ -173,8 +175,8 @@ optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue_helper(cell_resou
     pucch_res_indicator = pucch_alloc.alloc_ded_pucch_harq_ack_ue(res_alloc, crnti, ue_cell_cfg, k0, k1);
   }
   return pucch_res_indicator.has_value()
-             ? optional<uci_allocation>{uci_allocation{.pucch_res_indicator = pucch_res_indicator}}
-             : nullopt;
+             ? std::optional<uci_allocation>{uci_allocation{.pucch_res_indicator = pucch_res_indicator}}
+             : std::nullopt;
 }
 
 ////////////    Public functions    ////////////
@@ -185,12 +187,12 @@ void uci_allocator_impl::slot_indication(slot_point sl_tx)
   uci_alloc_grid[(sl_tx - 1).to_uint()].ucis.clear();
 }
 
-optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue(cell_resource_allocator&     res_alloc,
-                                                               rnti_t                       crnti,
-                                                               const ue_cell_configuration& ue_cell_cfg,
-                                                               unsigned                     k0,
-                                                               span<const uint8_t>          k1_list,
-                                                               const pdcch_dl_information*  fallback_dci_info)
+std::optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue(cell_resource_allocator&     res_alloc,
+                                                                    rnti_t                       crnti,
+                                                                    const ue_cell_configuration& ue_cell_cfg,
+                                                                    unsigned                     k0,
+                                                                    span<const uint8_t>          k1_list,
+                                                                    const pdcch_dl_information*  fallback_dci_info)
 {
   // [Implementation-defined] We restrict the number of HARQ bits per PUCCH that are expected to carry CSI reporting to
   // 2 , until the PUCCH allocator supports more than this.
@@ -208,8 +210,9 @@ optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue(cell_resource_all
     // Step 1: Check for validity of the UCI slot and other restrictions.
 
     // Check whether the UCI slot to be scheduled is >= last UCI HARQ ACK allocated slot for the UE.
-    // NOTE: The reason for having this logic is due to fact that COTS UE sends an invalid ACK bits if newly scheduled
-    // PDSCH has its UCI HARQ ACK slot before the (in time) UCI HARQ ACK slot of the previously scheduled PDSCH.
+    // See TS 38.214, clause 5.1, "In a given scheduled cell, the UE is not expected to receive a first PDSCH in slot i,
+    // with the corresponding HARQ-ACK assigned to be transmitted in slot j, and a second PDSCH starting later than the
+    // first PDSCH with its corresponding HARQ-ACK assigned to be transmitted in a slot before slot j".
     if (k1_candidate < min_pdsch_to_ack_slot_distance) {
       continue;
     }
@@ -241,7 +244,7 @@ optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue(cell_resource_all
     }
 
     // Step 2: Try to allocate UCI HARQ ACK for UE, either on PUSCH or PUCCH.
-    optional<uci_allocation> uci_output =
+    std::optional<uci_allocation> uci_output =
         alloc_uci_harq_ue_helper(res_alloc, crnti, ue_cell_cfg, k0, k1_candidate, fallback_dci_info);
 
     // Register new UCI allocation in the respective grid slot entry and derive DAI.
@@ -281,17 +284,15 @@ void uci_allocator_impl::multiplex_uci_on_pusch(ul_sched_info&                pu
 
   if (pucch_uci.csi_part1_bits != 0) {
     // The number of bits is computed based on the CSI report configuration.
-    add_csi_to_uci_on_pusch(uci.csi.emplace(), ue_cell_cfg);
+    add_csi_to_uci_on_pusch(uci.csi.emplace(uci_info::csi_info()), ue_cell_cfg);
   }
 
   if (pucch_uci.harq_ack_nof_bits != 0) {
-    uci.harq.emplace();
+    uci.harq.emplace(uci_info::harq_info());
     uci.harq.value().harq_ack_nof_bits = pucch_uci.harq_ack_nof_bits;
     update_uci_on_pusch_harq_offsets(
         uci.harq.value(), ue_cell_cfg.cfg_dedicated().ul_config.value().init_ul_bwp.pusch_cfg.value().uci_cfg.value());
   }
-
-  logger.debug("rnti={}: UCI mltplxd on PUSCH for slot={}", crnti, slot_alloc.slot);
 }
 
 void uci_allocator_impl::uci_allocate_sr_opportunity(cell_slot_resource_allocator& slot_alloc,
@@ -336,13 +337,7 @@ void uci_allocator_impl::uci_allocate_csi_opportunity(cell_slot_resource_allocat
     existing_pusch->uci.value().alpha =
         ue_cell_cfg.cfg_dedicated().ul_config.value().init_ul_bwp.pusch_cfg.value().uci_cfg.value().scaling;
 
-    add_csi_to_uci_on_pusch(existing_pusch->uci.value().csi.emplace(), ue_cell_cfg);
-
-    logger.debug("rnti={} UCI with 0 H-ACK, {} CSI-p1 and {} CSI-p2 bits for slot={} allocated on PUSCH",
-                 crnti,
-                 existing_pusch->uci.value().csi.value().csi_part1_nof_bits,
-                 existing_pusch->uci.value().csi.value().beta_offset_csi_2.has_value() ? "up to 11" : "0",
-                 slot_alloc.slot);
+    add_csi_to_uci_on_pusch(existing_pusch->uci.value().csi.emplace(uci_info::csi_info()), ue_cell_cfg);
     return;
   }
 

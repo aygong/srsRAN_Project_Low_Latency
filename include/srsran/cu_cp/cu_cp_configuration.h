@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "ue_manager.h"
+#include "ue_configuration.h"
 #include "srsran/cu_cp/cell_meas_manager_config.h"
 #include "srsran/cu_cp/mobility_manager_config.h"
 #include "srsran/e1ap/common/e1ap_common.h"
@@ -35,6 +35,8 @@
 namespace srsran {
 namespace srs_cu_cp {
 
+class n2_connection_client;
+
 struct mobility_configuration {
   cell_meas_manager_cfg meas_manager_config;
   mobility_manager_cfg  mobility_manager_config;
@@ -42,15 +44,17 @@ struct mobility_configuration {
 
 /// Configuration passed to CU-CP.
 struct cu_cp_configuration {
-  task_executor*         cu_cp_executor = nullptr;
-  task_executor*         cu_cp_e2_exec  = nullptr;
-  ngap_message_notifier* ngap_notifier  = nullptr; ///> Callback for outgoing NGAP messages.
-  timer_manager*         timers         = nullptr;
+  task_executor*        cu_cp_executor = nullptr;
+  task_executor*        cu_cp_e2_exec  = nullptr;
+  n2_connection_client* n2_gw          = nullptr;
+  timer_manager*        timers         = nullptr;
   /// Maximum number of DU connections that the CU-CP may accept.
   unsigned max_nof_dus = 6;
   /// Maximum number of CU-UP connections that the CU-CP may accept.
   unsigned max_nof_cu_ups = 6;
   /// Maximum number of UEs that the CU-CP may accept.
+  unsigned max_nof_ues = 8192;
+
   ngap_configuration     ngap_config;
   rrc_cfg_t              rrc_config;
   ue_configuration       ue_config;

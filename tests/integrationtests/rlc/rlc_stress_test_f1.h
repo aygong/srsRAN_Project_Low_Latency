@@ -27,7 +27,6 @@
 #include "srsran/pdcp/pdcp_tx.h"
 #include "srsran/rlc/rlc_rx.h"
 #include "srsran/rlc/rlc_tx.h"
-#include <random>
 
 namespace srsran {
 class f1ap_dummy : public pdcp_tx_lower_notifier,
@@ -41,16 +40,13 @@ class f1ap_dummy : public pdcp_tx_lower_notifier,
   pdcp_rx_lower_interface*           pdcp_rx_lower = nullptr;
 
 public:
-  f1ap_dummy(uint32_t id) : logger("F1AP", {0, id, drb_id_t::drb1, "DL"}) {}
+  f1ap_dummy(uint32_t id) : logger("F1AP", {gnb_du_id_t::min, id, srb_id_t::srb1, "DL"}) {}
 
   // PDCP -> F1 -> RLC
-  void on_new_pdu(pdcp_tx_pdu pdu) final
+  void on_new_pdu(byte_buffer pdu, bool is_retx) final
   {
-    rlc_sdu sdu = {};
-    sdu.buf     = std::move(pdu.buf);
-    sdu.pdcp_sn = pdu.pdcp_sn;
     logger.log_info("Passing F1AP PDU to RLC");
-    rlc_tx_upper->handle_sdu(std::move(sdu));
+    rlc_tx_upper->handle_sdu(std::move(pdu), is_retx);
   }
 
   // PDCP -> F1AP -> RLC
@@ -71,6 +67,18 @@ public:
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) final
   {
     logger.log_debug("Delivered SDU called");
+    // TODO
+  }
+
+  void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) final
+  {
+    logger.log_error("Retransmitted SDU called");
+    // TODO
+  }
+
+  void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) final
+  {
+    logger.log_error("Delivered retransmitted SDU called");
     // TODO
   }
 

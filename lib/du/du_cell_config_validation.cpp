@@ -24,18 +24,20 @@
 #include "../du_manager/ran_resource_management/pucch_resource_generator.h"
 #include "srsran/asn1/rrc_nr/serving_cell.h"
 #include "srsran/ran/band_helper.h"
+#include "srsran/ran/pdcch/pdcch_candidates.h"
 #include "srsran/ran/pdcch/pdcch_type0_css_coreset_config.h"
 #include "srsran/ran/pdcch/pdcch_type0_css_occasions.h"
 #include "srsran/ran/ssb_mapping.h"
 #include "srsran/scheduler/config/serving_cell_config_validator.h"
 #include "srsran/scheduler/sched_consts.h"
 #include "srsran/support/config/validator_helpers.h"
+#include <numeric>
 
 using namespace srsran;
 
 #define CHECK_TRUE(cond, ...)                                                                                          \
   if (not(cond)) {                                                                                                     \
-    return {fmt::format(__VA_ARGS__)};                                                                                 \
+    return make_unexpected(fmt::format(__VA_ARGS__));                                                                  \
   }
 
 #define CHECK_COMPARE_(val, expected_val, comparison, ...)                                                             \
@@ -185,8 +187,8 @@ static check_outcome check_dl_config_common(const du_cell_config& cell_cfg)
   for (const search_space_configuration& ss : bwp.pdcch_common.search_spaces) {
     HANDLE_ERROR(is_search_space_valid(ss));
     CHECK_TRUE(ss.is_common_search_space(), "Common SearchSpace#{} type", ss.get_id());
-    const auto dci_format_variant = ss.get_monitored_dci_formats();
-    const auto dci_format         = variant_get<search_space_configuration::common_dci_format>(dci_format_variant);
+    const auto& dci_format_variant = ss.get_monitored_dci_formats();
+    const auto& dci_format         = std::get<search_space_configuration::common_dci_format>(dci_format_variant);
     CHECK_TRUE(dci_format.f0_0_and_f1_0, "Common SearchSpace#{} must enable DCI format1_0 and format0_0", ss.get_id());
     if (ss.get_coreset_id() == 0) {
       CHECK_TRUE(bwp.pdcch_common.coreset0.has_value(),
@@ -209,30 +211,179 @@ static check_outcome check_dl_config_common(const du_cell_config& cell_cfg)
   return {};
 }
 
-static check_outcome check_dl_config_dedicated(const du_cell_config& cell_cfg)
+/// Checks whether nof. monitored PDCCH candidates per slot for a DL BWP does not exceed maximum allowed value as per
+/// TS 38.213, Table 10.1-2.
+static check_outcome is_nof_monitored_pdcch_candidates_per_slot_within_limit(const du_cell_config& cell_cfg)
 {
-  const bwp_downlink_dedicated&     bwp = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp;
-  const search_space_configuration& ss2 = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp.pdcch_cfg->search_spaces.back();
-  const bool                        fallback_dci_format_in_ss2 =
-      ss2.is_common_search_space() or
-      not(variant_get<search_space_configuration::ue_specific_dci_format>(ss2.get_monitored_dci_formats()) ==
-          search_space_configuration::ue_specific_dci_format::f0_1_and_1_1);
+  // NOTE: We assume DCI formats other than 1_0, 0_0, 1_1 and 0_1 are not configured in SearchSpaces.
+  // NOTE: Total nof. monitored PDCCH candidates are calculated considering a slot at which all SearchSpaces are active
+  // for simplification.
 
-  if (fallback_dci_format_in_ss2) {
-    CHECK_TRUE(cell_cfg.dl_carrier.nof_ant == 1,
-               "Nof. DL antennas {} cannot be greater than 1 when using fallback DCI format\n",
-               cell_cfg.dl_carrier.nof_ant);
+  // As per TS 38.213, clause 10.1, "A UE expects to monitor PDCCH candidates for up to 4 sizes of DCI formats that
+  // include up to 3 sizes of DCI formats with CRC scrambled by C-RNTI per serving cell. The UE counts a number of sizes
+  // for DCI formats per serving cell based on a number of configured PDCCH candidates in respective search space sets
+  // for the corresponding active DL BWP".
 
-    if (bwp.pdsch_cfg.has_value()) {
-      CHECK_TRUE(bwp.pdsch_cfg->mcs_table != pdsch_mcs_table::qam256,
-                 "256QAM MCS table cannot be used for PDSCH with fallback DCI format in SearchSpace#2");
+  // As per TS 38.212, clause 7.3.1.2.1, "If DCI format 1_0 is monitored in UE specific search space and satisfies both
+  // of the following
+  // - the total number of different DCI sizes monitored per slot is no more than 4 for the cell, and
+  // - the total number of different DCI sizes with C-RNTI monitored per slot is no more than 3 for the cell
+  // and if the number of information bits in the DCI format 1_0 prior to padding is less than the payload size of the
+  // DCI format 0_0 monitored in UE specific search space for scheduling the same serving cell, zeros shall be appended
+  // to the DCI format 1_0 until the payload size equals that of the DCI format 0_0".
+
+  // NOTE: After performing the DCI size alignment mentioned in TS 38.212 (release 16), clause 7.3.1.0. The size of DCI
+  // 1_0 scrambled by C-RNTI, TC-RNTI, P-RNTI, SI-RNTI and RA-RNTI will be same. And, the size of DCI 0_0 scrambled by
+  // C-RNTI will be same as size of DCI 1_0 scrambled by C-RNTI.
+  static const unsigned nof_fallback_dci_sizes_to_be_monitored = 1;
+  // UE needs to monitor PDCCH candidates for both DCI 1_1 and 0_1, which have different sizes.
+  static const unsigned nof_non_fallback_dci_sizes_to_be_monitored_in_uss = 2;
+
+  std::map<search_space_id, unsigned> nof_monitored_pdcch_candidates_per_ss;
+
+  const bwp_downlink_common&    bwp_cmn = cell_cfg.dl_cfg_common.init_dl_bwp;
+  const bwp_downlink_dedicated& bwp_ded = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp;
+
+  for (const search_space_configuration& ss : bwp_ded.pdcch_cfg->search_spaces) {
+    const auto& dci_format_variant = ss.get_monitored_dci_formats();
+    const bool  non_fallback_dci_fmt =
+        std::holds_alternative<search_space_configuration::ue_specific_dci_format>(dci_format_variant) and
+        std::get<search_space_configuration::ue_specific_dci_format>(dci_format_variant) ==
+            search_space_configuration::ue_specific_dci_format::f0_1_and_1_1;
+
+    unsigned nof_monitored_pdcch_candidates;
+    if (ss.is_common_search_space() or not non_fallback_dci_fmt) {
+      nof_monitored_pdcch_candidates =
+          std::accumulate(ss.get_nof_candidates().begin(), ss.get_nof_candidates().end(), 0) *
+          nof_fallback_dci_sizes_to_be_monitored;
+    } else {
+      nof_monitored_pdcch_candidates =
+          std::accumulate(ss.get_nof_candidates().begin(), ss.get_nof_candidates().end(), 0) *
+          nof_non_fallback_dci_sizes_to_be_monitored_in_uss;
     }
+
+    for (const auto& entry : nof_monitored_pdcch_candidates_per_ss) {
+      const auto it = std::find_if(
+          bwp_ded.pdcch_cfg->search_spaces.begin(),
+          bwp_ded.pdcch_cfg->search_spaces.end(),
+          [ss_id = entry.first](const search_space_configuration& ss_cfg) { return ss_cfg.get_id() == ss_id; });
+      // [Implementation-defined] Reset nof. monitored PDCCH candidates for earlier accounted SearchSpace so that we
+      // account only the highest nof. monitored PDCCH candidates for SeachSpaces sharing the same CORESET and
+      // same DCI formats. This is done to simplify calculation of total nof. PDCCH candidates monitored across all
+      // SearchSpaces.
+      // For example: Assume SS#2 and SS#3 share CORESET#1 and monitoring DCI format 1_0/0_0. And, nof.
+      // PDCCH candidates to monitor is 4 and 12 respectively. In this case, we consider only 12 PDCCH candidates to
+      // monitor.
+      if (it != bwp_ded.pdcch_cfg->search_spaces.end() and it->get_coreset_id() == ss.get_coreset_id() and
+          it->get_monitored_dci_formats() == ss.get_monitored_dci_formats()) {
+        if (nof_monitored_pdcch_candidates > nof_monitored_pdcch_candidates_per_ss[entry.first]) {
+          nof_monitored_pdcch_candidates_per_ss[entry.first] = 0;
+          break;
+        }
+        nof_monitored_pdcch_candidates = 0;
+      }
+    }
+    nof_monitored_pdcch_candidates_per_ss[ss.get_id()] = nof_monitored_pdcch_candidates;
   }
 
-  if (bwp.pdsch_cfg->pdsch_mapping_type_a_dmrs.has_value() and
-      bwp.pdsch_cfg->pdsch_mapping_type_a_dmrs->additional_positions == dmrs_additional_positions::pos3) {
-    CHECK_TRUE(cell_cfg.dmrs_typeA_pos == dmrs_typeA_position::pos2,
-               "PDSCH dmrs-Additional-Position of pos3 is only supported when dmrs-TypeA-Position is equal to pos2");
+  for (const search_space_configuration& ss : bwp_cmn.pdcch_common.search_spaces) {
+    const auto& dci_format_variant = ss.get_monitored_dci_formats();
+    const bool  non_fallback_dci_fmt =
+        std::holds_alternative<search_space_configuration::ue_specific_dci_format>(dci_format_variant) and
+        std::get<search_space_configuration::ue_specific_dci_format>(dci_format_variant) ==
+            search_space_configuration::ue_specific_dci_format::f0_1_and_1_1;
+
+    unsigned nof_monitored_pdcch_candidates;
+    if (ss.is_common_search_space() or not non_fallback_dci_fmt) {
+      nof_monitored_pdcch_candidates =
+          std::accumulate(ss.get_nof_candidates().begin(), ss.get_nof_candidates().end(), 0) *
+          nof_fallback_dci_sizes_to_be_monitored;
+    } else {
+      nof_monitored_pdcch_candidates =
+          std::accumulate(ss.get_nof_candidates().begin(), ss.get_nof_candidates().end(), 0) *
+          nof_non_fallback_dci_sizes_to_be_monitored_in_uss;
+    }
+
+    for (const auto& entry : nof_monitored_pdcch_candidates_per_ss) {
+      const auto it = std::find_if(
+          bwp_ded.pdcch_cfg->search_spaces.begin(),
+          bwp_ded.pdcch_cfg->search_spaces.end(),
+          [ss_id = entry.first](const search_space_configuration& ss_cfg) { return ss_cfg.get_id() == ss_id; });
+      // [Implementation-defined] Reset nof. monitored PDCCH candidates for earlier accounted SearchSpace so that we
+      // account only the highest nof. monitored PDCCH candidates for SeachSpaces sharing the same CORESET and
+      // same DCI formats. This is done to simplify calculation of total nof. PDCCH candidates monitored across all
+      // SearchSpaces.
+      // For example: Assume SS#2 and SS#3 share CORESET#1 and monitoring DCI format 1_0/0_0. And, nof.
+      // PDCCH candidates to monitor is 4 and 12 respectively. In this case, we consider only 12 PDCCH candidates to
+      // monitor.
+      if (it != bwp_ded.pdcch_cfg->search_spaces.end() and it->get_coreset_id() == ss.get_coreset_id() and
+          it->get_monitored_dci_formats() == ss.get_monitored_dci_formats()) {
+        if (nof_monitored_pdcch_candidates > nof_monitored_pdcch_candidates_per_ss[entry.first]) {
+          nof_monitored_pdcch_candidates_per_ss[entry.first] = 0;
+          break;
+        }
+        nof_monitored_pdcch_candidates = 0;
+      }
+      const auto cmn_it = std::find_if(
+          bwp_cmn.pdcch_common.search_spaces.begin(),
+          bwp_cmn.pdcch_common.search_spaces.end(),
+          [ss_id = entry.first](const search_space_configuration& ss_cfg) { return ss_cfg.get_id() == ss_id; });
+      if (cmn_it != bwp_cmn.pdcch_common.search_spaces.end() and cmn_it->get_coreset_id() == ss.get_coreset_id() and
+          cmn_it->get_monitored_dci_formats() == ss.get_monitored_dci_formats()) {
+        if (nof_monitored_pdcch_candidates > nof_monitored_pdcch_candidates_per_ss[entry.first]) {
+          nof_monitored_pdcch_candidates_per_ss[entry.first] = 0;
+          break;
+        }
+        nof_monitored_pdcch_candidates = 0;
+      }
+    }
+    nof_monitored_pdcch_candidates_per_ss[ss.get_id()] = nof_monitored_pdcch_candidates;
+  }
+
+  unsigned total_nof_monitored_pdcch_candidates = 0;
+  for (const auto& entry : nof_monitored_pdcch_candidates_per_ss) {
+    total_nof_monitored_pdcch_candidates += entry.second;
+  }
+
+  CHECK_BELOW(total_nof_monitored_pdcch_candidates,
+              max_nof_monitored_pdcch_candidates(bwp_cmn.generic_params.scs),
+              "Nof. PDCCH candidates monitored per slot for a DL BWP={} exceeds maximum value={}\n",
+              total_nof_monitored_pdcch_candidates,
+              max_nof_monitored_pdcch_candidates(bwp_cmn.generic_params.scs));
+
+  return {};
+}
+
+static check_outcome check_dl_config_dedicated(const du_cell_config& cell_cfg)
+{
+  const bwp_downlink_dedicated& bwp = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp;
+  // PDCCH
+  if (bwp.pdcch_cfg.has_value()) {
+    for (const search_space_configuration& ss : bwp.pdcch_cfg->search_spaces) {
+      const bool fallback_dci_format_in_ss2 =
+          ss.is_common_search_space() or
+          not(std::get<search_space_configuration::ue_specific_dci_format>(ss.get_monitored_dci_formats()) ==
+              search_space_configuration::ue_specific_dci_format::f0_1_and_1_1);
+
+      if (fallback_dci_format_in_ss2) {
+        CHECK_TRUE(cell_cfg.dl_carrier.nof_ant == 1,
+                   "Nof. DL antennas {} cannot be greater than 1 when using fallback DCI format\n",
+                   cell_cfg.dl_carrier.nof_ant);
+
+        if (bwp.pdsch_cfg.has_value()) {
+          CHECK_TRUE(bwp.pdsch_cfg->mcs_table != pdsch_mcs_table::qam256,
+                     "256QAM MCS table cannot be used for PDSCH with fallback DCI format in SearchSpace#2");
+        }
+      }
+
+      if (bwp.pdsch_cfg->pdsch_mapping_type_a_dmrs.has_value() and
+          bwp.pdsch_cfg->pdsch_mapping_type_a_dmrs->additional_positions == dmrs_additional_positions::pos3) {
+        CHECK_TRUE(
+            cell_cfg.dmrs_typeA_pos == dmrs_typeA_position::pos2,
+            "PDSCH dmrs-Additional-Position of pos3 is only supported when dmrs-TypeA-Position is equal to pos2");
+      }
+    }
+    HANDLE_ERROR(is_nof_monitored_pdcch_candidates_per_slot_within_limit(cell_cfg));
   }
 
   return {};
@@ -351,7 +502,7 @@ static check_outcome check_ul_config_dedicated(const du_cell_config& cell_cfg)
     const search_space_configuration& ss2 = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp.pdcch_cfg->search_spaces.back();
     const bool                        fallback_dci_format_in_ss2 =
         ss2.is_common_search_space() or
-        not(variant_get<search_space_configuration::ue_specific_dci_format>(ss2.get_monitored_dci_formats()) ==
+        not(std::get<search_space_configuration::ue_specific_dci_format>(ss2.get_monitored_dci_formats()) ==
             search_space_configuration::ue_specific_dci_format::f0_1_and_1_1);
     if (fallback_dci_format_in_ss2) {
       CHECK_TRUE(bwp.pusch_cfg->mcs_table != pusch_mcs_table::qam256,
@@ -386,11 +537,13 @@ static check_outcome check_tdd_ul_dl_config(const du_cell_config& cell_cfg)
   // See TS 38.214, Table 5.1.2.1-1: Valid S and L combinations.
   static const unsigned pdsch_mapping_typeA_min_L_value = 3;
 
-  const pdcch_config_common&            common_pdcch_cfg = cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common;
-  const pdcch_config&                   ded_pdcch_cfg    = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp.pdcch_cfg.value();
-  const optional<coreset_configuration> coreset0         = common_pdcch_cfg.coreset0;
-  const optional<coreset_configuration> common_coreset   = common_pdcch_cfg.common_coreset;
-  const pdcch_type0_css_occasion_pattern1_description ss0_occasion = pdcch_type0_css_occasions_get_pattern1(
+  const pdcch_config_common& common_pdcch_cfg          = cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common;
+  const pdcch_config&        ded_pdcch_cfg             = cell_cfg.ue_ded_serv_cell_cfg.init_dl_bwp.pdcch_cfg.value();
+  const std::optional<coreset_configuration>& coreset0 = common_pdcch_cfg.coreset0;
+  const std::optional<coreset_configuration>& common_coreset = common_pdcch_cfg.common_coreset;
+  CHECK_TRUE(coreset0.has_value(), "CORESET#0 not configured");
+
+  const pdcch_type0_css_occasion_pattern1_description& ss0_occasion = pdcch_type0_css_occasions_get_pattern1(
       pdcch_type0_css_occasion_pattern1_configuration{.is_fr2        = false,
                                                       .ss_zero_index = static_cast<uint8_t>(cell_cfg.searchspace0_idx),
                                                       .nof_symb_coreset = coreset0->duration});
@@ -425,8 +578,8 @@ static check_outcome check_tdd_ul_dl_config(const du_cell_config& cell_cfg)
   // duration for PDSCH allocation in partial slot. Otherwise, it can be used only for PDCCH allocations.
   // NOTE2: We don't support multiple monitoring occasions in a slot belonging to a SearchSpace.
   // TODO: Consider SearchSpace periodicity while validating DL symbols in special slots.
-  optional<unsigned> cs_duration;
-  unsigned           ss_start_symbol_idx;
+  std::optional<unsigned> cs_duration;
+  unsigned                ss_start_symbol_idx;
   // SearchSpaces in Common PDCCH configuration.
   for (const search_space_configuration& ss_cfg : common_pdcch_cfg.search_spaces) {
     cs_duration         = {};

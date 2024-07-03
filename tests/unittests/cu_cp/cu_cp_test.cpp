@@ -26,6 +26,7 @@
 #include "srsran/asn1/ngap/ngap_pdu_contents.h"
 #include "srsran/ngap/ngap_types.h"
 #include "srsran/ran/cu_types.h"
+#include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -54,12 +55,12 @@ TEST_F(cu_cp_test, when_du_connection_not_finished_then_paging_is_not_sent_to_du
 TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_sent_to_du)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif->on_new_message(f1setup_msg);
 
   // Generate Paging
   ngap_message paging_msg = generate_valid_minimal_paging_message();
@@ -73,22 +74,23 @@ TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_sent_to_du)
 TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_only_sent_to_du_with_matching_tac)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif1 = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif1->on_new_message(f1setup_msg);
 
   // Connect second DU
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif2 = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
-  f1ap_message f1setup_msg2 = test_helpers::generate_f1_setup_request(int_to_gnb_du_id(0x12), 6577, 1, 8);
+  f1ap_message f1setup_msg2 =
+      test_helpers::generate_f1_setup_request(int_to_gnb_du_id(0x12), nr_cell_identity::create(6577).value(), 1, 8);
 
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(1)).get_f1ap_message_handler().handle_message(f1setup_msg2);
+  f1c_rx_pdu_notif2->on_new_message(f1setup_msg2);
 
   // Generate Paging
   ngap_message paging_msg = generate_valid_minimal_paging_message();
@@ -102,22 +104,23 @@ TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_only_sent_t
 TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_only_sent_to_du_with_matching_nci)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif1 = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif1->on_new_message(f1setup_msg);
 
   // Connect second DU
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif2 = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
-  f1ap_message f1setup_msg2 = test_helpers::generate_f1_setup_request(int_to_gnb_du_id(0x12), 6577, 1, 7);
+  f1ap_message f1setup_msg2 =
+      test_helpers::generate_f1_setup_request(int_to_gnb_du_id(0x12), nr_cell_identity::create(6577).value(), 1, 7);
 
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(1)).get_f1ap_message_handler().handle_message(f1setup_msg2);
+  f1c_rx_pdu_notif2->on_new_message(f1setup_msg2);
 
   // Generate Paging
   ngap_message paging_msg = generate_valid_minimal_paging_message();
@@ -131,12 +134,12 @@ TEST_F(cu_cp_test, when_valid_paging_message_received_then_paging_is_only_sent_t
 TEST_F(cu_cp_test, when_valid_paging_message_with_optional_values_received_then_paging_is_sent_to_du)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif->on_new_message(f1setup_msg);
 
   // Generate Paging
   ngap_message paging_msg = generate_valid_paging_message();
@@ -150,12 +153,12 @@ TEST_F(cu_cp_test, when_valid_paging_message_with_optional_values_received_then_
 TEST_F(cu_cp_test, when_no_du_for_tac_exists_then_paging_is_not_sent_to_du)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif->on_new_message(f1setup_msg);
 
   // Generate Paging with unknown tac
   ngap_message paging_msg = generate_valid_minimal_paging_message();
@@ -170,12 +173,12 @@ TEST_F(cu_cp_test, when_no_du_for_tac_exists_then_paging_is_not_sent_to_du)
 TEST_F(cu_cp_test, when_assist_data_for_paging_for_unknown_tac_is_included_then_paging_is_not_sent_to_du)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif->on_new_message(f1setup_msg);
 
   // Generate Paging with unknown tac but assist data for paging
   ngap_message paging_msg = generate_valid_paging_message();
@@ -190,12 +193,12 @@ TEST_F(cu_cp_test, when_assist_data_for_paging_for_unknown_tac_is_included_then_
 TEST_F(cu_cp_test, when_invalid_paging_message_received_then_paging_is_not_sent_to_du)
 {
   // Connect DU (note that this creates a DU processor, but the DU is only connected after the F1Setup procedure)
-  this->f1c_gw.request_new_du_connection();
+  f1ap_message_notifier* f1c_rx_pdu_notif = this->f1c_gw.request_new_du_connection();
 
   // Generate F1SetupRequest
   f1ap_message f1setup_msg = test_helpers::generate_f1_setup_request();
   // Pass message to CU-CP
-  cu_cp_obj->get_f1c_handler().get_du(uint_to_du_index(0)).get_f1ap_message_handler().handle_message(f1setup_msg);
+  f1c_rx_pdu_notif->on_new_message(f1setup_msg);
 
   // Generate Paging
   ngap_message paging_msg = generate_invalid_paging_message();
@@ -233,10 +236,10 @@ TEST_F(cu_cp_test, when_ue_level_inactivity_message_received_then_ue_context_rel
   cu_cp_obj->handle_bearer_context_inactivity_notification(inactivity_notification);
 
   // check that the UE Context Release Request was sent to the AMF
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ue_context_release_request);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.ue_context_release_request()->cause.type(),
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.ue_context_release_request()->cause.type(),
             asn1::ngap::cause_c::types::radio_network);
 }
 
@@ -264,7 +267,7 @@ TEST_F(cu_cp_test, when_unsupported_inactivity_message_received_then_ue_context_
   cu_cp_obj->handle_bearer_context_inactivity_notification(inactivity_notification);
 
   // check that the UE Context Release Request was not sent to the AMF
-  ASSERT_NE(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_NE(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ue_context_release_request);
 }
 
@@ -375,13 +378,11 @@ TEST_F(cu_cp_test,
       generate_valid_pdu_session_resource_setup_request_message(amf_ue_id, ran_ue_id, uint_to_pdu_session_id(1)));
 
   // Inject F1AP UE Context Release Complete
-  cu_cp_obj->get_f1c_handler()
-      .get_du(uint_to_du_index(0))
-      .get_f1ap_message_handler()
-      .handle_message(generate_ue_context_release_complete(cu_ue_id, du_ue_id));
+  f1c_gw.get_du(uint_to_du_index(0))
+      .on_new_message(test_helpers::generate_ue_context_release_complete(cu_ue_id, du_ue_id));
 
   // check that the ErrorIndication was sent to the AMF
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::error_ind);
 }
 
@@ -407,16 +408,13 @@ TEST_F(cu_cp_test, when_du_initiated_ue_context_release_received_then_ue_context
   test_preamble_ue_creation(du_index, du_ue_id, cu_ue_id, crnti, amf_ue_id, ran_ue_id);
 
   // Inject UE Context Release Request
-  cu_cp_obj->get_f1c_handler()
-      .get_du(uint_to_du_index(0))
-      .get_f1ap_message_handler()
-      .handle_message(test_helpers::generate_ue_context_release_request(cu_ue_id, du_ue_id));
+  f1c_gw.get_du(du_index).on_new_message(test_helpers::generate_ue_context_release_request(cu_ue_id, du_ue_id));
 
   // Check that the UE Context Release Request was sent to the AMF
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ue_context_release_request);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.ue_context_release_request()->cause.type(),
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.ue_context_release_request()->cause.type(),
             asn1::ngap::cause_c::types_opts::options::radio_network);
 }
 
@@ -440,13 +438,11 @@ TEST_F(
   ASSERT_EQ(cu_cp_obj->get_metrics_handler().request_metrics_report().ues.size(), 1);
 
   // Inject UE Context Release Request
-  cu_cp_obj->get_f1c_handler()
-      .get_du(uint_to_du_index(0))
-      .get_f1ap_message_handler()
-      .handle_message(test_helpers::generate_ue_context_release_request(cu_ue_id, du_ue_id));
+  f1c_gw.get_du(uint_to_du_index(0))
+      .on_new_message(test_helpers::generate_ue_context_release_request(cu_ue_id, du_ue_id));
 
   // Check that the UE Context Release Request was not sent to the AMF
-  ASSERT_NE(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_NE(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ue_context_release_request);
 
   // Check that the Ue Context Release Command was sent to the DU
@@ -455,10 +451,7 @@ TEST_F(
             asn1::f1ap::f1ap_elem_procs_o::init_msg_c::types_opts::ue_context_release_cmd);
 
   // Inject UE Context Release Complete
-  cu_cp_obj->get_f1c_handler()
-      .get_du(uint_to_du_index(0))
-      .get_f1ap_message_handler()
-      .handle_message(generate_ue_context_release_complete(cu_ue_id, du_ue_id));
+  f1c_gw.get_du(uint_to_du_index(0)).on_new_message(generate_ue_context_release_complete(cu_ue_id, du_ue_id));
 
   // Check that the UE was removed
   ASSERT_EQ(cu_cp_obj->get_metrics_handler().request_metrics_report().ues.size(), 0);
@@ -493,7 +486,7 @@ TEST_F(cu_cp_test, when_handover_request_received_then_handover_notify_is_sent)
       generate_bearer_context_setup_response(int_to_gnb_cu_cp_ue_e1ap_id(0), int_to_gnb_cu_up_ue_e1ap_id(0));
   cu_cp_obj->get_e1_handler()
       .get_cu_up(uint_to_cu_up_index(0))
-      .get_e1ap_message_handler()
+      .get_message_handler()
       .handle_message(bearer_ctxt_setup_resp);
 
   // Check that the UE Context Setup Request Message was sent to the DU
@@ -505,7 +498,7 @@ TEST_F(cu_cp_test, when_handover_request_received_then_handover_notify_is_sent)
   // Inject F1AP UE Context Setup Response
   f1ap_message ue_ctxt_setup_resp =
       generate_ue_context_setup_response(int_to_gnb_cu_ue_f1ap_id(0), int_to_gnb_du_ue_f1ap_id(0));
-  cu_cp_obj->get_f1c_handler().get_du(du_index).get_f1ap_message_handler().handle_message(ue_ctxt_setup_resp);
+  f1c_gw.get_du(du_index).on_new_message(ue_ctxt_setup_resp);
 
   // Check that the Bearer Context Modification Request Message was sent to the CU-UP
   ASSERT_EQ(e1ap_gw.last_tx_pdus(0).back().pdu.type(), asn1::e1ap::e1ap_pdu_c::types_opts::options::init_msg);
@@ -518,26 +511,26 @@ TEST_F(cu_cp_test, when_handover_request_received_then_handover_notify_is_sent)
       generate_bearer_context_modification_response(int_to_gnb_cu_cp_ue_e1ap_id(0), int_to_gnb_cu_up_ue_e1ap_id(0));
   cu_cp_obj->get_e1_handler()
       .get_cu_up(uint_to_cu_up_index(0))
-      .get_e1ap_message_handler()
+      .get_message_handler()
       .handle_message(bearer_ctxt_mod_resp);
 
   // Check that the Handover Request Ack was sent to the AMF
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.type(),
-            asn1::ngap::ngap_pdu_c::types_opts::options::successful_outcome);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.type().value,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::successful_outcome);
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.type().value,
             asn1::ngap::ngap_elem_procs_o::successful_outcome_c::types_opts::ho_request_ack);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.successful_outcome().value.ho_request_ack()->amf_ue_ngap_id,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.successful_outcome().value.ho_request_ack()->amf_ue_ngap_id,
             amf_ue_id_to_uint(amf_ue_id));
 
   // Inject RRC Reconfiguration Complete with transaction_id=0
-  f1ap_message rrc_recfg_complete = generate_ul_rrc_message_transfer(
-      int_to_gnb_cu_ue_f1ap_id(0), int_to_gnb_du_ue_f1ap_id(0), srb_id_t::srb1, make_byte_buffer("800008004e17dae3"));
-  cu_cp_obj->get_f1c_handler().get_du(du_index).get_f1ap_message_handler().handle_message(rrc_recfg_complete);
+  f1ap_message rrc_recfg_complete = generate_ul_rrc_message_transfer(int_to_gnb_cu_ue_f1ap_id(0),
+                                                                     int_to_gnb_du_ue_f1ap_id(0),
+                                                                     srb_id_t::srb1,
+                                                                     make_byte_buffer("800008004e17dae3").value());
+  f1c_gw.get_du(du_index).on_new_message(rrc_recfg_complete);
 
   // Check that the Handover Notify was sent to the AMF
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
             asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ho_notify);
-  ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.ho_notify()->amf_ue_ngap_id,
-            amf_ue_id_to_uint(amf_ue_id));
+  ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.ho_notify()->amf_ue_ngap_id, amf_ue_id_to_uint(amf_ue_id));
 }

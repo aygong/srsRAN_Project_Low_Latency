@@ -40,6 +40,8 @@ from retina.protocol.gnb_pb2_grpc import GNBStub
 
 from .steps.stub import FIVEGC_STARTUP_TIMEOUT, GNB_STARTUP_TIMEOUT, handle_start_error, stop
 
+_POD_ERROR = "Error creating the pod"
+
 
 @mark.parametrize(
     "extra_config, nof_ant",
@@ -80,18 +82,26 @@ def test_ue(
     """
 
     # Configuration
-    retina_data.test_config = {
-        "gnb": {
-            "parameters": {
-                "gnb_id": 1,
-                "log_level": "warning",
-                "pcap": False,
+    with tempfile.NamedTemporaryFile(mode="w+") as tmp_file:
+        tmp_file.write(" ")  # Make it not empty to overwrite default one
+        tmp_file.flush()
+
+        retina_data.test_config = {
+            "gnb": {
+                "parameters": {
+                    "gnb_id": 1,
+                    "log_level": "warning",
+                    "pcap": False,
+                },
+                "templates": {
+                    "cu": str(Path(__file__).joinpath("../test_mode/config_ue.yml").resolve()),
+                    "du": tmp_file.name,
+                    "ru": tmp_file.name,
+                },
             },
-            "templates": {"cell": str(Path(__file__).joinpath("../test_mode/config_ue.yml").resolve())},
-        },
-    }
-    retina_manager.parse_configuration(retina_data.test_config)
-    retina_manager.push_all_config()
+        }
+        retina_manager.parse_configuration(retina_data.test_config)
+        retina_manager.push_all_config()
 
     configure_artifacts(
         retina_data=retina_data,
@@ -141,6 +151,10 @@ def test_ue(
 
 
 @mark.test_mode
+@mark.flaky(
+    reruns=2,
+    only_rerun=[_POD_ERROR],
+)
 def test_ru(
     # Retina
     retina_manager: RetinaTestManager,
@@ -155,6 +169,10 @@ def test_ru(
 
 
 @mark.test_mode_not_crash
+@mark.flaky(
+    reruns=2,
+    only_rerun=[_POD_ERROR],
+)
 def test_ru_not_crash(
     # Retina
     retina_manager: RetinaTestManager,
@@ -199,7 +217,8 @@ def _test_ru(
                     "pcap": False,
                 },
                 "templates": {
-                    "cell": str(Path(__file__).joinpath("../test_mode/config_ru.yml").resolve()),
+                    "cu": str(Path(__file__).joinpath("../test_mode/config_ru.yml").resolve()),
+                    "du": tmp_file.name,
                     "ru": tmp_file.name,
                 },
             },

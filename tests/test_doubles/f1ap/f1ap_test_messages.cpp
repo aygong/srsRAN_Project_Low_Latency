@@ -33,11 +33,11 @@ using namespace srsran;
 using namespace asn1::f1ap;
 
 gnb_du_served_cells_item_s
-srsran::test_helpers::generate_served_cells_item(unsigned nrcell_id, pci_t nrpci, unsigned tac)
+srsran::test_helpers::generate_served_cells_item(nr_cell_identity nci, pci_t nrpci, unsigned tac)
 {
   gnb_du_served_cells_item_s served_cells_item;
   served_cells_item.served_cell_info.nr_cgi.plmn_id.from_string("00f110");
-  served_cells_item.served_cell_info.nr_cgi.nr_cell_id.from_number(nrcell_id);
+  served_cells_item.served_cell_info.nr_cgi.nr_cell_id.from_number(nci.value());
   served_cells_item.served_cell_info.nr_pci              = nrpci;
   served_cells_item.served_cell_info.five_gs_tac_present = true;
   served_cells_item.served_cell_info.five_gs_tac.from_number(tac);
@@ -69,7 +69,7 @@ srsran::test_helpers::generate_served_cells_item(unsigned nrcell_id, pci_t nrpci
 }
 
 f1ap_message
-srsran::test_helpers::generate_f1_setup_request(gnb_du_id_t gnb_du_id, unsigned nrcell_id, pci_t pci, unsigned tac)
+srsran::test_helpers::generate_f1_setup_request(gnb_du_id_t gnb_du_id, nr_cell_identity nci, pci_t pci, unsigned tac)
 {
   f1ap_message msg;
   msg.pdu.set_init_msg();
@@ -84,13 +84,12 @@ srsran::test_helpers::generate_f1_setup_request(gnb_du_id_t gnb_du_id, unsigned 
   setup_req->gnb_du_served_cells_list_present = true;
   setup_req->gnb_du_served_cells_list.resize(1);
   setup_req->gnb_du_served_cells_list[0].load_info_obj(ASN1_F1AP_ID_GNB_DU_SERVED_CELLS_ITEM);
-  setup_req->gnb_du_served_cells_list[0].value().gnb_du_served_cells_item() =
-      generate_served_cells_item(nrcell_id, pci, tac);
+  setup_req->gnb_du_served_cells_list[0].value().gnb_du_served_cells_item() = generate_served_cells_item(nci, pci, tac);
 
   return msg;
 }
 
-f1ap_message srsran::test_helpers::create_f1_setup_response(const f1ap_message& f1_setup_request)
+f1ap_message srsran::test_helpers::generate_f1_setup_response(const f1ap_message& f1_setup_request)
 {
   srsran_assert(f1_setup_request.pdu.type().value == f1ap_pdu_c::types_opts::init_msg, "Expected F1 setup request");
   srsran_assert(f1_setup_request.pdu.init_msg().value.type().value ==
@@ -116,6 +115,34 @@ f1ap_message srsran::test_helpers::create_f1_setup_response(const f1ap_message& 
   return resp;
 }
 
+f1ap_message srsran::test_helpers::generate_f1_removal_request(unsigned transaction_id)
+{
+  f1ap_message req;
+  req.pdu.set_init_msg().load_info_obj(ASN1_F1AP_ID_F1_REMOVAL);
+  f1_removal_request_s& ie = req.pdu.init_msg().value.f1_removal_request();
+
+  ie->resize(1);
+  (*ie)[0].load_info_obj(ASN1_F1AP_ID_TRANSACTION_ID);
+  (*ie)[0]->transaction_id() = transaction_id;
+
+  return req;
+}
+
+f1ap_message srsran::test_helpers::generate_f1_removal_response(const f1ap_message& f1_removal_request)
+{
+  srsran_assert(f1_removal_request.pdu.type().value == f1ap_pdu_c::types_opts::init_msg, "Expected F1 removal request");
+  srsran_assert(f1_removal_request.pdu.init_msg().value.type().value ==
+                    f1ap_elem_procs_o::init_msg_c::types_opts::f1_removal_request,
+                "Expected F1 removal request");
+
+  f1ap_message resp;
+  resp.pdu.set_successful_outcome().load_info_obj(ASN1_F1AP_ID_F1_REMOVAL);
+  f1_removal_resp_s& ie = resp.pdu.successful_outcome().value.f1_removal_resp();
+  ie->transaction_id    = (*f1_removal_request.pdu.init_msg().value.f1_removal_request())[0]->transaction_id();
+
+  return resp;
+}
+
 static drbs_to_be_setup_item_s generate_drb_am_setup_item(drb_id_t drbid)
 {
   using namespace asn1::f1ap;
@@ -135,7 +162,9 @@ static drbs_to_be_setup_item_s generate_drb_am_setup_item(drb_id_t drbid)
       qos_flow_level_qos_params_s::reflective_qos_attribute_opts::subject_to;
   drb_info.snssai.sst.from_string("01");
   drb_info.snssai.sd.from_string("0027db");
-  drb.rlc_mode.value = rlc_mode_opts::rlc_am;
+  drb.rlc_mode.value         = rlc_mode_opts::rlc_am;
+  drb.ie_exts_present        = true;
+  drb.ie_exts.dl_pdcp_sn_len = pdcp_sn_len_opts::twelve_bits;
   drb.ul_up_tnl_info_to_be_setup_list.resize(1);
   auto& gtp_tun = drb.ul_up_tnl_info_to_be_setup_list[0].ul_up_tnl_info.set_gtp_tunnel();
   auto  addr    = transport_layer_address::create_from_string("127.0.0.1");
@@ -145,9 +174,9 @@ static drbs_to_be_setup_item_s generate_drb_am_setup_item(drb_id_t drbid)
   return drb;
 }
 
-f1ap_message srsran::test_helpers::create_ue_context_setup_request(gnb_cu_ue_f1ap_id_t           cu_ue_id,
-                                                                   optional<gnb_du_ue_f1ap_id_t> du_ue_id,
-                                                                   const std::vector<drb_id_t>&  drbs_to_setup)
+f1ap_message srsran::test_helpers::create_ue_context_setup_request(gnb_cu_ue_f1ap_id_t                cu_ue_id,
+                                                                   std::optional<gnb_du_ue_f1ap_id_t> du_ue_id,
+                                                                   const std::vector<drb_id_t>&       drbs_to_setup)
 {
   using namespace asn1::f1ap;
   f1ap_message msg;
@@ -199,7 +228,8 @@ f1ap_message srsran::test_helpers::create_init_ul_rrc_message_transfer(gnb_du_ue
   init_ul_rrc_msg_transfer_s& init_ul_rrc = init_ul_rrc_msg.pdu.init_msg().value.init_ul_rrc_msg_transfer();
   init_ul_rrc->gnb_du_ue_f1ap_id          = (unsigned)du_ue_id;
 
-  init_ul_rrc->nr_cgi.nr_cell_id.from_string("000000000000000000000001100110110000"); // 6576 in decimal
+  nr_cell_identity nci = nr_cell_identity::create(gnb_id_t{411, 22}, 0).value();
+  init_ul_rrc->nr_cgi.nr_cell_id.from_number(nci.value());
   init_ul_rrc->nr_cgi.plmn_id.from_string("00f110");
   init_ul_rrc->c_rnti = to_value(crnti);
 
@@ -223,6 +253,24 @@ f1ap_message srsran::test_helpers::create_init_ul_rrc_message_transfer(gnb_du_ue
   }
 
   return init_ul_rrc_msg;
+}
+
+f1ap_message srsran::test_helpers::create_dl_rrc_message_transfer(gnb_du_ue_f1ap_id_t du_ue_id,
+                                                                  gnb_cu_ue_f1ap_id_t cu_ue_id,
+                                                                  srb_id_t            srb_id,
+                                                                  byte_buffer         rrc_container)
+{
+  f1ap_message msg;
+
+  msg.pdu.set_init_msg().load_info_obj(ASN1_F1AP_ID_DL_RRC_MSG_TRANSFER);
+  auto& dlmsg = *msg.pdu.init_msg().value.dl_rrc_msg_transfer();
+
+  dlmsg.gnb_du_ue_f1ap_id = (unsigned)du_ue_id;
+  dlmsg.gnb_cu_ue_f1ap_id = (unsigned)cu_ue_id;
+  dlmsg.srb_id            = (uint8_t)srb_id;
+  dlmsg.rrc_container     = std::move(rrc_container);
+
+  return msg;
 }
 
 f1ap_message srsran::test_helpers::create_ul_rrc_message_transfer(gnb_du_ue_f1ap_id_t du_ue_id,

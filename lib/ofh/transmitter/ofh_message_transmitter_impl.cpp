@@ -59,6 +59,8 @@ void message_transmitter_impl::enqueue_messages_into_burst(
     return;
   }
 
+  srsran_assert(frame_burst.size() + frame_buffers.size() <= frame_burst.capacity(), "Frame burst vector is too small");
+
   for (const auto& frame : frame_buffers) {
     frame_burst.emplace_back(frame->data());
   }
@@ -98,9 +100,9 @@ void message_transmitter_impl::on_new_symbol(slot_symbol_point symbol_point)
   enqueue_messages_into_burst(interval_up, frame_burst);
 
   // Transmit the data.
-  trace_point tp_dpdk = ofh_tracer.now();
+  trace_point tp_ether = ofh_tracer.now();
   transmit_frame_burst(frame_burst);
-  ofh_tracer << trace_event("ofh_dpdk_tx", tp_dpdk);
+  ofh_tracer << trace_event("ofh_ether_tx", tp_ether);
 
   // Clear sent buffers.
   pool->clear_sent_frame_buffers(interval_cp_dl);

@@ -48,11 +48,11 @@ public:
 
   size_t nof_cells() const { return cells.size(); }
 
-  void slot_indication();
+  void slot_indication(slot_point sl);
 
-  alloc_outcome allocate_dl_grant(const ue_pdsch_grant& grant) override;
+  alloc_result allocate_dl_grant(const ue_pdsch_grant& grant) override;
 
-  alloc_outcome allocate_ul_grant(const ue_pusch_grant& grant) override;
+  alloc_result allocate_ul_grant(const ue_pusch_grant& grant) override;
 
 private:
   struct cell_t {
@@ -80,6 +80,11 @@ private:
   srslog::basic_logger& logger;
 
   slotted_array<cell_t, MAX_NOF_DU_CELLS> cells;
+
+  // List of slots at which there is no PDSCH space for further allocations.
+  static_vector<slot_point, SCHEDULER_MAX_K0> slots_with_no_pdsch_space;
+  // List of slots at which there is no PUSCH space for further allocations.
+  static_vector<slot_point, SCHEDULER_MAX_K2> slots_with_no_pusch_space;
 
   // Number of allocation attempts for DL and UL in the given slot.
   unsigned dl_attempts_count = 0, ul_attempts_count = 0;

@@ -29,13 +29,11 @@
 #include "srsran/adt/optional.h"
 #include "srsran/adt/span.h"
 #include "srsran/ran/pci.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/srsran_assert.h"
 #include "fmt/format.h"
 #include <array>
 #include <cstdint>
-#include <iomanip>
-#include <iostream>
-#include <sstream>
 
 namespace srsran {
 namespace security {
@@ -139,11 +137,11 @@ using supported_algorithms             = std::array<bool, nof_supported_algos>;
 enum class sec_domain { rrc = 0, up = 1 };
 
 struct sec_128_as_config {
-  sec_domain                    domain;
-  optional<sec_128_key>         k_128_int; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
-  sec_128_key                   k_128_enc;
-  optional<integrity_algorithm> integ_algo; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
-  ciphering_algorithm           cipher_algo;
+  sec_domain                         domain;
+  std::optional<sec_128_key>         k_128_int; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
+  sec_128_key                        k_128_enc;
+  std::optional<integrity_algorithm> integ_algo; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
+  ciphering_algorithm                cipher_algo;
 
   bool operator==(const sec_128_as_config& rhs) const
   {
@@ -167,11 +165,11 @@ struct sec_128_as_config {
 };
 
 struct sec_as_config {
-  sec_domain                    domain;
-  optional<sec_key>             k_int; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
-  sec_key                       k_enc;
-  optional<integrity_algorithm> integ_algo; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
-  ciphering_algorithm           cipher_algo;
+  sec_domain                         domain;
+  std::optional<sec_key>             k_int; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
+  sec_key                            k_enc;
+  std::optional<integrity_algorithm> integ_algo; // Optional in E1AP, see TS 38.463 Sec. 9.4.5
+  ciphering_algorithm                cipher_algo;
 };
 
 struct sec_selected_algos {
@@ -222,9 +220,9 @@ struct security_context {
 
   bool select_algorithms(preferred_integrity_algorithms pref_inte_list, preferred_ciphering_algorithms pref_ciph_list);
   void generate_as_keys();
-  sec_as_config     get_as_config(sec_domain domain);
-  sec_128_as_config get_128_as_config(sec_domain domain);
-  void              horizontal_key_derivation(pci_t target_pci, unsigned target_ssb_arfcn);
+  [[nodiscard]] sec_as_config     get_as_config(sec_domain domain) const;
+  [[nodiscard]] sec_128_as_config get_128_as_config(sec_domain domain) const;
+  void                            horizontal_key_derivation(pci_t target_pci, unsigned target_ssb_arfcn);
 };
 
 /******************************************************************************
@@ -247,15 +245,6 @@ inline void zero_tailing_bits(uint8_t& tail_byte, uint8_t length_bits)
 {
   uint8_t bits = (8 - (length_bits & 0x07)) & 0x07;
   tail_byte &= (uint8_t)(0xff << bits);
-}
-
-inline std::string sec_as_key_to_string(const sec_key& key)
-{
-  std::stringstream ss;
-  for (auto val : key) {
-    ss << std::hex << std::setw(2) << std::setfill('0') << (int)val;
-  }
-  return ss.str();
 }
 
 /******************************************************************************

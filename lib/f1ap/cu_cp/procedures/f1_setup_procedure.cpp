@@ -22,12 +22,13 @@
 
 #include "f1_setup_procedure.h"
 #include "../../common/asn1_helpers.h"
-#include "../du_context.h"
 #include "../f1ap_asn1_converters.h"
 #include "srsran/adt/expected.h"
 #include "srsran/asn1/f1ap/f1ap_pdu_contents.h"
 #include "srsran/f1ap/common/f1ap_message.h"
 #include "srsran/f1ap/cu_cp/du_setup_notifier.h"
+#include "srsran/f1ap/cu_cp/f1ap_du_context.h"
+#include "srsran/ran/bcd_helper.h"
 #include "srsran/ran/cause/f1ap_cause.h"
 
 using namespace srsran;
@@ -39,10 +40,10 @@ validate_f1_setup_request(const asn1::f1ap::f1_setup_request_s& request)
   asn1::f1ap::cause_c cause;
   cause.set_protocol().value = asn1::f1ap::cause_protocol_opts::unspecified;
   if (not request->gnb_du_name_present) {
-    return {std::make_pair(cause, "Missing gNB-DU name")};
+    return make_unexpected(std::make_pair(cause, "Missing gNB-DU name"));
   }
   if (not request->gnb_du_served_cells_list_present or request->gnb_du_served_cells_list.size() == 0) {
-    return {std::make_pair(cause, "DU has no served cells")};
+    return make_unexpected(std::make_pair(cause, "DU has no served cells"));
   }
 
   return {};
@@ -63,13 +64,13 @@ du_setup_request srsran::srs_cu_cp::create_du_setup_request(const asn1::f1ap::f1
   // GNB DU served cells list
   if (asn1_request->gnb_du_served_cells_list_present) {
     for (const auto& asn1_served_cell_item : asn1_request->gnb_du_served_cells_list) {
-      auto& asn1_served_cell = asn1_served_cell_item.value().gnb_du_served_cells_item();
+      const auto& asn1_served_cell = asn1_served_cell_item.value().gnb_du_served_cells_item();
 
       cu_cp_du_served_cells_item served_cell;
 
       // served cell info
       // NR CGI
-      served_cell.served_cell_info.nr_cgi = cgi_from_asn1(asn1_served_cell.served_cell_info.nr_cgi);
+      served_cell.served_cell_info.nr_cgi = cgi_from_asn1(asn1_served_cell.served_cell_info.nr_cgi).value();
 
       // NR PCI
       served_cell.served_cell_info.nr_pci = asn1_served_cell.served_cell_info.nr_pci;
@@ -143,12 +144,12 @@ static f1ap_message create_f1_setup_response(const asn1::f1ap::f1_setup_request_
   resp->gnb_cu_rrc_version.latest_rrc_version.from_number(cu_response.gnb_cu_rrc_version);
 
   // activate all DU cells
-  if (cu_response.cells_to_be_activ_list.size() > 0) {
+  if (not cu_response.cells_to_be_activ_list.empty()) {
     resp->cells_to_be_activ_list_present = true;
     for (const auto& du_cell : cu_response.cells_to_be_activ_list) {
       asn1::protocol_ie_single_container_s<asn1::f1ap::cells_to_be_activ_list_item_ies_o> resp_cell;
-      resp_cell->cells_to_be_activ_list_item().nr_cgi.plmn_id.from_number(plmn_string_to_bcd(du_cell.nr_cgi.plmn));
-      resp_cell->cells_to_be_activ_list_item().nr_cgi.nr_cell_id.from_number(du_cell.nr_cgi.nci);
+      resp_cell->cells_to_be_activ_list_item().nr_cgi.plmn_id = du_cell.nr_cgi.plmn_id.to_bytes();
+      resp_cell->cells_to_be_activ_list_item().nr_cgi.nr_cell_id.from_number(du_cell.nr_cgi.nci.value());
 
       if (du_cell.nr_pci.has_value()) {
         resp_cell->cells_to_be_activ_list_item().nr_pci_present = true;
@@ -177,21 +178,22 @@ static f1ap_message create_f1_setup_reject(const asn1::f1ap::f1_setup_request_s&
 }
 
 void srsran::srs_cu_cp::handle_f1_setup_procedure(const asn1::f1ap::f1_setup_request_s& request,
-                                                  du_context&                           du_ctxt,
+                                                  f1ap_du_context&                      du_ctxt,
                                                   f1ap_message_notifier&                pdu_notifier,
                                                   du_setup_notifier&                    du_setup_notif,
                                                   srslog::basic_logger&                 logger)
 {
   // Message content validation.
   auto msgerr = validate_f1_setup_request(request);
-  if (msgerr.is_error()) {
-    logger.warning("Rejecting F1 Setup Request. Cause: {}", msgerr.error().second);
+  if (not msgerr.has_value()) {
+    logger.info("Rejecting F1 Setup Request. Cause: {}", msgerr.error().second);
     pdu_notifier.on_new_message(create_f1_setup_reject(request, msgerr.error().first));
     return;
   }
 
-  du_ctxt.du_id   = (gnb_du_id_t)request->gnb_du_id;
-  du_ctxt.du_name = request->gnb_du_name_present ? request->gnb_du_name.to_string() : "unnamed";
+  du_ctxt.gnb_du_id          = (gnb_du_id_t)request->gnb_du_id;
+  du_ctxt.gnb_du_name        = request->gnb_du_name_present ? request->gnb_du_name.to_string() : "unnamed";
+  du_ctxt.gnb_du_rrc_version = request->gnb_du_rrc_version.latest_rrc_version.to_number();
 
   // Request DU setup to CU-CP.
   du_setup_request du_req          = create_du_setup_request(request);
@@ -201,12 +203,12 @@ void srsran::srs_cu_cp::handle_f1_setup_procedure(const asn1::f1ap::f1_setup_req
   f1ap_message f1ap_msg;
   if (not request_outcome.is_accepted()) {
     // Failed to setup DU case.
-    auto& fail_resp = variant_get<du_setup_result::rejected>(request_outcome.result);
-    logger.warning("Rejecting F1 Setup Request. Cause: {}", fail_resp.cause_str);
+    auto& fail_resp = std::get<du_setup_result::rejected>(request_outcome.result);
+    logger.info("Rejecting F1 Setup Request. Cause: {}", fail_resp.cause_str);
     f1ap_msg = create_f1_setup_reject(request, cause_to_asn1(fail_resp.cause));
   } else {
     // DU has been accepted.
-    f1ap_msg = create_f1_setup_response(request, variant_get<du_setup_result::accepted>(request_outcome.result));
+    f1ap_msg = create_f1_setup_response(request, std::get<du_setup_result::accepted>(request_outcome.result));
   }
 
   // Send F1AP PDU to F1-C.

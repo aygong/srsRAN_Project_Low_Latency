@@ -36,7 +36,7 @@ f1ap_du_ue_context_setup_procedure::f1ap_du_ue_context_setup_procedure(
     f1ap_du_ue_manager&                           ue_mng_,
     f1ap_du_configurator&                         du_mng_,
     du_ue_index_t                                 ue_index_) :
-  msg(msg_), ue_mng(ue_mng_), du_mng(du_mng_), ue_index(ue_index_), logger(srslog::fetch_basic_logger("F1AP-DU"))
+  msg(msg_), ue_mng(ue_mng_), du_mng(du_mng_), ue_index(ue_index_), logger(srslog::fetch_basic_logger("DU-F1"))
 {
 }
 
@@ -79,6 +79,9 @@ void f1ap_du_ue_context_setup_procedure::operator()(coro_context<async_task<void
 
     // Save allocated C-RNTI for created UE.
     ue->context.rnti = du_ue_create_response->crnti;
+
+    // Set that the UE has a pending configuration (provided by the ReconfigWithSync).
+    ue->context.rrc_state = f1ap_ue_context::ue_rrc_state::config_pending;
   }
 
   if (ue->context.gnb_cu_ue_f1ap_id == gnb_cu_ue_f1ap_id_t::invalid) {

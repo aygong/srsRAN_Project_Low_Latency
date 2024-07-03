@@ -21,23 +21,21 @@
  */
 
 #include "rrc_du_impl.h"
-#include "../ran/gnb_format.h"
 #include "ue/rrc_measurement_types_asn1_converters.h"
+#include "ue/rrc_ue_helpers.h"
 #include "srsran/asn1/rrc_nr/cell_group_config.h"
+#include "srsran/asn1/rrc_nr/dl_ccch_msg.h"
 #include "srsran/cu_cp/cu_cp_types.h"
-#include "srsran/ran/nr_cgi_helpers.h"
 
 using namespace srsran;
 using namespace srs_cu_cp;
 using namespace asn1::rrc_nr;
 
 rrc_du_impl::rrc_du_impl(const rrc_cfg_t&                    cfg_,
-                         rrc_ue_du_processor_notifier&       rrc_ue_du_proc_notif_,
                          rrc_ue_nas_notifier&                nas_notif_,
                          rrc_ue_control_notifier&            ngap_ctrl_notif_,
                          rrc_du_measurement_config_notifier& meas_config_notifier_) :
   cfg(cfg_),
-  rrc_ue_du_proc_notifier(rrc_ue_du_proc_notif_),
   nas_notifier(nas_notif_),
   ngap_ctrl_notifier(ngap_ctrl_notif_),
   meas_config_notifier(meas_config_notifier_),
@@ -110,7 +108,15 @@ bool rrc_du_impl::handle_served_cell_list(const std::vector<cu_cp_du_served_cell
   return true;
 }
 
-rrc_ue_interface* rrc_du_impl::add_ue(up_resource_manager& resource_mng, const rrc_ue_creation_message& msg)
+byte_buffer rrc_du_impl::get_rrc_reject()
+{
+  // pack RRC Reconfig
+  dl_ccch_msg_s dl_ccch_msg;
+  dl_ccch_msg.msg.set_c1().set_rrc_reject().crit_exts.set_rrc_reject();
+  return pack_into_pdu(dl_ccch_msg, "RRCReject");
+}
+
+rrc_ue_interface* rrc_du_impl::add_ue(const rrc_ue_creation_message& msg)
 {
   // If the DU to CU container is missing, assume the DU can't serve the UE, so the CU-CP should reject the UE, see
   // TS 38.473 section 8.4.1.2.
@@ -135,8 +141,6 @@ rrc_ue_interface* rrc_du_impl::add_ue(up_resource_manager& resource_mng, const r
   rrc_ue_cfg_t ue_cfg                   = {};
   ue_cfg.force_reestablishment_fallback = cfg.force_reestablishment_fallback;
   ue_cfg.rrc_procedure_timeout_ms       = cfg.rrc_procedure_timeout_ms;
-  ue_cfg.int_algo_pref_list             = cfg.int_algo_pref_list;
-  ue_cfg.enc_algo_pref_list             = cfg.enc_algo_pref_list;
   ue_cfg.meas_timings                   = cell_info_db.at(msg.cell.cgi.nci).meas_timings;
 
   // Copy RRC cell and add SSB ARFCN.
@@ -144,19 +148,17 @@ rrc_ue_interface* rrc_du_impl::add_ue(up_resource_manager& resource_mng, const r
   rrc_cell.ssb_arfcn        = ue_cfg.meas_timings.front().freq_and_timing.value().carrier_freq;
 
   auto res = ue_db.emplace(ue_index,
-                           std::make_unique<rrc_ue_impl>(resource_mng,
-                                                         rrc_ue_du_proc_notifier,
-                                                         *msg.f1ap_pdu_notifier,
+                           std::make_unique<rrc_ue_impl>(*msg.f1ap_pdu_notifier,
                                                          nas_notifier,
                                                          ngap_ctrl_notifier,
                                                          *msg.rrc_ue_cu_cp_notifier,
                                                          *msg.measurement_notifier,
+                                                         *msg.cu_cp_ue_notifier,
                                                          msg.ue_index,
                                                          msg.c_rnti,
                                                          rrc_cell,
                                                          ue_cfg,
                                                          msg.du_to_cu_container.copy(),
-                                                         *msg.ue_task_sched,
                                                          msg.rrc_context));
 
   if (res.second) {
@@ -168,11 +170,14 @@ rrc_ue_interface* rrc_du_impl::add_ue(up_resource_manager& resource_mng, const r
 
 void rrc_du_impl::remove_ue(ue_index_t ue_index)
 {
-  if (ue_db.find(ue_index) == ue_db.end()) {
+  auto ue_it = ue_db.find(ue_index);
+  if (ue_it == ue_db.end()) {
     logger.warning("ue={}: Can't remove UE. Cause: UE not found", ue_index);
     return;
   }
-  ue_db.erase(ue_index);
+
+  // Delete RRC UE.
+  ue_db.erase(ue_it);
 }
 
 void rrc_du_impl::release_ues()

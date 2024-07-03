@@ -345,14 +345,14 @@ void pusch_decoder_impl::fork_codeblock_task(unsigned cb_id)
     }
 
     // Try to decode.
-    optional<unsigned> nof_iters = decoder_pool->get().decode(message,
-                                                              rm_buffer,
-                                                              cb_llrs,
-                                                              current_config.new_data,
-                                                              block_crc->get_generator_poly(),
-                                                              current_config.use_early_stop,
-                                                              current_config.nof_ldpc_iterations,
-                                                              cb_meta);
+    std::optional<unsigned> nof_iters = decoder_pool->get().decode(message,
+                                                                   rm_buffer,
+                                                                   cb_llrs,
+                                                                   current_config.new_data,
+                                                                   block_crc->get_generator_poly(),
+                                                                   current_config.use_early_stop,
+                                                                   current_config.nof_ldpc_iterations,
+                                                                   cb_meta);
 
     if (nof_iters.has_value()) {
       // If successful decoding, flag the CRC, record number of iterations and copy bits to the TB buffer.
@@ -399,7 +399,7 @@ void pusch_decoder_impl::join_and_notify()
   stats.ldpc_decoder_stats.reset();
 
   // Calculate statistics.
-  optional<unsigned> cb_nof_iter = cb_stats.try_pop();
+  std::optional<unsigned> cb_nof_iter = cb_stats.try_pop();
   while (cb_nof_iter.has_value()) {
     stats.ldpc_decoder_stats.update(cb_nof_iter.value());
     cb_nof_iter = cb_stats.try_pop();
@@ -437,9 +437,6 @@ void pusch_decoder_impl::join_and_notify()
 
   // In case there are multiple codeblocks and at least one has a corrupted codeblock CRC, nothing to do.
 
-  // Finally report decoding result.
-  result_notifier->on_sch_data(stats);
-
   // Transition back to idle.
   internal_states previous_state = current_state.exchange(internal_states::idle);
   srsran_assert((previous_state == internal_states::decoding) || (previous_state == internal_states::decoded),
@@ -447,6 +444,9 @@ void pusch_decoder_impl::join_and_notify()
                 to_string(internal_states::decoding),
                 to_string(internal_states::decoded),
                 to_string(previous_state));
+
+  // Finally report decoding result.
+  result_notifier->on_sch_data(stats);
 }
 
 unsigned pusch_decoder_impl::concatenate_codeblocks()

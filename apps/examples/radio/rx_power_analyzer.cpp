@@ -33,7 +33,6 @@
 /// useful to plot the actual RF gain curve.
 ///
 /// The RX measurements are displayed upon completion of the sweep, and can optionally be written into a CSV file.
-/// \cond
 
 #include "radio_notifier_sample.h"
 #include "srsran/gateways/baseband/baseband_gateway_receiver.h"
@@ -44,16 +43,16 @@
 #include "srsran/support/complex_normal_random.h"
 #include "srsran/support/executors/task_worker.h"
 #include "srsran/support/file_sink.h"
-#include <csignal>
+#include "srsran/support/signal_handling.h"
 #include <getopt.h>
 #include <random>
 
 using namespace srsran;
 
-// Describes the analysis configuration.
-static std::string              results_filename     = "";
+/// Describes the analysis configuration.
+static std::string              results_filename;
 static double                   step_time_s          = 1;
-static std::string              log_level            = "info";
+static srslog::basic_levels     log_level            = srslog::basic_levels::info;
 static std::string              driver_name          = "uhd";
 static std::string              device_arguments     = "type=b200";
 static std::vector<std::string> tx_channel_arguments = {};
@@ -70,17 +69,18 @@ static float                    avg_tx_power_dBFS    = -12.0F;
 
 static radio_configuration::over_the_wire_format otw_format = radio_configuration::over_the_wire_format::DEFAULT;
 
-// Measurement point information, containing the Rx gain, RF port number and the mean square value of the samples
-// relative to full scale (in dBFS).
+/// Measurement point information, containing the Rx gain, RF port number and the mean square value of the samples
+/// relative to full scale (in dBFS).
 using result_type = std::tuple<float, unsigned, float>;
 
 static std::vector<result_type> measurement_results;
 
 /// Set to true to stop.
-static std::atomic<bool>       stop  = {false};
-std::unique_ptr<radio_session> radio = nullptr;
+static std::atomic<bool>              stop  = {true};
+static std::unique_ptr<radio_session> radio = nullptr;
 
-static void signal_handler(int sig)
+/// Function to call when the application is interrupted.
+static void interrupt_signal_handler()
 {
   if (radio != nullptr) {
     radio->stop();
@@ -88,7 +88,13 @@ static void signal_handler(int sig)
   stop = true;
 }
 
-static void usage(std::string prog)
+/// Function to call when the application is going to be forcefully shutdown.
+static void cleanup_signal_handler()
+{
+  srslog::flush();
+}
+
+static void usage(std::string_view prog)
 {
   fmt::print("Usage: {} [-D time] [-v level] [-o file name]\n", prog);
   fmt::print("\t-d Driver name. [Default {}]\n", driver_name);
@@ -100,7 +106,7 @@ static void usage(std::string prog)
   fmt::print("\t-m Minimum Rx gain. [Default {}]\n", rx_gain_min);
   fmt::print("\t-M Maximum Rx gain. [Default {}]\n", rx_gain_max);
   fmt::print("\t-g Tx gain. [Default {}]\n", tx_gain);
-  fmt::print("\t-v Logging level. [Default {}]\n", log_level);
+  fmt::print("\t-v Logging level. [Default {}]\n", srslog::basic_level_to_string(log_level));
   fmt::print("\t-r Saves measurement results in a file. Ignored if none. [Default {}]\n",
              results_filename.empty() ? "none" : results_filename);
   fmt::print("\t-T Transmit random data while measuring. [Default {}]\n", tx_active);
@@ -158,9 +164,11 @@ static void parse_args(int argc, char** argv)
           tx_gain = std::strtol(optarg, nullptr, 10);
         }
         break;
-      case 'v':
-        log_level = std::string(optarg);
+      case 'v': {
+        auto level = srslog::str_to_basic_level(std::string(optarg));
+        log_level  = level.has_value() ? level.value() : srslog::basic_levels::info;
         break;
+      }
       case 'T':
         tx_active = true;
         break;
@@ -199,7 +207,7 @@ static void write_results_csv(const std::vector<result_type>& results)
   }
 }
 
-// Resizes the TX and RX buffers. It also fills the TX buffer with random data samples.
+/// Resizes the TX and RX buffers. It also fills the TX buffer with random data samples.
 static void resize_buffers(baseband_gateway_buffer_dynamic& tx_baseband_buffer,
                            baseband_gateway_buffer_dynamic& rx_baseband_buffer,
                            baseband_gateway_buffer_dynamic& rx_measurement_buffer,
@@ -208,7 +216,7 @@ static void resize_buffers(baseband_gateway_buffer_dynamic& tx_baseband_buffer,
 {
   // Create a normal distribution for complex numbers with some power back-off.
   std::mt19937                      rgen(0);
-  complex_normal_distribution<cf_t> dist(0.0, convert_dB_to_amplitude(avg_tx_power_dBFS));
+  complex_normal_distribution<cf_t> dist({0, 0}, convert_dB_to_amplitude(avg_tx_power_dBFS));
 
   tx_baseband_buffer.resize(block_size);
 
@@ -225,6 +233,10 @@ static void resize_buffers(baseband_gateway_buffer_dynamic& tx_baseband_buffer,
 
 int main(int argc, char** argv)
 {
+  // Set interrupt and cleanup signal handlers.
+  register_interrupt_signal_handler(interrupt_signal_handler);
+  register_cleanup_signal_handler(cleanup_signal_handler);
+
   // Parse arguments.
   parse_args(argc, argv);
 
@@ -244,7 +256,7 @@ int main(int argc, char** argv)
   config.clock.clock      = radio_configuration::clock_sources::source::DEFAULT;
   config.sampling_rate_hz = sampling_rate_hz;
   config.otw_format       = otw_format;
-  config.discontinuous_tx = false;
+  config.tx_mode          = radio_configuration::transmission_mode::continuous;
   config.power_ramping_us = 0;
   config.args             = device_arguments;
   config.log_level        = log_level;
@@ -291,13 +303,6 @@ int main(int argc, char** argv)
   // Create notification handler.
   radio_notifier_spy notification_handler(log_level);
 
-  // Set signal handler.
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
-  signal(SIGHUP, signal_handler);
-  signal(SIGQUIT, signal_handler);
-  signal(SIGKILL, signal_handler);
-
   // Sweep all RX gains in the range.
   for (float rx_gain = rx_gain_min; rx_gain <= rx_gain_max; ++rx_gain) {
     // Received sample counter.
@@ -326,6 +331,10 @@ int main(int argc, char** argv)
     baseband_gateway_timestamp start_time   = current_time + static_cast<uint64_t>(delay_s * sampling_rate_hz);
 
     // Start processing.
+    {
+      bool is_stopped = stop.exchange(false);
+      srsran_assert(is_stopped, "Radio must be stopped before starting to receive samples");
+    }
     radio->start(start_time);
 
     // Receive and transmit per block basis.
@@ -358,9 +367,29 @@ int main(int argc, char** argv)
       sample_count += block_size;
     }
 
-    if (!stop) {
-      // Stop radio operation prior destruction.
-      radio->stop();
+    if (!stop.load()) {
+      // Request stop streaming asynchronously. As TX and RX operations run in the main thread, it avoids deadlock.
+      std::thread stop_thread([]() {
+        radio->stop();
+        bool is_stopped = stop.exchange(true);
+        srsran_assert(!is_stopped, "Radio must be running before attempting to stop.");
+      });
+
+      // Keep transmitting and receiving until the radio stops.
+      while (!stop.load()) {
+        baseband_gateway_transmitter&       transmitter = radio->get_baseband_gateway(0).get_transmitter();
+        baseband_gateway_receiver&          receiver    = radio->get_baseband_gateway(0).get_receiver();
+        baseband_gateway_receiver::metadata rx_metadata = receiver.receive(rx_baseband_buffer.get_writer());
+
+        if (tx_active) {
+          baseband_gateway_transmitter_metadata tx_metadata;
+          tx_metadata.ts = rx_metadata.ts + tx_rx_delay_samples;
+
+          transmitter.transmit(tx_baseband_buffer.get_reader(), tx_metadata);
+        }
+      }
+
+      stop_thread.join();
     }
 
     for (unsigned i_channel = 0; i_channel != nof_channels; ++i_channel) {
@@ -370,7 +399,7 @@ int main(int argc, char** argv)
       float avg_power_dBFS = convert_power_to_dB(srsvec::average_power(rx_samples));
 
       // Store the measurement results for the current sweep point.
-      measurement_results.emplace_back(result_type(rx_gain, i_channel, avg_power_dBFS));
+      measurement_results.emplace_back(rx_gain, i_channel, avg_power_dBFS);
     }
   }
 

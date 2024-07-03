@@ -28,8 +28,8 @@
 #include "srsran/phy/upper/channel_processors/pdsch_processor.h"
 #include "srsran/phy/upper/channel_processors/prach_detector.h"
 #include "srsran/phy/upper/channel_processors/pucch_processor.h"
-#include "srsran/phy/upper/channel_processors/pusch/formatters.h"
 #include "srsran/phy/upper/channel_processors/ssb_processor.h"
+#include "srsran/phy/upper/channel_state_information_formatters.h"
 #include "srsran/ran/pdcch/pdcch_context_formatter.h"
 #include "srsran/ran/pdsch/pdsch_context_formatter.h"
 #include "srsran/ran/pucch/pucch_context_formatter.h"
@@ -184,7 +184,7 @@ struct formatter<srsran::pdsch_processor::pdu_t> {
     helper.format_if_verbose(ctx, "n_scid={}", pdu.n_scid);
     helper.format_if_verbose(ctx, "ncgwd={}", pdu.nof_cdm_groups_without_data);
     helper.format_if_verbose(ctx, "bg={}", (pdu.ldpc_base_graph == srsran::ldpc_base_graph_type::BG1) ? "BG1" : "BG2");
-    helper.format_if_verbose(ctx, "lbrm={}bytes", pdu.tbs_lbrm_bytes);
+    helper.format_if_verbose(ctx, "tbs_lbrm={}bytes", pdu.tbs_lbrm);
     helper.format_if_verbose(ctx, "power_dmrs={:+.1f}dB", -pdu.ratio_pdsch_dmrs_to_sss_dB);
     helper.format_if_verbose(ctx, "power_data={:+.1f}dB", pdu.ratio_pdsch_data_to_sss_dB);
     helper.format_if_verbose(ctx, "slot={}", pdu.slot);
@@ -216,7 +216,7 @@ struct formatter<srsran::prach_detector::configuration> {
   auto format(const srsran::prach_detector::configuration& config, FormatContext& ctx)
       -> decltype(std::declval<FormatContext>().out())
   {
-    helper.format_if_verbose(ctx, "rsi={}", config.root_sequence_index);
+    helper.format_always(ctx, "rsi={}", config.root_sequence_index);
     helper.format_if_verbose(ctx,
                              "preambles=[{}, {})",
                              config.start_preamble_index,
@@ -286,17 +286,39 @@ struct formatter<srsran::prach_detection_result> {
 /// \brief Custom formatter for \c pucch_processor::format0_configuration.
 template <>
 struct formatter<srsran::pucch_processor::format0_configuration> {
+  /// Helper used to parse formatting options and format fields.
+  srsran::delimited_formatter helper;
+
+  /// Default constructor.
+  formatter() = default;
+
   template <typename ParseContext>
   auto parse(ParseContext& ctx) -> decltype(ctx.begin())
   {
-    return ctx.begin();
+    return helper.parse(ctx);
   }
 
   template <typename FormatContext>
   auto format(const srsran::pucch_processor::format0_configuration& config, FormatContext& ctx)
       -> decltype(std::declval<FormatContext>().out())
   {
-    return format_to(ctx.out(), "format0_configuration");
+    if (config.context.has_value()) {
+      helper.format_always(ctx, config.context.value());
+    }
+    helper.format_always(ctx, "format=0");
+    helper.format_if_verbose(ctx, "bwp=[{}, {})", config.bwp_start_rb, config.bwp_start_rb + config.bwp_size_rb);
+    helper.format_if_verbose(ctx, "slot={}", config.slot);
+    helper.format_always(ctx, "prb1={}", config.starting_prb);
+    helper.format_always(
+        ctx, "prb2={}", config.second_hop_prb.has_value() ? std::to_string(config.second_hop_prb.value()) : "na");
+    helper.format_always(
+        ctx, "symb=[{}, {})", config.start_symbol_index, config.start_symbol_index + config.nof_symbols);
+    helper.format_always(ctx, "cs={}", config.initial_cyclic_shift);
+    helper.format_if_verbose(ctx, "n_id={}", config.n_id);
+    helper.format_if_verbose(ctx, "sr_opportunity={}", config.sr_opportunity);
+    helper.format_if_verbose(ctx, "ports={}", srsran::span<const uint8_t>(config.ports));
+
+    return ctx.out();
   }
 };
 

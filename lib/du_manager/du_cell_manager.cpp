@@ -22,6 +22,7 @@
 
 #include "du_cell_manager.h"
 #include "srsran/du/du_cell_config_validation.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 using namespace srs_du;
@@ -38,7 +39,7 @@ void du_cell_manager::add_cell(const du_cell_config& cell_cfg)
 {
   // Verify that DU cell configuration is valid. Abort application otherwise.
   auto ret = is_du_cell_config_valid(cell_cfg);
-  if (ret.is_error()) {
+  if (not ret.has_value()) {
     report_error("ERROR: Invalid DU Cell Configuration. Cause: {}.\n", ret.error());
   }
 

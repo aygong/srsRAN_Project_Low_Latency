@@ -40,12 +40,7 @@ SOFTWARE.
 
 namespace rigtorp {
 namespace mpmc {
-#if defined(__cpp_lib_hardware_interference_size) && !defined(__APPLE__)
-static constexpr size_t hardwareInterferenceSize =
-    std::hardware_destructive_interference_size;
-#else
 static constexpr size_t hardwareInterferenceSize = 64;
-#endif
 
 #if defined(__cpp_aligned_new)
 template <typename T> using AlignedAllocator = std::allocator<T>;
@@ -98,10 +93,12 @@ template <typename T> struct Slot {
   void destroy() noexcept {
     static_assert(std::is_nothrow_destructible<T>::value,
                   "T must be nothrow destructible");
-    reinterpret_cast<T *>(&storage)->~T();
+    std::launder(reinterpret_cast<T *>(&storage))->~T();
   }
 
-  T &&move() noexcept { return reinterpret_cast<T &&>(storage); }
+  T &&move() noexcept {
+    return std::move(*std::launder(reinterpret_cast<T *>(&storage)));
+  }
 
   // Align to avoid false sharing between adjacent slots
   alignas(hardwareInterferenceSize) std::atomic<size_t> turn = {0};

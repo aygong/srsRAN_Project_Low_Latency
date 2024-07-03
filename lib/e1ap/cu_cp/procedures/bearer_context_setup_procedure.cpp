@@ -22,11 +22,14 @@
 
 #include "bearer_context_setup_procedure.h"
 #include "../e1ap_cu_cp_asn1_helpers.h"
+#include "common/e1ap_asn1_utils.h"
 #include "cu_cp/ue_context/e1ap_bearer_transaction_manager.h"
 
 using namespace srsran;
 using namespace srsran::srs_cu_cp;
 using namespace asn1::e1ap;
+
+constexpr std::chrono::milliseconds bearer_context_setup_response_timeout{1000};
 
 bearer_context_setup_procedure::bearer_context_setup_procedure(const e1ap_message&              request_,
                                                                e1ap_bearer_transaction_manager& ev_mng_,
@@ -44,7 +47,7 @@ void bearer_context_setup_procedure::operator()(coro_context<async_task<e1ap_bea
   logger.log_debug("\"{}\" initialized", name());
 
   // Subscribe to respective publisher to receive BEARER CONTEXT SETUP RESPONSE/FAILURE message.
-  transaction_sink.subscribe_to(ev_mng.context_setup_outcome);
+  transaction_sink.subscribe_to(ev_mng.context_setup_outcome, bearer_context_setup_response_timeout);
 
   // Send command to CU-UP.
   send_bearer_context_setup_request();

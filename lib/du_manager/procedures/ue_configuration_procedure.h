@@ -41,8 +41,10 @@ public:
   const char* name() const { return "UE Configuration"; }
 
 private:
-  /// \brief Update DU UE bearers. This stage includes the creation/modification/removal of SRBs/DRBs, creation of RLC
-  /// and F1-U bearers.
+  // Stop activity in DRBs that need to be replaced.
+  async_task<void> stop_drbs_to_rem();
+  // Update DU UE bearers. This stage includes the creation/modification/removal of SRBs/DRBs, creation of RLC
+  // and F1-U bearers.
   void update_ue_context();
   void clear_old_ue_context();
 

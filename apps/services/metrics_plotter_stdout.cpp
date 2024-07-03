@@ -52,14 +52,6 @@ static std::string scaled_fmt_integer(uint64_t num)
   return "Invalid number";
 }
 
-static std::string scaled_time(std::chrono::microseconds t)
-{
-  if (t.count() < 1000) {
-    return fmt::format("{:>4}us", t.count());
-  }
-  return fmt::format("{:>4}ms", std::chrono::duration_cast<std::chrono::milliseconds>(t).count());
-}
-
 static void print_header()
 {
   fmt::print("\n");
@@ -67,7 +59,7 @@ static void print_header()
       "          "
       "|--------------------DL---------------------|-------------------------UL------------------------------\n");
   fmt::print(" pci rnti | cqi  ri  mcs  brate   ok  nok  (%)  dl_bs | pusch  rsrp  mcs  brate   ok  nok  (%)    bsr    "
-             "ta  phr\n");
+             " ta  phr\n");
 }
 
 static std::string float_to_string(float f, int digits, int field_width)
@@ -132,29 +124,34 @@ static std::string float_to_eng_string(float f, int digits)
   return " " + float_to_string(scaled, digits, 5 - factor.length()) + factor;
 }
 
-void metrics_plotter_stdout::report_metrics(span<const scheduler_ue_metrics> ue_metrics)
+void metrics_plotter_stdout::report_metrics(const scheduler_cell_metrics& metrics)
 {
   if (!print_metrics) {
     return;
   }
 
-  if (ue_metrics.size() > 10) {
+  if (metrics.ue_metrics.size() > 10) {
     print_header();
-  } else if (++nof_lines > 10 && !ue_metrics.empty()) {
+  } else if (++nof_lines > 10 && !metrics.ue_metrics.empty()) {
     nof_lines = 0;
     print_header();
   }
 
-  for (const auto& ue : ue_metrics) {
+  for (const auto& ue : metrics.ue_metrics) {
     fmt::print("{:>4}", ue.pci);
     fmt::print("{:>5x}", to_value(ue.rnti));
-    if (!iszero(ue.cqi)) {
-      fmt::print(" | {:>3}", int(ue.cqi));
+
+    if (ue.cqi_stats.get_nof_observations() > 0) {
+      fmt::print(" | {:>3}", static_cast<unsigned>(std::roundf(ue.cqi_stats.get_mean())));
     } else {
       fmt::print(" | {:>3.3}", "n/a");
     }
 
-    fmt::print("  {:>2}", int(ue.ri));
+    if (ue.ri_stats.get_nof_observations() > 0) {
+      fmt::print(" {:>3.1f}", ue.ri_stats.get_mean());
+    } else {
+      fmt::print(" {:>3.3}", "n/a");
+    }
 
     fmt::print("   {:>2}", int(ue.dl_mcs.to_uint()));
     if (ue.dl_brate_kbps > 0) {
@@ -175,7 +172,7 @@ void metrics_plotter_stdout::report_metrics(span<const scheduler_ue_metrics> ue_
     fmt::print(" |");
 
     if (!std::isnan(ue.pusch_snr_db) && !iszero(ue.pusch_snr_db)) {
-      fmt::print(" {:>5.1f}", clamp(ue.pusch_snr_db, -99.9f, 99.9f));
+      fmt::print(" {:>5.1f}", std::clamp(ue.pusch_snr_db, -99.9f, 99.9f));
     } else {
       fmt::print(" {:>5.5}", "n/a");
     }
@@ -184,7 +181,7 @@ void metrics_plotter_stdout::report_metrics(span<const scheduler_ue_metrics> ue_
       if (ue.pusch_rsrp_db >= 0.0F) {
         fmt::print(" {:>5.5}", "ovl");
       } else {
-        fmt::print(" {:>5.1f}", clamp(ue.pusch_rsrp_db, -99.9F, 0.0F));
+        fmt::print(" {:>5.1f}", std::clamp(ue.pusch_rsrp_db, -99.9F, 0.0F));
       }
     } else {
       fmt::print(" {:>5.5}", "n/a");
@@ -207,7 +204,7 @@ void metrics_plotter_stdout::report_metrics(span<const scheduler_ue_metrics> ue_
     }
     fmt::print(" {}", scaled_fmt_integer(ue.bsr));
     if (ue.last_ta.has_value()) {
-      fmt::print("{}", scaled_time(ue.last_ta.value()));
+      fmt::print(" {}", float_to_eng_string(ue.last_ta->to_seconds<float>(), 0));
     } else {
       fmt::print("   n/a");
     }
@@ -219,11 +216,6 @@ void metrics_plotter_stdout::report_metrics(span<const scheduler_ue_metrics> ue_
 
     fmt::print("\n");
   }
-}
-
-void metrics_plotter_stdout::enable_print()
-{
-  print_metrics = true;
 }
 
 void metrics_plotter_stdout::toggle_print()

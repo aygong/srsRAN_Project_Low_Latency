@@ -168,31 +168,32 @@ public:
           uci_indication::uci_pdu::uci_pucch_f0_or_f1_pdu f1{};
           f1.sr_detected = false;
           if (pucch.format_1.harq_ack_nof_bits > 0 and pucch.format_1.sr_bits == sr_nof_bits::no_sr) {
-            f1.ul_sinr = 10;
+            f1.ul_sinr_dB = 10;
             f1.harqs.resize(pucch.format_1.harq_ack_nof_bits, mac_harq_ack_report_status::ack);
           } else if (pucch.format_1.harq_ack_nof_bits > 0) {
             // ACK+SR
-            f1.ul_sinr = -10;
+            f1.ul_sinr_dB = -10;
             f1.harqs.resize(pucch.format_1.harq_ack_nof_bits, mac_harq_ack_report_status::dtx);
           } else {
-            f1.ul_sinr     = -10;
+            f1.ul_sinr_dB  = -10;
             f1.sr_detected = false;
           }
           pdu.pdu = f1;
           ind.ucis.push_back(pdu);
         } else if (pucch.format == pucch_format::FORMAT_2) {
           uci_indication::uci_pdu::uci_pucch_f2_or_f3_or_f4_pdu f2{};
-          f2.ul_sinr = 10;
+          f2.ul_sinr_dB = 10;
           if (pucch.format_2.harq_ack_nof_bits > 0) {
             f2.harqs.resize(pucch.format_2.harq_ack_nof_bits, mac_harq_ack_report_status::ack);
           }
           if (pucch.csi_rep_cfg.has_value()) {
-            f2.csi = csi_report_data{nullopt,
-                                     4,
-                                     nullopt,
-                                     csi_report_pmi{csi_report_pmi::typeI_single_panel_4ports_mode1{0, nullopt, 0}},
-                                     15,
-                                     nullopt};
+            f2.csi =
+                csi_report_data{std::nullopt,
+                                4,
+                                std::nullopt,
+                                csi_report_pmi{csi_report_pmi::typeI_single_panel_4ports_mode1{0, std::nullopt, 0}},
+                                15,
+                                std::nullopt};
           }
           pdu.pdu = f2;
           ind.ucis.push_back(pdu);
@@ -208,12 +209,12 @@ public:
             pusch_pdu.harqs.resize(ul_grant.uci->harq.value().harq_ack_nof_bits, mac_harq_ack_report_status::ack);
           }
           pusch_pdu.csi =
-              csi_report_data{nullopt,
+              csi_report_data{std::nullopt,
                               4,
-                              nullopt,
-                              csi_report_pmi{csi_report_pmi::typeI_single_panel_4ports_mode1{0, nullopt, 0}},
+                              std::nullopt,
+                              csi_report_pmi{csi_report_pmi::typeI_single_panel_4ports_mode1{0, std::nullopt, 0}},
                               15,
-                              nullopt};
+                              std::nullopt};
           ind.ucis.push_back(pdu);
         }
       }
@@ -231,13 +232,13 @@ private:
   const unsigned dl_pipeline_delay = 4;
   const unsigned uci_process_delay = 2;
 
-  sched_cfg_dummy_notifier                    cfg_notif;
-  sched_dummy_metric_notifier                 metric_notif;
-  scheduler_expert_config                     expert_cfg;
-  cell_config_builder_params                  builder_params;
-  std::vector<du_cell_config>                 du_cell_cfgs;
-  srslog::basic_logger&                       logger;
-  optional<srs_du::du_pucch_resource_manager> pucch_res_mng;
+  sched_cfg_dummy_notifier                         cfg_notif;
+  sched_dummy_metric_notifier                      metric_notif;
+  scheduler_expert_config                          expert_cfg;
+  cell_config_builder_params                       builder_params;
+  std::vector<du_cell_config>                      du_cell_cfgs;
+  srslog::basic_logger&                            logger;
+  std::optional<srs_du::du_pucch_resource_manager> pucch_res_mng;
 
   std::unique_ptr<mac_scheduler> sch;
 

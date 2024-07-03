@@ -57,7 +57,8 @@ static_assert(is_byte_buffer_range<byte_buffer_slice>::value, "Invalid metafunct
 // Ensures commutativity of byte_buffer::operator==, and consistency when compared to std::equal(...).
 #define ASSERT_EQ_BUFFER(buffer1, buffer2)                                                                             \
   ASSERT_EQ(buffer1, buffer2);                                                                                         \
-  std::equal(buffer1.begin(), buffer1.end(), buffer2.begin(), buffer2.end());                                          \
+  ASSERT_TRUE(std::equal(buffer1.begin(), buffer1.end(), buffer2.begin(), buffer2.end()))                              \
+      << fmt::format("\nbuf1: {}\nbuf2: {}", buffer1, buffer2);                                                        \
   ASSERT_EQ(buffer2, buffer1)
 
 namespace {
@@ -407,7 +408,8 @@ TEST_P(two_vector_size_param_test, shallow_copy_and_append)
     ASSERT_EQ(pdu.length(), pdu.end() - pdu.begin()) << "shallow copied-from byte_buffer::length() got corrupted";
     ASSERT_EQ(pdu2.length(), pdu2.end() - pdu2.begin()) << "shallow copy byte_buffer::length() got corrupted";
   }
-  ASSERT_EQ_BUFFER(pdu, concat_vec(bytes1, bytes2));
+  auto combined = concat_vec(bytes1, bytes2);
+  ASSERT_EQ_BUFFER(pdu, combined);
   ASSERT_EQ(pdu.length(), pdu.end() - pdu.begin());
 }
 
@@ -427,7 +429,8 @@ TEST_P(three_vector_size_param_test, shallow_copy_prepend_and_append)
     ASSERT_EQ(pdu.length(), pdu.end() - pdu.begin()) << "shallow copied-from byte_buffer::length() got corrupted";
     ASSERT_EQ(pdu2.length(), pdu2.end() - pdu2.begin()) << "shallow copy byte_buffer::length() got corrupted";
   }
-  ASSERT_EQ_BUFFER(pdu, concat_vec(bytes2, concat_vec(bytes1, bytes3)));
+  auto combined = concat_vec(bytes2, concat_vec(bytes1, bytes3));
+  ASSERT_EQ_BUFFER(pdu, combined);
   ASSERT_EQ(pdu.length(), pdu.end() - pdu.begin());
 }
 
@@ -545,7 +548,7 @@ TEST_F(byte_buffer_tester, is_contiguous)
 TEST_F(byte_buffer_tester, hexdump)
 {
   std::vector<uint8_t> bytes{0x1, 0x2, 0x3, 0x4, 0x5, 0xff};
-  byte_buffer          pdu = make_byte_buffer("0102030405FF");
+  byte_buffer          pdu = make_byte_buffer("0102030405FF").value();
   ASSERT_EQ(pdu, bytes);
 }
 
@@ -823,7 +826,7 @@ TEST_P(byte_buffer_stress_tester, concurrent_alloc_dealloc_test)
         // Allocation of new buffer.
         auto buf =
             byte_buffer::create(span<const uint8_t>(randbytes.data(), test_rgen::uniform_int(1U, max_buffer_size)));
-        if (buf.is_error()) {
+        if (not buf.has_value()) {
           // pool is depleted.
           continue;
         }
@@ -874,7 +877,7 @@ TEST_F(byte_buffer_tester, concurrent_alloc_dealloc_test)
   // Deplete the pool
   while (true) {
     auto pdu = byte_buffer::create(span<const uint8_t>{randbytes.data(), 10U});
-    if (pdu.is_error()) {
+    if (not pdu.has_value()) {
       break;
     }
     allocated_buffers.push_back(std::move(pdu.value()));
@@ -882,7 +885,7 @@ TEST_F(byte_buffer_tester, concurrent_alloc_dealloc_test)
 
   // Pool is still empty.
   auto pdu = byte_buffer::create(span<const uint8_t>{randbytes.data(), test_rgen::uniform_int(1U, max_buffer_size)});
-  ASSERT_TRUE(pdu.is_error());
+  ASSERT_FALSE(pdu.has_value());
 
   // Test if a span can be added to a byte_buffer with heap as fallback allocator.
   size_t sz = test_rgen::uniform_int(1U, max_buffer_size);

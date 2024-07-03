@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "srsran/adt/variant.h"
+#include <variant>
 
 namespace srsran {
 
@@ -32,7 +32,7 @@ struct prb_bundling {
   struct static_bundling {
     enum class bundling_size { n4, wideband };
 
-    optional<bundling_size> sz;
+    std::optional<bundling_size> sz;
 
     bool operator==(const static_bundling& rhs) const { return sz == rhs.sz; }
     bool operator!=(const static_bundling& rhs) const { return !(rhs == *this); }
@@ -42,14 +42,14 @@ struct prb_bundling {
     enum class bundling_size_set1 { n4, wideband, n2_wideband, n4_wideband };
     enum class bundling_size_set2 { n4, wideband };
 
-    optional<bundling_size_set1> sz_set1;
-    optional<bundling_size_set2> sz_set2;
+    std::optional<bundling_size_set1> sz_set1;
+    std::optional<bundling_size_set2> sz_set2;
 
     bool operator==(const dynamic_bundling& rhs) const { return sz_set1 == rhs.sz_set1 && sz_set2 == rhs.sz_set2; }
     bool operator!=(const dynamic_bundling& rhs) const { return !(rhs == *this); }
   };
 
-  variant<static_bundling, dynamic_bundling> bundling;
+  std::variant<static_bundling, dynamic_bundling> bundling;
 
   bool operator==(const prb_bundling& rhs) const { return bundling == rhs.bundling; }
   bool operator!=(const prb_bundling& rhs) const { return !(rhs == *this); }

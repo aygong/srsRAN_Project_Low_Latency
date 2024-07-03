@@ -24,14 +24,15 @@
 
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/ngap/ngap_handover.h"
+#include "srsran/ngap/ngap_reset.h"
 #include "srsran/ngap/ngap_setup.h"
 #include "srsran/support/async/async_task.h"
-#include "srsran/support/timers.h"
 
 namespace srsran {
 namespace srs_cu_cp {
 
 struct ngap_message;
+struct up_pdu_session_context;
 
 /// This interface is used to push NGAP messages to the NGAP interface.
 class ngap_message_handler
@@ -67,12 +68,22 @@ class ngap_connection_manager
 public:
   virtual ~ngap_connection_manager() = default;
 
+  /// \brief Request a new TNL association to the AMF.
+  virtual bool handle_amf_tnl_connection_request() = 0;
+
+  /// \brief Request the NGAP handler to disconnect from the AMF.
+  virtual async_task<void> handle_amf_disconnection_request() = 0;
+
   /// \brief Initiates the NG Setup procedure.
   /// \param[in] request The NGSetupRequest message to transmit.
   /// \return Returns a ngap_ng_setup_result struct.
   /// \remark The CU transmits the NGSetupRequest as per TS 38.413 section 8.7.1
   /// and awaits the response. If a NGSetupFailure is received the NGAP will handle the failure.
   virtual async_task<ngap_ng_setup_result> handle_ng_setup_request(const ngap_ng_setup_request& request) = 0;
+
+  /// \brief Initiates NG Reset procedure as per TS 38.413 section 8.7.4.2.2.
+  /// \param[in] msg The ng reset message to transmit.
+  virtual async_task<void> handle_ng_reset_message(const cu_cp_ng_reset& msg) = 0;
 };
 
 /// Handle ue context removal
@@ -86,16 +97,112 @@ public:
   virtual void remove_ue_context(ue_index_t ue_index) = 0;
 };
 
-/// Interface to notify the CU-CP about an NGAP UE creation.
-class ngap_cu_cp_ue_creation_notifier
+/// Notifier to the RRC UE for NAS PDUs.
+class ngap_rrc_ue_pdu_notifier
 {
 public:
-  virtual ~ngap_cu_cp_ue_creation_notifier() = default;
+  virtual ~ngap_rrc_ue_pdu_notifier() = default;
+
+  /// \brief Notify about the a new nas pdu.
+  /// \param [in] nas_pdu The nas pdu.
+  virtual void on_new_pdu(byte_buffer nas_pdu) = 0;
+};
+
+/// Notifier to the RRC UE for control messages.
+class ngap_rrc_ue_control_notifier
+{
+public:
+  virtual ~ngap_rrc_ue_control_notifier() = default;
+
+  /// \brief Notify about the reception of new security context.
+  virtual async_task<bool> on_new_security_context() = 0;
+
+  /// \brief Get packed handover preparation message for inter-gNB handover.
+  virtual byte_buffer on_handover_preparation_message_required() = 0;
+};
+
+/// NGAP notifier to the CU-CP UE
+class ngap_cu_cp_ue_notifier
+{
+public:
+  virtual ~ngap_cu_cp_ue_notifier() = default;
+
+  /// \brief Get the UE index of the UE.
+  virtual ue_index_t get_ue_index() = 0;
+
+  /// \brief Schedule an async task for the UE.
+  virtual bool schedule_async_task(async_task<void> task) = 0;
+
+  /// \brief Get the RRC UE PDU notifier of the UE.
+  virtual ngap_rrc_ue_pdu_notifier& get_rrc_ue_pdu_notifier() = 0;
+
+  /// \brief Get the RRC UE control notifier of the UE.
+  virtual ngap_rrc_ue_control_notifier& get_rrc_ue_control_notifier() = 0;
+
+  /// \brief Notify the CU-CP about a security context
+  /// \param[in] sec_ctxt The received security context
+  /// \return True if the security context was successfully initialized, false otherwise
+  virtual bool init_security_context(security::security_context sec_ctxt) = 0;
+
+  /// \brief Check if security is enabled
+  [[nodiscard]] virtual bool is_security_enabled() const = 0;
+};
+
+/// NGAP notifier to the CU-CP.
+class ngap_cu_cp_notifier
+{
+public:
+  virtual ~ngap_cu_cp_notifier() = default;
 
   /// \brief Notifies the CU-CP about a new NGAP UE.
   /// \param[in] ue_index The index of the new NGAP UE.
-  /// \returns True if the UE was successfully created, false otherwise.
-  virtual bool on_new_ngap_ue(ue_index_t ue_index) = 0;
+  /// \returns Pointer to the NGAP UE notifier.
+  virtual ngap_cu_cp_ue_notifier* on_new_ngap_ue(ue_index_t ue_index) = 0;
+
+  /// \brief Request scheduling a task for a UE.
+  /// \param[in] ue_index The index of the UE.
+  /// \param[in] task The task to schedule.
+  /// \returns True if the task was successfully scheduled, false otherwise.
+  virtual bool schedule_async_task(ue_index_t ue_index, async_task<void> task) = 0;
+
+  /// \brief Notify the CU-CP about a security context received in a handover request.
+  /// \param[in] ue_index Index of the UE.
+  /// \param[in] sec_ctxt The received security context.
+  /// \return True if the security context was successfully initialized, false otherwise.
+  virtual bool on_handover_request_received(ue_index_t ue_index, security::security_context sec_ctxt) = 0;
+
+  /// \brief Notify about the reception of a new PDU Session Resource Setup Request.
+  /// \param[in] request The received PDU Session Resource Setup Request.
+  /// \returns The PDU Session Resource Setup Response.
+  virtual async_task<cu_cp_pdu_session_resource_setup_response>
+  on_new_pdu_session_resource_setup_request(cu_cp_pdu_session_resource_setup_request& request) = 0;
+
+  /// \brief Notify about the reception of a new PDU Session Resource Modify Request.
+  /// \param[in] request The received PDU Session Resource Modify Request.
+  /// \returns The PDU Session Resource Modify Response.
+  virtual async_task<cu_cp_pdu_session_resource_modify_response>
+  on_new_pdu_session_resource_modify_request(cu_cp_pdu_session_resource_modify_request& request) = 0;
+
+  /// \brief Notify about the reception of a new PDU Session Resource Release Command.
+  /// \param[in] command The received PDU Session Resource Release Command.
+  /// \returns The PDU Session Resource Release Response.
+  virtual async_task<cu_cp_pdu_session_resource_release_response>
+  on_new_pdu_session_resource_release_command(cu_cp_pdu_session_resource_release_command& command) = 0;
+
+  /// \brief Notify about the reception of a new UE Context Release Command.
+  /// \param[in] command the UE Context Release Command.
+  /// \returns The UE Context Release Complete.
+  virtual async_task<cu_cp_ue_context_release_complete>
+  on_new_ue_context_release_command(const cu_cp_ue_context_release_command& command) = 0;
+
+  /// \brief Notify about the reception of a new Handover Command.
+  /// \param[in] ue_index The index of the UE.
+  /// \param[in] command The Handover Command.
+  /// \returns True if the Handover command is valid and was successfully handled by the DU.
+  virtual async_task<bool> on_new_handover_command(ue_index_t ue_index, byte_buffer command) = 0;
+
+  /// \brief Notify that the TNL connection to the AMF was lost.
+  virtual void on_n2_disconnection() = 0;
 };
 
 /// Interface to communication with the DU repository
@@ -152,63 +259,6 @@ public:
                                                      const unsigned             tac) = 0;
 };
 
-/// Interface to notify about NAS PDUs and messages.
-class ngap_rrc_ue_pdu_notifier
-{
-public:
-  virtual ~ngap_rrc_ue_pdu_notifier() = default;
-
-  /// \brief Notify about the a new nas pdu.
-  /// \param [in] nas_pdu The nas pdu.
-  virtual void on_new_pdu(byte_buffer nas_pdu) = 0;
-};
-
-/// Interface to notify the RRC UE about control messages.
-class ngap_rrc_ue_control_notifier
-{
-public:
-  virtual ~ngap_rrc_ue_control_notifier() = default;
-
-  /// \brief Notify about the reception of new security context.
-  virtual async_task<bool> on_new_security_context(const security::security_context& sec_context) = 0;
-
-  /// \brief Get packed handover preparation message for inter-gNB handover.
-  virtual byte_buffer on_handover_preparation_message_required() = 0;
-
-  /// \brief Get the status of the security context.
-  virtual bool on_security_enabled() = 0;
-
-  /// \brief Notify about the reception of a new Handover Command pdu.
-  /// \param[in] cmd The handover command RRC PDU.
-  /// \returns true if the rrc reconfig was successfully forwarded to the DU, false otherwise.
-  virtual bool on_new_rrc_handover_command(byte_buffer cmd) = 0;
-};
-
-/// Interface to notify the DU Processor about control messages.
-class ngap_du_processor_control_notifier
-{
-public:
-  virtual ~ngap_du_processor_control_notifier() = default;
-
-  /// \brief Notify about the reception of a new PDU Session Resource Setup Request.
-  virtual async_task<cu_cp_pdu_session_resource_setup_response>
-  on_new_pdu_session_resource_setup_request(cu_cp_pdu_session_resource_setup_request& request) = 0;
-
-  /// \brief Notify about the reception of a new PDU Session Resource Modify Request.
-  virtual async_task<cu_cp_pdu_session_resource_modify_response>
-  on_new_pdu_session_resource_modify_request(cu_cp_pdu_session_resource_modify_request& request) = 0;
-
-  /// \brief Notify about the reception of a new PDU Session Resource Release Command.
-  virtual async_task<cu_cp_pdu_session_resource_release_response>
-  on_new_pdu_session_resource_release_command(cu_cp_pdu_session_resource_release_command& command) = 0;
-
-  /// \brief Notify about the reception of a new UE Context Release Command.
-  /// \param[in] command the UE Context Release Command.
-  /// \returns The UE Context Release Complete.
-  virtual async_task<cu_cp_ue_context_release_complete>
-  on_new_ue_context_release_command(const cu_cp_ue_context_release_command& command) = 0;
-};
-
 /// Interface to control the NGAP.
 class ngap_ue_control_manager
 {
@@ -218,18 +268,10 @@ public:
   /// \brief Updates the NGAP UE context with a new UE index.
   /// \param[in] new_ue_index The new index of the UE.
   /// \param[in] old_ue_index The old index of the UE.
+  /// \param[in] new_ue_notifier The notifier to the new UE.
   /// \returns True if the update was successful, false otherwise.
-  virtual bool update_ue_index(ue_index_t new_ue_index, ue_index_t old_ue_index) = 0;
-};
-
-/// \brief Schedules asynchronous tasks associated with an UE.
-class ngap_ue_task_scheduler
-{
-public:
-  virtual ~ngap_ue_task_scheduler()                                                        = default;
-  virtual void           schedule_async_task(ue_index_t ue_index, async_task<void>&& task) = 0;
-  virtual unique_timer   make_unique_timer()                                               = 0;
-  virtual timer_manager& get_timer_manager()                                               = 0;
+  virtual bool
+  update_ue_index(ue_index_t new_ue_index, ue_index_t old_ue_index, ngap_cu_cp_ue_notifier& new_ue_notifier) = 0;
 };
 
 /// \brief Interface to query statistics from the NGAP interface.

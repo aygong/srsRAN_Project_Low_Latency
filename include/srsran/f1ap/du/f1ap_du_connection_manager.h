@@ -25,30 +25,33 @@
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/ran/carrier_configuration.h"
 #include "srsran/ran/duplex_mode.h"
+#include "srsran/ran/gnb_du_id.h"
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/ran/pci.h"
+#include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/support/async/async_task.h"
+#include <optional>
 
 namespace srsran {
 namespace srs_du {
 
 /// \brief Served cell configuration that will be passed to CU-CP.
 struct f1_cell_setup_params {
-  nr_cell_global_id_t             nr_cgi;
-  pci_t                           pci;
-  uint32_t                        tac;
-  duplex_mode                     duplx_mode;
-  subcarrier_spacing              scs_common;
-  carrier_configuration           dl_carrier;
-  optional<carrier_configuration> ul_carrier;
-  byte_buffer                     packed_meas_time_cfg;
-  byte_buffer                     packed_mib;
-  byte_buffer                     packed_sib1;
+  nr_cell_global_id_t                  nr_cgi;
+  pci_t                                pci;
+  uint32_t                             tac;
+  duplex_mode                          duplx_mode;
+  subcarrier_spacing                   scs_common;
+  carrier_configuration                dl_carrier;
+  std::optional<carrier_configuration> ul_carrier;
+  byte_buffer                          packed_meas_time_cfg;
+  byte_buffer                          packed_mib;
+  byte_buffer                          packed_sib1;
 };
 
 /// \brief Message that initiates a F1 Setup procedure.
 struct f1_setup_request_message {
-  uint64_t                          gnb_du_id;
+  gnb_du_id_t                       gnb_du_id;
   std::string                       gnb_du_name;
   uint8_t                           rrc_version;
   std::vector<f1_cell_setup_params> served_cells;
@@ -56,7 +59,11 @@ struct f1_setup_request_message {
 };
 
 struct f1_setup_response_message {
-  bool success = false;
+  enum class result_code { success, timeout, proc_failure, invalid_response, f1_setup_failure };
+  /// Possible result outcomes for F1 Setup procedure.
+  result_code result;
+  /// Cause provided by CU-CP in case of F1 Setup Failure.
+  std::string f1_setup_failure_cause;
 };
 
 /// Handle F1AP interface management procedures as defined in TS 38.473 section 8.2.
@@ -66,7 +73,7 @@ public:
   virtual ~f1ap_connection_manager() = default;
 
   /// \brief Connect the DU to CU-CP via F1-C interface.
-  virtual SRSRAN_NODISCARD bool connect_to_cu_cp() = 0;
+  [[nodiscard]] virtual bool connect_to_cu_cp() = 0;
 
   /// \brief Initiates the F1 Setup procedure as per TS 38.473, Section 8.2.3.
   /// \param[in] request The F1SetupRequest message to transmit.
@@ -74,6 +81,9 @@ public:
   /// successful outcome, 'false' otherwise. \remark The DU transmits the F1SetupRequest as per TS 38.473 section 8.2.3
   /// and awaits the response. If a F1SetupFailure is received the F1AP will handle the failure.
   virtual async_task<f1_setup_response_message> handle_f1_setup_request(const f1_setup_request_message& request) = 0;
+
+  /// \brief Launches the F1 Removal procedure as per TS 38.473, Section 8.2.8.
+  virtual async_task<void> handle_f1_removal_request() = 0;
 };
 
 } // namespace srs_du

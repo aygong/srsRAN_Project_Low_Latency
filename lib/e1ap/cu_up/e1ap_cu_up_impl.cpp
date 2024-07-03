@@ -22,12 +22,12 @@
 
 #include "e1ap_cu_up_impl.h"
 #include "../common/log_helpers.h"
+#include "cu_up/procedures/bearer_context_modification_procedure.h"
 #include "cu_up/procedures/e1ap_cu_up_event_manager.h"
 #include "e1ap_cu_up_asn1_helpers.h"
 #include "procedures/e1ap_cu_up_setup_procedure.h"
 #include "srsran/e1ap/common/e1ap_message.h"
-#include "srsran/e1ap/cu_up/e1ap_connection_client.h"
-#include "srsran/ran/bcd_helpers.h"
+#include "srsran/ran/bcd_helper.h"
 #include "srsran/support/timers.h"
 #include <memory>
 
@@ -51,22 +51,22 @@ private:
 
 } // namespace
 
-e1ap_cu_up_impl::e1ap_cu_up_impl(e1ap_connection_client& e1ap_client_handler_,
-                                 e1ap_cu_up_notifier&    cu_up_notifier_,
-                                 timer_manager&          timers_,
-                                 task_executor&          cu_up_exec_) :
+e1ap_cu_up_impl::e1ap_cu_up_impl(e1_connection_client& e1_client_handler_,
+                                 e1ap_cu_up_notifier&  cu_up_notifier_,
+                                 timer_manager&        timers_,
+                                 task_executor&        cu_up_exec_) :
   logger(srslog::fetch_basic_logger("CU-UP-E1")),
   cu_up_notifier(cu_up_notifier_),
   timers(timers_),
   cu_up_exec(cu_up_exec_),
-  connection_handler(e1ap_client_handler_, *this),
+  connection_handler(e1_client_handler_, *this),
   ue_ctxt_list(logger),
   ev_mng(std::make_unique<e1ap_event_manager>(timer_factory{timers, cu_up_exec}))
 {
 }
 
 // Note: For fwd declaration of member types, dtor cannot be trivial.
-e1ap_cu_up_impl::~e1ap_cu_up_impl() {}
+e1ap_cu_up_impl::~e1ap_cu_up_impl() = default;
 
 bool e1ap_cu_up_impl::connect_to_cu_cp()
 {
@@ -180,7 +180,8 @@ void e1ap_cu_up_impl::handle_bearer_context_setup_request(const asn1::e1ap::bear
     return;
   }
 
-  logger.debug("Received BearerContextSetupRequest (plmn={})", plmn_bcd_to_string(msg->serving_plmn.to_number()));
+  logger.debug("Received BearerContextSetupRequest (plmn={})",
+               bcd_helper::plmn_bcd_to_string(msg->serving_plmn.to_number()));
 
   gnb_cu_up_ue_e1ap_id_t cu_up_ue_e1ap_id = ue_ctxt_list.next_gnb_cu_up_ue_e1ap_id();
   if (cu_up_ue_e1ap_id == gnb_cu_up_ue_e1ap_id_t::invalid) {
@@ -252,8 +253,6 @@ void e1ap_cu_up_impl::handle_bearer_context_modification_request(const asn1::e1a
   e1ap_msg.pdu.unsuccessful_outcome().value.bearer_context_mod_fail()->gnb_cu_up_ue_e1ap_id = msg->gnb_cu_up_ue_e1ap_id;
   e1ap_msg.pdu.unsuccessful_outcome().value.bearer_context_mod_fail()->cause.set_protocol();
 
-  e1ap_bearer_context_modification_request bearer_context_mod = {};
-
   if (!ue_ctxt_list.contains(int_to_gnb_cu_up_ue_e1ap_id(msg->gnb_cu_up_ue_e1ap_id))) {
     logger.warning("Sending BearerContextModificationFailure. UE context not available");
     pdu_notifier->on_new_message(e1ap_msg);
@@ -262,55 +261,9 @@ void e1ap_cu_up_impl::handle_bearer_context_modification_request(const asn1::e1a
 
   e1ap_ue_context& ue_ctxt = ue_ctxt_list[int_to_gnb_cu_up_ue_e1ap_id(msg->gnb_cu_up_ue_e1ap_id)];
 
-  bearer_context_mod.ue_index = ue_ctxt.ue_ids.ue_index;
-
-  // sys bearer context mod request
-  if (msg->sys_bearer_context_mod_request_present) {
-    // We only support NG-RAN Bearer
-    if (msg->sys_bearer_context_mod_request.type() !=
-        asn1::e1ap::sys_bearer_context_mod_request_c::types::ng_ran_bearer_context_mod_request) {
-      ue_ctxt.logger.log_error("Sending BearerContextModificationFailure. Cause: Not handling E-UTRAN Bearers");
-
-      // send response
-      pdu_notifier->on_new_message(e1ap_msg);
-      return;
-    }
-
-    fill_e1ap_bearer_context_modification_request(bearer_context_mod, msg);
-  }
-
-  // Forward message to CU-UP
-  e1ap_bearer_context_modification_response bearer_context_mod_response_msg =
-      cu_up_notifier.on_bearer_context_modification_request_received(bearer_context_mod);
-
-  if (bearer_context_mod_response_msg.ue_index == INVALID_UE_INDEX) {
-    ue_ctxt.logger.log_debug("Sending BearerContextModificationFailure: Cause: Invalid UE index");
-
-    // send response
-    pdu_notifier->on_new_message(e1ap_msg);
-    return;
-  }
-
-  if (bearer_context_mod_response_msg.success) {
-    e1ap_msg.pdu.set_successful_outcome();
-    e1ap_msg.pdu.successful_outcome().load_info_obj(ASN1_E1AP_ID_BEARER_CONTEXT_MOD);
-    e1ap_msg.pdu.successful_outcome().value.bearer_context_mod_resp()->gnb_cu_cp_ue_e1ap_id = msg->gnb_cu_cp_ue_e1ap_id;
-    e1ap_msg.pdu.successful_outcome().value.bearer_context_mod_resp()->gnb_cu_up_ue_e1ap_id = msg->gnb_cu_up_ue_e1ap_id;
-    e1ap_msg.pdu.successful_outcome().value.bearer_context_mod_resp()->sys_bearer_context_mod_resp_present = true;
-    fill_asn1_bearer_context_modification_response(
-        e1ap_msg.pdu.successful_outcome().value.bearer_context_mod_resp()->sys_bearer_context_mod_resp,
-        bearer_context_mod_response_msg);
-    ue_ctxt.logger.log_debug("Sending BearerContextModificationResponse");
-    // send response
-    pdu_notifier->on_new_message(e1ap_msg);
-  } else {
-    e1ap_msg.pdu.unsuccessful_outcome().value.bearer_context_mod_fail()->cause =
-        cause_to_asn1(bearer_context_mod_response_msg.cause.value());
-
-    // send response
-    ue_ctxt.logger.log_debug("Sending BearerContextModificationFailure");
-    pdu_notifier->on_new_message(e1ap_msg);
-  }
+  cu_up_notifier.on_schedule_ue_async_task(
+      ue_ctxt.ue_ids.ue_index,
+      launch_async<bearer_context_modification_procedure>(ue_ctxt, msg, *pdu_notifier, cu_up_notifier));
 }
 
 void e1ap_cu_up_impl::handle_bearer_context_release_command(const asn1::e1ap::bearer_context_release_cmd_s& msg)
@@ -351,7 +304,7 @@ void e1ap_cu_up_impl::handle_bearer_context_release_command(const asn1::e1ap::be
 
 void e1ap_cu_up_impl::handle_successful_outcome(const asn1::e1ap::successful_outcome_s& outcome)
 {
-  optional<uint8_t> transaction_id = get_transaction_id(outcome);
+  std::optional<uint8_t> transaction_id = get_transaction_id(outcome);
   if (not transaction_id.has_value()) {
     logger.error("Successful outcome of type {} is not supported", outcome.value.type().to_string());
     return;
@@ -365,14 +318,14 @@ void e1ap_cu_up_impl::handle_successful_outcome(const asn1::e1ap::successful_out
 
 void e1ap_cu_up_impl::handle_unsuccessful_outcome(const asn1::e1ap::unsuccessful_outcome_s& outcome)
 {
-  optional<uint8_t> transaction_id = get_transaction_id(outcome);
+  std::optional<uint8_t> transaction_id = get_transaction_id(outcome);
   if (not transaction_id.has_value()) {
     logger.error("Unsuccessful outcome of type {} is not supported", outcome.value.type().to_string());
     return;
   }
 
   // Set transaction result and resume suspended procedure.
-  if (not ev_mng->transactions.set_response(transaction_id.value(), outcome)) {
+  if (not ev_mng->transactions.set_response(transaction_id.value(), make_unexpected(outcome))) {
     logger.warning("Unexpected transaction id={}", transaction_id.value());
   }
 }
@@ -384,8 +337,8 @@ void e1ap_cu_up_impl::log_pdu(bool is_rx, const e1ap_message& e1ap_pdu)
   }
 
   // Fetch UE index.
-  auto                 up_ue_id = get_gnb_cu_up_ue_e1ap_id(e1ap_pdu.pdu);
-  optional<ue_index_t> ue_idx;
+  auto                      up_ue_id = get_gnb_cu_up_ue_e1ap_id(e1ap_pdu.pdu);
+  std::optional<ue_index_t> ue_idx;
   if (up_ue_id.has_value()) {
     auto* ue_ptr = ue_ctxt_list.find_ue(up_ue_id.value());
     if (ue_ptr != nullptr and ue_ptr->ue_ids.ue_index != INVALID_UE_INDEX) {

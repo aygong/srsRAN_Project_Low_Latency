@@ -21,6 +21,7 @@
  */
 
 #include "metrics_handler_impl.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/executors/sync_task_executor.h"
 #include "srsran/support/srsran_assert.h"
 #include <thread>
@@ -82,7 +83,7 @@ metrics_report metrics_handler_impl::request_metrics_report() const
 {
   metrics_report report;
 
-  force_blocking_execute(
+  sync_execute(
       cu_cp_exec,
       [&]() { report = create_report(); },
       [this]() {

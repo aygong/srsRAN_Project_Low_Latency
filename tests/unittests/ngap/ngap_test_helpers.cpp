@@ -33,7 +33,7 @@
 using namespace srsran;
 using namespace srs_cu_cp;
 
-ngap_test::ngap_test() : ngap_ue_task_scheduler(timers, ctrl_worker)
+ngap_test::ngap_test()
 {
   test_logger.set_level(srslog::basic_levels::debug);
   ngap_logger.set_level(srslog::basic_levels::debug);
@@ -41,18 +41,19 @@ ngap_test::ngap_test() : ngap_ue_task_scheduler(timers, ctrl_worker)
 
   cfg.gnb_id        = {411, 22};
   cfg.ran_node_name = "srsgnb01";
-  cfg.plmn          = "00101";
+  cfg.plmn          = plmn_identity::test_value();
   cfg.tac           = 7;
   s_nssai_t slice_cfg;
   slice_cfg.sst = 1;
   cfg.slice_configurations.push_back(slice_cfg);
   cfg.pdu_session_setup_timeout = std::chrono::seconds(2);
 
-  ngap = create_ngap(
-      cfg, ngap_ue_creation_notifier, cu_cp_paging_notifier, ngap_ue_task_scheduler, ue_mng, msg_notifier, ctrl_worker);
+  ngap = create_ngap(cfg, cu_cp_notifier, cu_cp_paging_notifier, n2_gw, timers, ctrl_worker);
 
-  du_processor_notifier =
-      std::make_unique<dummy_ngap_du_processor_notifier>(ngap->get_ngap_ue_context_removal_handler());
+  cu_cp_notifier.connect_ngap(ngap->get_ngap_ue_context_removal_handler());
+
+  // Initiate N2 TNL association to AMF.
+  report_fatal_error_if_not(ngap->handle_amf_tnl_connection_request(), "Unable to establish connection to AMF");
 }
 
 ngap_test::~ngap_test()
@@ -64,10 +65,10 @@ ngap_test::~ngap_test()
 ue_index_t ngap_test::create_ue(rnti_t rnti)
 {
   // Create UE in UE manager
-  ue_index_t ue_index = ue_mng.add_ue(uint_to_du_index(0));
-  auto*      ue       = ue_mng.set_ue_du_context(ue_index, int_to_gnb_du_id(0), MIN_PCI, rnti);
-  if (ue == nullptr) {
-    test_logger.error("Failed to create UE with pci={} and rnti={}", MIN_PCI, rnti_t::MIN_CRNTI);
+  ue_index_t ue_index = ue_mng.add_ue(du_index_t::min, int_to_gnb_du_id(0), MIN_PCI, rnti, du_cell_index_t::min);
+  if (ue_index == ue_index_t::invalid) {
+    test_logger.error(
+        "Failed to create UE with pci={} rnti={} pcell_index={}", MIN_PCI, rnti_t::MIN_CRNTI, du_cell_index_t::min);
     return ue_index_t::invalid;
   }
 
@@ -75,16 +76,15 @@ ue_index_t ngap_test::create_ue(rnti_t rnti)
   test_ues.emplace(ue_index, test_ue(ue_index));
   test_ue& new_test_ue = test_ues.at(ue_index);
 
-  // Add UE to NGAP notifier
-  ngap_ue_creation_notifier.add_ue(
-      ue_index, new_test_ue.rrc_ue_notifier, new_test_ue.rrc_ue_notifier, *du_processor_notifier);
+  ue_mng.get_ngap_rrc_ue_adapter(ue_index).connect_rrc_ue(
+      new_test_ue.rrc_ue_dl_nas_handler, new_test_ue.rrc_ue_security_handler, new_test_ue.rrc_ue_ho_prep_handler);
 
   // generate and inject valid initial ue message
   cu_cp_initial_ue_message msg = generate_initial_ue_message(ue_index);
   ngap->handle_initial_ue_message(msg);
 
   new_test_ue.ran_ue_id =
-      uint_to_ran_ue_id(msg_notifier.last_ngap_msgs.back().pdu.init_msg().value.init_ue_msg()->ran_ue_ngap_id);
+      uint_to_ran_ue_id(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.init_ue_msg()->ran_ue_ngap_id);
 
   return ue_index;
 }
@@ -92,10 +92,10 @@ ue_index_t ngap_test::create_ue(rnti_t rnti)
 ue_index_t ngap_test::create_ue_without_init_ue_message(rnti_t rnti)
 {
   // Create UE in UE manager
-  ue_index_t ue_index = ue_mng.add_ue(uint_to_du_index(0));
-  auto*      ue       = ue_mng.set_ue_du_context(ue_index, int_to_gnb_du_id(0), MIN_PCI, rnti);
-  if (ue == nullptr) {
-    test_logger.error("Failed to create UE with pci={} and rnti={}", MIN_PCI, rnti_t::MIN_CRNTI);
+  ue_index_t ue_index = ue_mng.add_ue(du_index_t::min, int_to_gnb_du_id(0), MIN_PCI, rnti, du_cell_index_t::min);
+  if (ue_index == ue_index_t::invalid) {
+    test_logger.error(
+        "Failed to create UE with pci={} rnti={} pcell_index={}", MIN_PCI, rnti_t::MIN_CRNTI, du_cell_index_t::min);
     return ue_index_t::invalid;
   }
 
@@ -103,9 +103,8 @@ ue_index_t ngap_test::create_ue_without_init_ue_message(rnti_t rnti)
   test_ues.emplace(ue_index, test_ue(ue_index));
   test_ue& new_test_ue = test_ues.at(ue_index);
 
-  // Add UE to NGAP notifier
-  ngap_ue_creation_notifier.add_ue(
-      ue_index, new_test_ue.rrc_ue_notifier, new_test_ue.rrc_ue_notifier, *du_processor_notifier);
+  ue_mng.get_ngap_rrc_ue_adapter(ue_index).connect_rrc_ue(
+      new_test_ue.rrc_ue_dl_nas_handler, new_test_ue.rrc_ue_security_handler, new_test_ue.rrc_ue_ho_prep_handler);
 
   return ue_index;
 }
@@ -150,7 +149,7 @@ void ngap_test::add_pdu_session_to_up_manager(ue_index_t       ue_index,
                                               drb_id_t         drb_id,
                                               qos_flow_id_t    qos_flow_id)
 {
-  auto&                                        up_mng = ue_mng.find_ngap_ue(ue_index)->get_up_resource_manager();
+  auto&                                        up_mng = ue_mng.find_ue(ue_index)->get_up_resource_manager();
   up_config_update_result                      result;
   up_pdu_session_context_update                ctxt_update{pdu_session_id};
   std::map<qos_flow_id_t, up_qos_flow_context> qos_flows;

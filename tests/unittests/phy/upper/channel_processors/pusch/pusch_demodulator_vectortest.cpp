@@ -25,7 +25,7 @@
 #include "pusch_demodulator_test_data.h"
 #include "srsran/phy/upper/channel_processors/pusch/factories.h"
 #include "srsran/phy/upper/equalization/equalization_factories.h"
-#include "srsran/srsvec/compare.h"
+#include "srsran/srsvec/conversion.h"
 #include "fmt/ostream.h"
 #include <gtest/gtest.h>
 
@@ -91,7 +91,7 @@ protected:
   {
     const test_case_t& test_case = GetParam();
 
-    std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_factory_zf();
+    std::shared_ptr<channel_equalizer_factory> equalizer_factory = create_channel_equalizer_generic_factory();
     ASSERT_TRUE(equalizer_factory);
 
     std::shared_ptr<channel_modulation_factory> demod_factory = create_channel_modulation_sw_factory();
@@ -145,12 +145,14 @@ TEST_P(PuschDemodulatorFixture, PuschDemodulatorUnittest)
 
   // Populate channel estimate.
   for (unsigned i_rx_port = 0; i_rx_port != ce_dims.nof_rx_ports; ++i_rx_port) {
-    // Set noise variance.
-    chan_estimates.set_noise_variance(test_case.context.noise_var, config.rx_ports[i_rx_port], 0);
+    for (unsigned i_layer = 0; i_layer != ce_dims.nof_tx_layers; ++i_layer) {
+      // Set noise variance.
+      chan_estimates.set_noise_variance(test_case.context.noise_var, config.rx_ports[i_rx_port], i_layer);
 
-    // Copy port channel estimates.
-    srsvec::copy(chan_estimates.get_path_ch_estimate(config.rx_ports[i_rx_port], 0),
-                 estimates.get_view<static_cast<unsigned>(ch_dims::rx_port)>({i_rx_port, 0}));
+      // Copy port channel estimates.
+      srsvec::convert(chan_estimates.get_path_ch_estimate(config.rx_ports[i_rx_port], i_layer),
+                      estimates.get_view<static_cast<unsigned>(ch_dims::rx_port)>({i_rx_port, i_layer}));
+    }
   }
 
   // Create a codeword buffer temporally. This will become a spy.

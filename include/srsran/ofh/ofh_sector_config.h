@@ -32,6 +32,7 @@
 #include "srsran/ofh/transmitter/ofh_transmitter_configuration.h"
 #include "srsran/ran/bs_channel_bandwidth.h"
 #include "srsran/ran/cyclic_prefix.h"
+#include "srsran/srslog/srslog.h"
 #include <string>
 
 namespace srsran {
@@ -118,7 +119,7 @@ struct sector_configuration {
   /// Indicates if DPDK should be used by the underlying implementation.
   bool uses_dpdk;
   /// Optional TDD configuration.
-  optional<tdd_ul_dl_config_common> tdd_config;
+  std::optional<tdd_ul_dl_config_common> tdd_config;
 };
 
 /// Open Fronthaul sector dependencies.
@@ -127,16 +128,16 @@ struct sector_dependencies {
   srslog::basic_logger* logger = nullptr;
   /// Downlink task executor.
   task_executor* downlink_executor;
-  /// Transmitter task executor.
-  task_executor* transmitter_executor = nullptr;
-  /// Receiver task executor.
-  task_executor* receiver_executor = nullptr;
+  /// Message transmitter and receiver task executor.
+  task_executor* txrx_executor = nullptr;
+  /// Uplink task executor.
+  task_executor* uplink_executor = nullptr;
   /// User-Plane received symbol notifier.
   std::shared_ptr<ofh::uplane_rx_symbol_notifier> notifier;
   /// Optional Ethernet gateway.
-  optional<std::unique_ptr<ether::gateway>> eth_gateway;
+  std::optional<std::unique_ptr<ether::gateway>> eth_gateway;
   /// Optional Ethernet receiver.
-  optional<std::unique_ptr<ether::receiver>> eth_receiver;
+  std::optional<std::unique_ptr<ether::receiver>> eth_receiver;
 };
 
 } // namespace ofh

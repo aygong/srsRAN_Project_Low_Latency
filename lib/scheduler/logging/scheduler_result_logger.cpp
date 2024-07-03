@@ -22,6 +22,7 @@
 
 #include "scheduler_result_logger.h"
 #include "srsran/ran/csi_report/csi_report_formatters.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -30,10 +31,8 @@ scheduler_result_logger::scheduler_result_logger(bool log_broadcast_, pci_t pci_
 {
 }
 
-void scheduler_result_logger::log_debug(const sched_result& result)
+void scheduler_result_logger::log_debug(const sched_result& result, std::chrono::microseconds decision_latency)
 {
-  auto slot_stop_tp = std::chrono::high_resolution_clock::now();
-
   if (log_broadcast) {
     for (const ssb_information& ssb_info : result.dl.bc.ssb_info) {
       fmt::format_to(
@@ -57,29 +56,32 @@ void scheduler_result_logger::log_debug(const sched_result& result)
       case dci_dl_rnti_config_type::c_rnti_f1_0: {
         const auto& dci = pdcch.dci.c_rnti_f1_0;
         fmt::format_to(fmtbuf,
-                       " dci: h_id={} ndi={} rv={} mcs={}",
+                       " dci: h_id={} ndi={} rv={} mcs={} res_ind={}",
                        dci.harq_process_number,
                        dci.new_data_indicator,
                        dci.redundancy_version,
-                       dci.modulation_coding_scheme);
+                       dci.modulation_coding_scheme,
+                       dci.pucch_resource_indicator);
       } break;
       case dci_dl_rnti_config_type::tc_rnti_f1_0: {
         const auto& dci = pdcch.dci.tc_rnti_f1_0;
         fmt::format_to(fmtbuf,
-                       " dci: h_id={} ndi={} rv={} mcs={}",
+                       " dci: h_id={} ndi={} rv={} mcs={} res_ind={}",
                        dci.harq_process_number,
                        dci.new_data_indicator,
                        dci.redundancy_version,
-                       dci.modulation_coding_scheme);
+                       dci.modulation_coding_scheme,
+                       dci.pucch_resource_indicator);
       } break;
       case dci_dl_rnti_config_type::c_rnti_f1_1: {
         const auto& dci = pdcch.dci.c_rnti_f1_1;
         fmt::format_to(fmtbuf,
-                       " dci: h_id={} ndi={} rv={} mcs={}",
+                       " dci: h_id={} ndi={} rv={} mcs={} res_ind={}",
                        dci.harq_process_number,
                        dci.tb1_new_data_indicator,
                        dci.tb1_redundancy_version,
-                       dci.tb1_modulation_coding_scheme);
+                       dci.tb1_modulation_coding_scheme,
+                       dci.pucch_resource_indicator);
         if (dci.downlink_assignment_index.has_value()) {
           fmt::format_to(fmtbuf, " dai={}", *dci.downlink_assignment_index);
         }
@@ -188,12 +190,15 @@ void scheduler_result_logger::log_debug(const sched_result& result)
                    ue_dl_grant.pdsch_cfg.codewords[0].rv_index,
                    ue_dl_grant.context.nof_retxs,
                    ue_dl_grant.context.k1);
-    if (ue_dl_grant.context.olla_offset.has_value()) {
-      fmt::format_to(fmtbuf, " olla={:.3}", ue_dl_grant.context.olla_offset.value());
-    }
     if (ue_dl_grant.pdsch_cfg.precoding.has_value() and not ue_dl_grant.pdsch_cfg.precoding.value().prg_infos.empty()) {
       const auto& prg_type = ue_dl_grant.pdsch_cfg.precoding->prg_infos[0].type;
       fmt::format_to(fmtbuf, " ri={} {}", ue_dl_grant.pdsch_cfg.nof_layers, csi_report_pmi{prg_type});
+    }
+    if (ue_dl_grant.pdsch_cfg.codewords[0].new_data) {
+      fmt::format_to(fmtbuf, " dl_bo={}", ue_dl_grant.context.buffer_occupancy);
+    }
+    if (ue_dl_grant.context.olla_offset.has_value()) {
+      fmt::format_to(fmtbuf, " olla={:.3}", ue_dl_grant.context.olla_offset.value());
     }
     for (const dl_msg_lc_info& lc : ue_dl_grant.tb_list[0].lc_chs_to_sched) {
       fmt::format_to(fmtbuf,
@@ -288,7 +293,6 @@ void scheduler_result_logger::log_debug(const sched_result& result)
   }
 
   if (fmtbuf.size() > 0) {
-    auto decision_latency     = std::chrono::duration_cast<std::chrono::microseconds>(slot_stop_tp - slot_start_tp);
     const unsigned nof_pdschs = result.dl.paging_grants.size() + result.dl.rar_grants.size() +
                                 result.dl.ue_grants.size() + result.dl.bc.sibs.size();
     const unsigned nof_puschs = result.ul.puschs.size();
@@ -304,10 +308,8 @@ void scheduler_result_logger::log_debug(const sched_result& result)
   }
 }
 
-void scheduler_result_logger::log_info(const sched_result& result)
+void scheduler_result_logger::log_info(const sched_result& result, std::chrono::microseconds decision_latency)
 {
-  auto slot_stop_tp = std::chrono::high_resolution_clock::now();
-
   if (log_broadcast) {
     for (const sib_information& sib_info : result.dl.bc.sibs) {
       fmt::format_to(fmtbuf,
@@ -339,6 +341,9 @@ void scheduler_result_logger::log_info(const sched_result& result)
                    ue_msg.pdsch_cfg.codewords[0].new_data,
                    ue_msg.pdsch_cfg.codewords[0].rv_index,
                    ue_msg.pdsch_cfg.codewords[0].tb_size_bytes);
+    if (ue_msg.pdsch_cfg.codewords[0].new_data) {
+      fmt::format_to(fmtbuf, " ri={} dl_bo={}", ue_msg.pdsch_cfg.nof_layers, ue_msg.context.buffer_occupancy);
+    }
   }
   for (const ul_sched_info& ue_msg : result.ul.puschs) {
     fmt::format_to(fmtbuf,
@@ -376,7 +381,6 @@ void scheduler_result_logger::log_info(const sched_result& result)
   }
 
   if (fmtbuf.size() > 0) {
-    auto decision_latency     = std::chrono::duration_cast<std::chrono::microseconds>(slot_stop_tp - slot_start_tp);
     const unsigned nof_pdschs = result.dl.paging_grants.size() + result.dl.rar_grants.size() +
                                 result.dl.ue_grants.size() + result.dl.bc.sibs.size();
     const unsigned nof_puschs = result.ul.puschs.size();
@@ -392,14 +396,15 @@ void scheduler_result_logger::log_info(const sched_result& result)
   }
 }
 
-void scheduler_result_logger::on_scheduler_result(const sched_result& result)
+void scheduler_result_logger::on_scheduler_result(const sched_result&       result,
+                                                  std::chrono::microseconds decision_latency)
 {
   if (not enabled) {
     return;
   }
   if (logger.debug.enabled()) {
-    log_debug(result);
+    log_debug(result, decision_latency);
   } else {
-    log_info(result);
+    log_info(result, decision_latency);
   }
 }

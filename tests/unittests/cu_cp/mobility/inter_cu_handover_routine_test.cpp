@@ -66,9 +66,9 @@ protected:
         generate_ul_rrc_message_transfer(int_to_gnb_cu_ue_f1ap_id(0),
                                          int_to_gnb_du_ue_f1ap_id(0),
                                          srb_id_t::srb1,
-                                         make_byte_buffer("000800400004015d3c18c0806bae872c411e548b"));
+                                         make_byte_buffer("000800400004015d3c18c0806bae872c411e548b").value());
     test_logger.info("Injecting UL RRC message (RRC Measurement Report)");
-    cu_cp_obj->get_f1c_handler().get_du(source_du_index).get_f1ap_message_handler().handle_message(ul_rrc_msg);
+    f1c_gw.get_du(source_du_index).on_new_message(ul_rrc_msg);
   }
 
   du_index_t get_source_du_index() { return source_du_index; }
@@ -81,9 +81,8 @@ protected:
 
   void check_handover_required_was_sent_to_amf() const
   {
-    ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.type(),
-              asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
-    ASSERT_EQ(ngap_amf_notifier.last_ngap_msgs.back().pdu.init_msg().value.type().value,
+    ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.type(), asn1::ngap::ngap_pdu_c::types_opts::options::init_msg);
+    ASSERT_EQ(n2_gw.last_ngap_msgs.back().pdu.init_msg().value.type().value,
               asn1::ngap::ngap_elem_procs_o::init_msg_c::types_opts::ho_required);
   }
 

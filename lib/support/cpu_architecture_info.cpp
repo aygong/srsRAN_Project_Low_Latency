@@ -22,6 +22,7 @@
 
 #include "srsran/support/cpu_architecture_info.h"
 #include "srsran/adt/interval.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/format_utils.h"
 #include "srsran/support/sysinfo.h"
 #include <dirent.h>
@@ -65,8 +66,11 @@ const cpu_architecture_info::cpu_description cpu_architecture_info::cpu_desc =
 
 cpu_architecture_info::cpu_description cpu_architecture_info::discover_cpu_architecture()
 {
-  // Clean-up cgroups possibly left from a previous run.
-  cleanup_cgroups();
+  // Check if custom cgroups exist in the system (possibly left from a previous run).
+  auto detected_cgroups = check_cgroups();
+  if (detected_cgroups.has_value()) {
+    fmt::print("Possible performance impairment by custom cgroups in: {}.", detected_cgroups.value());
+  }
 
   cpu_description cpuinfo;
   cpu_set_t&      cpuset = cpuinfo.cpuset;

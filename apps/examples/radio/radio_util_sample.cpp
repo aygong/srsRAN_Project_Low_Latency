@@ -22,6 +22,7 @@
 
 #include "radio_notifier_sample.h"
 #include "srsran/adt/spsc_queue.h"
+#include "srsran/adt/to_array.h"
 #include "srsran/gateways/baseband/baseband_gateway_receiver.h"
 #include "srsran/gateways/baseband/baseband_gateway_transmitter.h"
 #include "srsran/gateways/baseband/buffer/baseband_gateway_buffer_dynamic.h"
@@ -29,16 +30,16 @@
 #include "srsran/support/executors/task_worker.h"
 #include "srsran/support/file_sink.h"
 #include "srsran/support/math_utils.h"
-#include <csignal>
+#include "srsran/support/signal_handling.h"
 #include <getopt.h>
 #include <random>
 
 using namespace srsran;
 
-// Describes the benchmark configuration.
-static std::string                               rx_filename                   = "";
+/// Describes the benchmark configuration.
+static std::string                               rx_filename;
 static double                                    duration_s                    = 0.1;
-static std::string                               log_level                     = "info";
+static srslog::basic_levels                      log_level                     = srslog::basic_levels::info;
 static std::string                               driver_name                   = "uhd";
 static std::string                               device_arguments              = "type=b200";
 static std::vector<std::string>                  tx_channel_arguments          = {};
@@ -53,20 +54,22 @@ static double                                    tx_gain                       =
 static double                                    rx_freq                       = 3.5e9;
 static double                                    rx_gain                       = 60.0;
 static double                                    tx_rx_delay_s                 = 0.001;
-bool                                             enable_discontinuous_tx       = false;
+static bool                                      enable_discontinuous_tx       = false;
 static unsigned                                  nof_consecutive_empty_buffers = 0;
 static float                                     power_ramping_us              = 200.0F;
 static radio_configuration::over_the_wire_format otw_format = radio_configuration::over_the_wire_format::SC16;
 
+namespace {
 /// Describes a benchmark configuration profile.
 struct benchmark_configuration_profile {
   std::string           name;
   std::string           description;
   std::function<void()> function;
 };
+} // namespace
 
 /// Defines a set of configuration profiles.
-static const std::vector<benchmark_configuration_profile> benchmark_profiles = {
+static const auto benchmark_profiles = to_array<benchmark_configuration_profile>({
     {"b200_20MHz",
      "Single channel B200 USRP 20MHz bandwidth.",
      []() {
@@ -170,13 +173,14 @@ static const std::vector<benchmark_configuration_profile> benchmark_profiles = {
        otw_format           = radio_configuration::over_the_wire_format::DEFAULT;
        block_size           = sampling_rate_hz / 15e3;
      }},
-};
+});
 
 /// Set to true to stop.
-static std::atomic<bool>       stop  = {false};
-std::unique_ptr<radio_session> radio = nullptr;
+static std::atomic<bool>              stop  = {false};
+static std::unique_ptr<radio_session> radio = nullptr;
 
-static void signal_handler(int sig)
+/// Function to call when the application is interrupted.
+static void interrupt_signal_handler()
 {
   if (radio != nullptr) {
     radio->stop();
@@ -184,18 +188,24 @@ static void signal_handler(int sig)
   stop = true;
 }
 
-static void usage(std::string prog)
+/// Function to call when the application is going to be forcefully shutdown.
+static void cleanup_signal_handler()
+{
+  srslog::flush();
+}
+
+static void usage(std::string_view prog)
 {
   fmt::print("Usage: {} [-P profile] [-D duration] [-v level] [-o file name]\n", prog);
   fmt::print("\t-P Profile. [Default {}]\n", benchmark_profiles.front().name);
-  for (benchmark_configuration_profile profile : benchmark_profiles) {
+  for (const benchmark_configuration_profile& profile : benchmark_profiles) {
     fmt::print("\t\t {:<30}{}\n", profile.name, profile.description);
   }
   fmt::print("\t-D Duration in seconds. [Default {}]\n", duration_s);
   fmt::print("\t-d Enable discontinuous transmission mode. [Default {}]\n", enable_discontinuous_tx);
-  fmt::print("\t-g Discontinous transmission gap in number of consecutive empty buffers. [Default {}]\n",
+  fmt::print("\t-g Discontinuous transmission gap in number of consecutive empty buffers. [Default {}]\n",
              nof_consecutive_empty_buffers);
-  fmt::print("\t-v Logging level. [Default {}]\n", log_level);
+  fmt::print("\t-v Logging level. [Default {}]\n", srslog::basic_level_to_string(log_level));
   fmt::print("\t-o saves received signal of stream:port 0:0 in a file. Ignored if none. [Default {}]\n",
              rx_filename.empty() ? "none" : rx_filename);
   fmt::print("\t-h print this message.\n");
@@ -229,9 +239,11 @@ static void parse_args(int argc, char** argv)
           nof_consecutive_empty_buffers = std::strtol(optarg, nullptr, 10);
         }
         break;
-      case 'v':
-        log_level = std::string(optarg);
+      case 'v': {
+        auto level = srslog::str_to_basic_level(std::string(optarg));
+        log_level  = level.has_value() ? level.value() : srslog::basic_levels::info;
         break;
+      }
       case 'h':
       default:
         usage(argv[0]);
@@ -258,6 +270,10 @@ static void parse_args(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+  // Set interrupt and cleanup signal handlers.
+  register_interrupt_signal_handler(interrupt_signal_handler);
+  register_cleanup_signal_handler(cleanup_signal_handler);
+
   // Parse arguments.
   parse_args(argc, argv);
 
@@ -281,7 +297,8 @@ int main(int argc, char** argv)
   config.clock.clock      = radio_configuration::clock_sources::source::DEFAULT;
   config.sampling_rate_hz = sampling_rate_hz;
   config.otw_format       = otw_format;
-  config.discontinuous_tx = enable_discontinuous_tx;
+  config.tx_mode          = enable_discontinuous_tx ? radio_configuration::transmission_mode::discontinuous
+                                                    : radio_configuration::transmission_mode::continuous;
   config.power_ramping_us = power_ramping_us;
   config.args             = device_arguments;
   config.log_level        = log_level;
@@ -340,13 +357,6 @@ int main(int argc, char** argv)
   // Create radio.
   radio = factory->create(config, *async_task_executor, notification_handler);
   report_fatal_error_if_not(radio, "Failed to create radio.");
-
-  // Set signal handler.
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
-  signal(SIGHUP, signal_handler);
-  signal(SIGQUIT, signal_handler);
-  signal(SIGKILL, signal_handler);
 
   // Calculate duration in samples.
   uint64_t total_nof_samples = static_cast<uint64_t>(duration_s * sampling_rate_hz);

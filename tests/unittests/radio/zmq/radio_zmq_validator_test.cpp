@@ -92,10 +92,10 @@ const radio_configuration::radio radio_base_config = {base_clock_sources,
                                                       {base_rx_stream},
                                                       1.92e6,
                                                       radio_configuration::over_the_wire_format::DEFAULT,
-                                                      false,
+                                                      radio_configuration::transmission_mode::continuous,
                                                       0.0F,
                                                       "",
-                                                      "none"};
+                                                      srslog::basic_levels::none};
 
 struct test_case_t {
   std::function<radio_configuration::radio()> get_config;
@@ -243,16 +243,10 @@ const std::vector<test_case_t> radio_zmq_validator_test_data = {
      "Only default OTW format is currently supported.\n"},
     {[] {
        radio_configuration::radio config = radio_base_config;
-       config.log_level                  = "some invalid log level";
+       config.tx_mode                    = radio_configuration::transmission_mode::discontinuous;
        return config;
      },
-     "Log level some invalid log level does not correspond to an actual logger level.\n"},
-    {[] {
-       radio_configuration::radio config = radio_base_config;
-       config.discontinuous_tx           = true;
-       return config;
-     },
-     "Discontinuous transmission mode is not supported by the ZMQ radio.\n"},
+     "Discontinuous transmission modes are not supported by the ZMQ radio.\n"},
     {[] {
        radio_configuration::radio config = radio_base_config;
        config.power_ramping_us           = 1.0F;

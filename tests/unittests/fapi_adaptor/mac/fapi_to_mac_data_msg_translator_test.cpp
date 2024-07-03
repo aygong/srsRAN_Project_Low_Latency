@@ -60,9 +60,9 @@ protected:
 
   void test_power_values(float value)
   {
-    rssi  = clamp<float>(value, -140.F, 30.F);
-    power = clamp<float>(value, -140.F, 30.F);
-    snr   = clamp<float>(value, -64.F, 63.F);
+    rssi  = std::clamp(value, -140.F, 30.F);
+    power = std::clamp(value, -140.F, 30.F);
+    snr   = std::clamp(value, -64.F, 63.F);
     test_pdu();
   }
 
@@ -107,11 +107,11 @@ private:
     EXPECT_EQ(start_symbol, occ.start_symbol);
     EXPECT_EQ(slot_index, occ.slot_index);
     EXPECT_EQ(freq_index, occ.frequency_index);
-    EXPECT_FLOAT_EQ(rssi, occ.rssi_dB);
+    EXPECT_FLOAT_EQ(rssi, occ.rssi_dBFS.value());
 
     const mac_rach_indication::rach_preamble& pream = occ.preambles.front();
-    EXPECT_FLOAT_EQ(snr, pream.snr_dB);
-    EXPECT_FLOAT_EQ(power, pream.power_dB);
+    EXPECT_FLOAT_EQ(snr, pream.snr_dB.value());
+    EXPECT_FLOAT_EQ(power, pream.pwr_dBFS.value());
     EXPECT_EQ(time_advance_ns, std::roundf(pream.time_advance.to_seconds() * 1e9));
   }
 };

@@ -25,14 +25,13 @@
 #include "srsran/adt/expected.h"
 #include "srsran/gtpu/gtpu_teid.h"
 #include "srsran/support/compiler.h"
-#include <vector>
 
 namespace srsran {
 
 /// \brief GTP-U TEID pool
 ///
 /// This class provides a TEID pool that users can request unused TEIDs.
-/// This allows the CU-UP/DU to allocate unused local TEIDs safely event
+/// This allows the CU-UP/DU to allocate unused local TEIDs safely even
 /// in the event of TEID wrap-around.
 class gtpu_teid_pool
 {
@@ -41,10 +40,10 @@ public:
 
   SRSRAN_NODISCARD virtual expected<gtpu_teid_t> request_teid() = 0;
 
-  SRSRAN_NODISCARD virtual bool release_teid(gtpu_teid_t teid) = 0;
+  virtual bool release_teid(gtpu_teid_t teid) = 0;
 
-  virtual bool full() const = 0;
+  [[nodiscard]] virtual bool full() const = 0;
 
-  virtual uint32_t get_max_teids() = 0;
+  virtual uint32_t get_max_nof_teids() = 0;
 };
 } // namespace srsran

@@ -31,6 +31,7 @@
 #include "srsran/phy/upper/channel_processors/pusch/pusch_demodulator.h"
 #include "srsran/phy/upper/equalization/channel_equalizer.h"
 #include "srsran/phy/upper/sequence_generators/pseudo_random_generator.h"
+#include "srsran/srsvec/conversion.h"
 
 namespace srsran {
 
@@ -50,8 +51,6 @@ public:
     evm_calc(std::move(evm_calc_)),
     descrambler(std::move(descrambler_)),
     ch_re({MAX_BLOCK_SIZE, 1}),
-    eq_re({MAX_BLOCK_SIZE, 1}),
-    eq_noise_vars({MAX_BLOCK_SIZE, 1}),
     ch_estimates({MAX_BLOCK_SIZE, 1, 1}),
     compute_post_eq_sinr(compute_post_eq_sinr_)
   {
@@ -94,7 +93,7 @@ private:
     // Extract RE for each port and symbol.
     for (unsigned i_port = 0, i_port_end = rx_ports.size(); i_port != i_port_end; ++i_port) {
       // Get a view of the port data RE.
-      span<cf_t> re_port_buffer = data_re.get_view<>({i_port});
+      span<cbf16_t> re_port_buffer = data_re.get_view<>({i_port});
 
       // Copy grid data resource elements into the buffer.
       re_port_buffer = grid.get(re_port_buffer, rx_ports[i_port], i_symbol, init_subc, re_mask);
@@ -128,10 +127,10 @@ private:
     for (unsigned i_layer = 0, i_layer_end = channel_estimate.size().nof_tx_layers; i_layer != i_layer_end; ++i_layer) {
       for (unsigned i_port = 0, i_port_end = rx_ports.size(); i_port != i_port_end; ++i_port) {
         // Get a view of the channel estimates buffer for a single Rx port.
-        span<cf_t> ch_port_buffer = data_estimates.get_view({i_port, i_layer});
+        span<cbf16_t> ch_port_buffer = data_estimates.get_view({i_port, i_layer});
 
         // View of the channel estimation for an OFDM symbol.
-        span<const cf_t> symbol_estimates = channel_estimate.get_symbol_ch_estimate(i_symbol, i_port, i_layer);
+        span<const cbf16_t> symbol_estimates = channel_estimate.get_symbol_ch_estimate(i_symbol, i_port, i_layer);
 
         // Get view of the selected area of the grid.
         symbol_estimates = symbol_estimates.subspan(init_subc, re_mask.size());
@@ -152,7 +151,7 @@ private:
         // Skip DM-RS estimates.
         re_mask.for_each(0, re_mask.size(), [&symbol_estimates, &ch_port_buffer](unsigned i_re) {
           // Copy RE.
-          ch_port_buffer.front() = symbol_estimates[i_re];
+          ch_port_buffer.front() = to_cf(symbol_estimates[i_re]);
 
           // Advance buffer.
           ch_port_buffer = ch_port_buffer.last(ch_port_buffer.size() - 1);
@@ -177,26 +176,20 @@ private:
 
   /// Buffer used to transfer channel modulation symbols from the resource grid to the equalizer.
   dynamic_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                 cf_t,
+                 cbf16_t,
                  channel_equalizer::re_list::dims>
       ch_re;
 
   /// Buffer used to store channel modulation resource elements at the equalizer output.
-  dynamic_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                 cf_t,
-                 channel_equalizer::re_list::dims>
-      eq_re;
+  std::array<cf_t, MAX_BLOCK_SIZE> temp_eq_re;
 
   /// Buffer used to transfer symbol noise variances at the equalizer output.
-  dynamic_tensor<std::underlying_type_t<channel_equalizer::re_list::dims>(channel_equalizer::re_list::dims::nof_dims),
-                 float,
-                 channel_equalizer::re_list::dims>
-      eq_noise_vars;
+  std::array<float, MAX_BLOCK_SIZE> temp_eq_noise_vars;
 
   /// Buffer used to transfer channel estimation coefficients from the channel estimate to the equalizer.
   dynamic_tensor<std::underlying_type_t<channel_equalizer::ch_est_list::dims>(
                      channel_equalizer::ch_est_list::dims::nof_dims),
-                 cf_t,
+                 cbf16_t,
                  channel_equalizer::ch_est_list::dims>
       ch_estimates;
 

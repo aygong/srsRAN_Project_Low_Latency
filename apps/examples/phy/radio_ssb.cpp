@@ -28,13 +28,12 @@
 /// transmitting the Synchronization Signal Block (SSB).
 ///
 /// The application supports different working profiles, run <tt> radio_ssb -h </tt> for usage details.
-/// \cond
 
 #include "../radio/radio_notifier_sample.h"
 #include "lower_phy_example_factory.h"
 #include "rx_symbol_handler_example.h"
 #include "upper_phy_ssb_example.h"
-#include "srsran/adt/spsc_queue.h"
+#include "srsran/adt/to_array.h"
 #include "srsran/phy/adapters/phy_error_adapter.h"
 #include "srsran/phy/adapters/phy_metrics_adapter.h"
 #include "srsran/phy/adapters/phy_rg_gateway_adapter.h"
@@ -47,32 +46,34 @@
 #include "srsran/radio/radio_factory.h"
 #include "srsran/support/executors/task_worker.h"
 #include "srsran/support/math_utils.h"
+#include "srsran/support/signal_handling.h"
 #include <atomic>
-#include <csignal>
 #include <getopt.h>
 #include <string>
 #include <unistd.h>
 #include <unordered_map>
 
+using namespace srsran;
+
+namespace {
 struct configuration_profile {
   std::string           name;
   std::string           description;
   std::function<void()> function;
 };
+} // namespace
 
-using namespace srsran;
+/// List of allowed data modulations.
+static const auto modulations = to_array<std::string>({to_string(modulation_scheme::PI_2_BPSK),
+                                                       to_string(modulation_scheme::BPSK),
+                                                       to_string(modulation_scheme::QPSK),
+                                                       to_string(modulation_scheme::QAM16),
+                                                       to_string(modulation_scheme::QAM64),
+                                                       to_string(modulation_scheme::QAM256)});
 
-// List of allowed data modulations.
-static std::vector<std::string> modulations = {to_string(modulation_scheme::PI_2_BPSK),
-                                               to_string(modulation_scheme::BPSK),
-                                               to_string(modulation_scheme::QPSK),
-                                               to_string(modulation_scheme::QAM16),
-                                               to_string(modulation_scheme::QAM64),
-                                               to_string(modulation_scheme::QAM256)};
+static srslog::basic_levels log_level = srslog::basic_levels::warning;
 
-static std::string log_level = "warning";
-
-// Program parameters.
+/// Program parameters.
 static subcarrier_spacing                        scs                        = subcarrier_spacing::kHz15;
 static unsigned                                  max_processing_delay_slots = 4;
 static cyclic_prefix                             cp                         = cyclic_prefix::NORMAL;
@@ -101,14 +102,14 @@ static std::string                               thread_profile_name     = "sing
 static std::string                               clock_source            = "internal";
 static std::string                               sync_source             = "internal";
 
-// Amplitude control args.
+/// Amplitude control args.
 static float baseband_backoff_dB    = 12.0F;
 static bool  enable_clipping        = false;
 static float full_scale_amplitude   = 1.0F;
 static float amplitude_ceiling_dBFS = -0.1F;
 
 /// Defines a set of configuration profiles.
-static const std::vector<configuration_profile> profiles = {
+static const auto profiles = to_array<configuration_profile>({
     {"b200_10MHz",
      "Single channel B200 USRP 10MHz bandwidth.",
      []() {
@@ -235,9 +236,9 @@ static const std::vector<configuration_profile> profiles = {
          }
        }
      }},
-};
+});
 
-// Global instances.
+/// Global instances.
 static std::mutex                             stop_execution_mutex;
 static std::atomic<bool>                      stop               = {false};
 static std::unique_ptr<lower_phy>             lower_phy_instance = nullptr;
@@ -247,7 +248,7 @@ static std::unique_ptr<upper_phy_ssb_example> upper_phy          = nullptr;
 static void stop_execution()
 {
   // Make sure this function is not executed simultaneously.
-  std::unique_lock<std::mutex> lock(stop_execution_mutex);
+  std::scoped_lock lock(stop_execution_mutex);
 
   // Skip if stop has already been signaled.
   if (stop) {
@@ -264,12 +265,19 @@ static void stop_execution()
   }
 }
 
-static void signal_handler(int sig)
+/// Function to call when the application is interrupted.
+static void interrupt_signal_handler()
 {
   stop_execution();
 }
 
-static void usage(std::string prog)
+/// Function to call when the application is going to be forcefully shutdown.
+static void cleanup_signal_handler()
+{
+  srslog::flush();
+}
+
+static void usage(std::string_view prog)
 {
   fmt::print("Usage: {} [-P profile] [-D duration] [-v level] [-o file name]\n", prog);
   fmt::print("\t-P Profile. [Default {}]\n", profiles.front().name);
@@ -288,8 +296,9 @@ static void usage(std::string prog)
   fmt::print("\t-u Enable uplink processing [Default {}]\n", enable_ul_processing);
   fmt::print("\t-p Enable PRACH processing [Default {}]\n", enable_prach_processing);
   fmt::print("\t-a Number of antenna ports [Default {}]\n", nof_ports);
-  fmt::print(
-      "\t-m Data modulation scheme ({}). [Default {}]\n", span<std::string>(modulations), to_string(data_mod_scheme));
+  fmt::print("\t-m Data modulation scheme ({}). [Default {}]\n",
+             span<const std::string>(modulations),
+             to_string(data_mod_scheme));
   fmt::print("\t-h Print this message.\n");
 }
 
@@ -330,9 +339,11 @@ static void parse_args(int argc, char** argv)
           sync_source = std::string(optarg);
         }
         break;
-      case 'v':
-        log_level = std::string(optarg);
+      case 'v': {
+        auto level = srslog::str_to_basic_level(std::string(optarg));
+        log_level  = level.has_value() ? level.value() : srslog::basic_levels::info;
         break;
+      }
       case 'd':
         enable_random_data = true;
         break;
@@ -393,7 +404,7 @@ static radio_configuration::radio create_radio_configuration()
   radio_config.clock.sync       = radio_configuration::to_clock_source(sync_source);
   radio_config.sampling_rate_hz = srate.to_Hz<double>();
   radio_config.otw_format       = otw_format;
-  radio_config.discontinuous_tx = false;
+  radio_config.tx_mode          = radio_configuration::transmission_mode::continuous;
   radio_config.power_ramping_us = 0.0F;
   radio_config.args             = device_arguments;
   radio_config.log_level        = log_level;
@@ -485,11 +496,15 @@ lower_phy_configuration create_lower_phy_configuration(task_executor*           
 
 int main(int argc, char** argv)
 {
+  // Set interrupt and cleanup signal handlers.
+  register_interrupt_signal_handler(interrupt_signal_handler);
+  register_cleanup_signal_handler(cleanup_signal_handler);
+
   // Parse arguments.
   parse_args(argc, argv);
 
   // Make sure thread pool logging matches the test level.
-  srslog::fetch_basic_logger("POOL").set_level(srslog::str_to_basic_level(log_level));
+  srslog::fetch_basic_logger("POOL").set_level(log_level);
 
   // Make sure parameters are valid.
   report_fatal_error_if_not(
@@ -508,9 +523,8 @@ int main(int argc, char** argv)
   std::unique_ptr<task_executor>                                dl_task_executor;
   std::unique_ptr<task_executor>                                prach_task_executor;
   if (thread_profile_name == "single") {
-    workers.emplace(
-        std::make_pair("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports)));
-    workers.emplace(std::make_pair("low_phy", std::make_unique<task_worker>("low_phy", 4)));
+    workers.emplace("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports));
+    workers.emplace("low_phy", std::make_unique<task_worker>("low_phy", 4));
 
     async_task_executor = make_task_executor_ptr(*workers["async_thread"]);
     rx_task_executor    = make_task_executor_ptr(*workers["low_phy"]);
@@ -525,12 +539,9 @@ int main(int argc, char** argv)
     low_ul_affinity.set(0);
     low_dl_affinity.set(1);
 
-    workers.emplace(
-        std::make_pair("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports)));
-    workers.emplace(std::make_pair("low_phy_ul",
-                                   std::make_unique<task_worker>("low_phy_ul", 128, low_ul_priority, low_ul_affinity)));
-    workers.emplace(std::make_pair("low_phy_dl",
-                                   std::make_unique<task_worker>("low_phy_dl", 128, low_dl_priority, low_dl_affinity)));
+    workers.emplace("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports));
+    workers.emplace("low_phy_ul", std::make_unique<task_worker>("low_phy_ul", 128, low_ul_priority, low_ul_affinity));
+    workers.emplace("low_phy_dl", std::make_unique<task_worker>("low_phy_dl", 128, low_dl_priority, low_dl_affinity));
 
     async_task_executor = make_task_executor_ptr(*workers["async_thread"]);
     rx_task_executor    = make_task_executor_ptr(*workers["low_phy_ul"]);
@@ -550,16 +561,11 @@ int main(int argc, char** argv)
     low_tx_affinity.set(1);
     low_ul_affinity.set(2);
     low_dl_affinity.set(3);
-    workers.emplace(
-        std::make_pair("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports)));
-    workers.emplace(
-        std::make_pair("low_rx", std::make_unique<task_worker>("low_rx", 1, low_rx_priority, low_rx_affinity)));
-    workers.emplace(
-        std::make_pair("low_tx", std::make_unique<task_worker>("low_tx", 128, low_tx_priority, low_tx_affinity)));
-    workers.emplace(
-        std::make_pair("low_dl", std::make_unique<task_worker>("low_dl", 128, low_dl_priority, low_dl_affinity)));
-    workers.emplace(
-        std::make_pair("low_ul", std::make_unique<task_worker>("low_ul", 128, low_ul_priority, low_ul_affinity)));
+    workers.emplace("async_thread", std::make_unique<task_worker>("async_thread", 2 * nof_sectors * nof_ports));
+    workers.emplace("low_rx", std::make_unique<task_worker>("low_rx", 1, low_rx_priority, low_rx_affinity));
+    workers.emplace("low_tx", std::make_unique<task_worker>("low_tx", 128, low_tx_priority, low_tx_affinity));
+    workers.emplace("low_dl", std::make_unique<task_worker>("low_dl", 128, low_dl_priority, low_dl_affinity));
+    workers.emplace("low_ul", std::make_unique<task_worker>("low_ul", 128, low_ul_priority, low_ul_affinity));
 
     async_task_executor = make_task_executor_ptr(*workers["async_thread"]);
     rx_task_executor    = make_task_executor_ptr(*workers["low_rx"]);
@@ -569,7 +575,7 @@ int main(int argc, char** argv)
   } else {
     report_error("Invalid thread profile '{}'.\n", thread_profile_name);
   }
-  workers.emplace(std::make_pair("low_phy_prach", std::make_unique<task_worker>("low_phy_prach", 4)));
+  workers.emplace("low_phy_prach", std::make_unique<task_worker>("low_phy_prach", 4));
   prach_task_executor = make_task_executor_ptr(*workers["low_phy_prach"]);
 
   // Create radio factory.
@@ -591,7 +597,7 @@ int main(int argc, char** argv)
 
   // Create lower PHY error adapter logger.
   srslog::basic_logger& logger = srslog::fetch_basic_logger("PHY");
-  logger.set_level(srslog::str_to_basic_level(log_level));
+  logger.set_level(log_level);
 
   // Create adapters.
   phy_error_adapter             error_adapter(logger);
@@ -674,13 +680,6 @@ int main(int argc, char** argv)
   rg_gateway_adapter.connect(&lower_phy_instance->get_rg_handler());
   phy_rx_symbol_req_adapter.connect(&lower_phy_instance->get_request_handler());
 
-  // Set signal handler.
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
-  signal(SIGHUP, signal_handler);
-  signal(SIGQUIT, signal_handler);
-  signal(SIGKILL, signal_handler);
-
   // Calculate starting time.
   double                     delay_s      = 0.1;
   baseband_gateway_timestamp current_time = radio->read_current_time();
@@ -715,10 +714,5 @@ int main(int argc, char** argv)
   // Prints radio notification summary (number of overflow, underflow and other events).
   notification_handler.print();
 
-  // Avoids pending log messages before destruction starts.
-  srslog::flush();
-
   return 0;
 }
-
-/// \endcond

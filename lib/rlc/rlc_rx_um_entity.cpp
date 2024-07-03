@@ -25,7 +25,7 @@
 
 using namespace srsran;
 
-rlc_rx_um_entity::rlc_rx_um_entity(uint32_t                          du_index,
+rlc_rx_um_entity::rlc_rx_um_entity(gnb_du_id_t                       gnb_du_id,
                                    du_ue_index_t                     ue_index,
                                    rb_id_t                           rb_id,
                                    const rlc_rx_um_config&           config,
@@ -34,7 +34,7 @@ rlc_rx_um_entity::rlc_rx_um_entity(uint32_t                          du_index,
                                    task_executor&                    ue_executor,
                                    bool                              metrics_enable,
                                    rlc_pcap&                         pcap_) :
-  rlc_rx_entity(du_index, ue_index, rb_id, upper_dn_, metrics_enable, pcap_),
+  rlc_rx_entity(gnb_du_id, ue_index, rb_id, upper_dn_, metrics_enable, pcap_),
   cfg(config),
   mod(cardinality(to_number(cfg.sn_field_length))),
   um_window_size(window_size(to_number(cfg.sn_field_length))),
@@ -415,13 +415,13 @@ expected<byte_buffer_chain> rlc_rx_um_entity::reassemble_sdu(rlc_rx_um_sdu_info&
   // Sanity check
   if (!sdu_info.fully_received) {
     logger.log_error("Cannot reassemble SDU not marked as fully_received. sn={} {}", sn, sdu_info);
-    return {default_error_t{}};
+    return make_unexpected(default_error_t{});
   }
 
   expected<byte_buffer_chain> sdu = byte_buffer_chain::create();
   if (!sdu) {
     logger.log_error("Failed to create SDU buffer. sn={} {}", sn, sdu_info);
-    return {default_error_t{}};
+    return make_unexpected(default_error_t{});
   }
 
   for (const rlc_rx_um_sdu_segment& segm : sdu_info.segments) {
@@ -432,7 +432,7 @@ expected<byte_buffer_chain> rlc_rx_um_entity::reassemble_sdu(rlc_rx_um_sdu_info&
                        segm.so,
                        segm.payload.length(),
                        sdu_info);
-      return {default_error_t{}};
+      return make_unexpected(default_error_t{});
     }
   }
   logger.log_debug("Assembled SDU from segments. sn={} sdu_len={}", sn, sdu.value().length());

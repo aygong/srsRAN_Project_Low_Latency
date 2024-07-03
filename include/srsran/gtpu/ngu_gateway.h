@@ -41,12 +41,18 @@ namespace srs_cu_up {
 class ngu_tnl_pdu_session : public udp_network_gateway_data_handler, public network_gateway_data_notifier_with_src_addr
 {
 public:
-  virtual ~ngu_tnl_pdu_session() = default;
+  ~ngu_tnl_pdu_session() override = default;
+
+  /// \brief Get the address to which the socket is bound.
+  ///
+  /// In case the gateway was configured to use a hostname,
+  /// this function can be used to get the actual IP address in string form.
+  virtual bool get_bind_address(std::string& ip_address) = 0;
 
   /// Get bind port currently being used by the NG-U TNL session for the reception of PDUs.
   /// \return If a UDP link is being used, returns the respective bind port. If the connection is local, it returns
-  /// nullopt.
-  virtual optional<uint16_t> get_bind_port() = 0;
+  /// std::nullopt.
+  virtual std::optional<uint16_t> get_bind_port() = 0;
 };
 
 /// \brief This class is called by the CU-UP to instantiate new NG-U TNL PDU sessions.

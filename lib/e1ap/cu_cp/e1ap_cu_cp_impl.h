@@ -22,14 +22,10 @@
 
 #pragma once
 
-#include "procedures/bearer_context_modification_procedure.h"
-#include "procedures/bearer_context_release_procedure.h"
-#include "procedures/bearer_context_setup_procedure.h"
 #include "procedures/e1ap_transaction_manager.h"
 #include "ue_context/e1ap_cu_cp_ue_context.h"
 #include "srsran/asn1/e1ap/e1ap.h"
 #include "srsran/e1ap/cu_cp/e1ap_cu_cp.h"
-#include "srsran/ran/nr_cgi.h"
 #include "srsran/support/executors/task_executor.h"
 #include <memory>
 
@@ -64,6 +60,7 @@ public:
   void handle_connection_loss() override {}
 
   // e1ap_ue_handler functions
+  void cancel_ue_tasks(ue_index_t ue_index) override;
   void update_ue_context(ue_index_t ue_index, ue_index_t old_ue_index) override;
 
   // e1ap_bearer_context_removal_handler functions

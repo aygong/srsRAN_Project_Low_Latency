@@ -80,7 +80,7 @@ public:
 
     // Fill the contexts
     ul_cplane_context_repo_ptr->add(slot, eaxc, context);
-    ul_context_repo->add({slot, sector}, grid);
+    ul_context_repo->add({slot, sector}, grid, {context.radio_hdr.start_symbol, context.nof_symbols});
   }
 
   data_flow_uplane_uplink_data_impl_config get_config()
@@ -125,7 +125,7 @@ public:
     section.nof_prbs                  = nof_prbs;
     section.use_current_symbol_number = true;
     section.is_every_rb_used          = true;
-    section.iq_samples.resize(MAX_NOF_PRBS * NRE);
+    section.iq_samples.resize(MAX_NOF_PRBS * NOF_SUBCARRIERS_PER_RB);
 
     return deco_results;
   }

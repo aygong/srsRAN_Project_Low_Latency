@@ -100,12 +100,12 @@ private:
   static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelerator_pusch_dec_factory()
   {
 #ifdef HWACC_PUSCH_ENABLED
-    // Hardcoded stdout and error logging.
+    //  Hardcoded stdout and error logging.
     srslog::sink* log_sink = srslog::create_stdout_sink();
     srslog::set_default_sink(*log_sink);
     srslog::init();
     srslog::basic_logger& logger = srslog::fetch_basic_logger("HAL", false);
-    logger.set_level(srslog::str_to_basic_level("error"));
+    logger.set_level(srslog::basic_levels::error);
 
     // Pointer to a dpdk-based hardware-accelerator interface.
     static std::unique_ptr<dpdk::dpdk_eal> dpdk_interface = nullptr;
@@ -136,19 +136,20 @@ private:
     // Interfacing to a shared external HARQ buffer context repository.
     unsigned nof_cbs                   = MAX_NOF_SEGMENTS;
     uint64_t acc100_ext_harq_buff_size = bbdev_accelerator->get_harq_buff_size_bytes();
-    std::shared_ptr<ext_harq_buffer_context_repository> harq_buffer_context =
-        create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, false);
+    std::shared_ptr<hal::ext_harq_buffer_context_repository> harq_buffer_context =
+        hal::create_ext_harq_buffer_context_repository(nof_cbs, acc100_ext_harq_buff_size, false);
     if (!harq_buffer_context) {
       skip_hwacc_test = true;
       return nullptr;
     }
 
     // Set the hardware-accelerator configuration.
-    hw_accelerator_pusch_dec_configuration hw_decoder_config;
+    hal::hw_accelerator_pusch_dec_configuration hw_decoder_config;
     hw_decoder_config.acc_type            = "acc100";
     hw_decoder_config.bbdev_accelerator   = bbdev_accelerator;
     hw_decoder_config.ext_softbuffer      = true;
     hw_decoder_config.harq_buffer_context = harq_buffer_context;
+    hw_decoder_config.dedicated_queue     = true;
 
     // ACC100 hardware-accelerator implementation.
     return hal::create_hw_accelerator_pusch_dec_factory(hw_decoder_config);
@@ -183,6 +184,10 @@ private:
   create_pusch_decoder_factory(std::shared_ptr<crc_calculator_factory> crc_calculator_factory,
                                const std::string&                      decoder_type)
   {
+    if (decoder_type == "empty") {
+      return create_pusch_decoder_empty_factory(MAX_RB, pusch_constants::MAX_NOF_LAYERS);
+    }
+
     if (decoder_type == "generic") {
       return create_generic_pusch_decoder_factory(crc_calculator_factory);
     }
@@ -250,7 +255,7 @@ private:
     }
 
     // Create channel equalizer factory.
-    std::shared_ptr<channel_equalizer_factory> eq_factory = create_channel_equalizer_factory_zf();
+    std::shared_ptr<channel_equalizer_factory> eq_factory = create_channel_equalizer_generic_factory();
     if (!eq_factory) {
       return nullptr;
     }
@@ -325,7 +330,12 @@ protected:
     ASSERT_NE(pusch_proc_factory, nullptr) << "Invalid PUSCH processor factory.";
 
     // Create actual PUSCH processor.
+#if 0
+    srslog::init();
+    pusch_proc = pusch_proc_factory->create(srslog::fetch_basic_logger("PUSCH"));
+#else
     pusch_proc = pusch_proc_factory->create();
+#endif
     ASSERT_NE(pusch_proc, nullptr);
 
     // Create actual PUSCH processor validator.
@@ -336,10 +346,11 @@ protected:
 
 TEST_P(PuschProcessorFixture, PuschProcessorVectortest)
 {
-  const PuschProcessorParams&   param     = GetParam();
-  const test_case_t&            test_case = std::get<1>(param);
-  const test_case_context&      context   = test_case.context;
-  const pusch_processor::pdu_t& config    = context.config;
+  const PuschProcessorParams&   param        = GetParam();
+  const std::string&            decoder_type = std::get<0>(param);
+  const test_case_t&            test_case    = std::get<1>(param);
+  const test_case_context&      context      = test_case.context;
+  const pusch_processor::pdu_t& config       = context.config;
 
   // Prepare resource grid.
   resource_grid_reader_spy grid;
@@ -364,15 +375,22 @@ TEST_P(PuschProcessorFixture, PuschProcessorVectortest)
   pusch_processor_result_notifier_spy results_notifier;
   pusch_proc->process(data, std::move(rm_buffer), results_notifier, grid, config);
 
+  // The CRC must be KO if the decoder is empty.
+  bool expected_tb_crc_ok = true;
+  if (decoder_type == "empty") {
+    expected_tb_crc_ok = false;
+    srsvec::zero(expected_data);
+  }
+
   // Verify UL-SCH decode results.
   const auto& sch_entries = results_notifier.get_sch_entries();
   ASSERT_FALSE(sch_entries.empty());
   const auto& sch_entry = sch_entries.front();
-  ASSERT_TRUE(sch_entry.data.tb_crc_ok);
+  ASSERT_EQ(expected_tb_crc_ok, sch_entry.data.tb_crc_ok);
   ASSERT_EQ(expected_data, data);
 
   // Make sure SINR is normal.
-  optional<float> sinr_dB = results_notifier.get_sch_entries().front().csi.get_sinr_dB();
+  std::optional<float> sinr_dB = sch_entries.front().csi.get_sinr_dB();
   ASSERT_TRUE(sinr_dB.has_value());
   ASSERT_TRUE(std::isnormal(sinr_dB.value()));
 
@@ -455,7 +473,7 @@ TEST_P(PuschProcessorFixture, PuschProcessorVectortestZero)
   ASSERT_FALSE(sch_entry.data.tb_crc_ok);
 
   // Make sure SINR is infinity.
-  optional<float> sinr_dB = results_notifier.get_sch_entries().front().csi.get_sinr_dB();
+  std::optional<float> sinr_dB = results_notifier.get_sch_entries().front().csi.get_sinr_dB();
   ASSERT_TRUE(sinr_dB.has_value());
   ASSERT_TRUE(std::isinf(sinr_dB.value()));
 
@@ -498,9 +516,9 @@ TEST_P(PuschProcessorFixture, PuschProcessorVectortestZero)
 INSTANTIATE_TEST_SUITE_P(PuschProcessorVectortest,
                          PuschProcessorFixture,
 #ifdef HWACC_PUSCH_ENABLED
-                         testing::Combine(testing::Values("generic", "acc100"),
+                         testing::Combine(testing::Values("generic", "empty", "acc100"),
 #else  // HWACC_PUSCH_ENABLED
-                         testing::Combine(testing::Values("generic"),
+                         testing::Combine(testing::Values("generic", "empty"),
 #endif // HWACC_PUSCH_ENABLED
                                           ::testing::ValuesIn(pusch_processor_test_data)));
 } // namespace

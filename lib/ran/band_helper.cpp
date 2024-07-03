@@ -30,6 +30,7 @@
 #include "srsran/ran/pdcch/pdcch_type0_css_occasions.h"
 #include "srsran/ran/ssb_gscn.h"
 #include "srsran/ran/subcarrier_spacing.h"
+#include "srsran/scheduler/sched_consts.h"
 #include "srsran/support/srsran_assert.h"
 
 using namespace srsran;
@@ -362,7 +363,7 @@ static const std::array<n_rb_per_scs, 15> tx_bw_config_fr1 = {{
     // clang-format on
 }};
 
-static const nr_band_raster fetch_band_raster(nr_band band, optional<delta_freq_raster> delta_freq_raster)
+static nr_band_raster fetch_band_raster(nr_band band, std::optional<delta_freq_raster> delta_freq_raster)
 {
   if (band == nr_band::n41 or band == nr_band::n48 or band == nr_band::n77 or band == nr_band::n78 or
       band == nr_band::n79 or band == nr_band::n90 or band == nr_band::n104) {
@@ -420,7 +421,7 @@ static error_type<std::string> validate_band_n28(uint32_t arfcn, bs_channel_band
 {
   const nr_band_raster band_raster = fetch_band_raster(nr_band::n28, {});
   if (band_raster.band == srsran::nr_band::invalid) {
-    return error_type<std::string>{fmt::format("Band n28 channel raster not found")};
+    return make_unexpected(fmt::format("Band n28 channel raster not found"));
   }
 
   // Try first if the ARFCN matches any value of the interval for 100kHz channel raster.
@@ -435,10 +436,11 @@ static error_type<std::string> validate_band_n28(uint32_t arfcn, bs_channel_band
     return error_type<std::string>{};
   }
 
-  return {fmt::format("DL ARFCN must be within the interval [{},{}], in steps of {}, for the chosen band",
-                      band_raster.dl_nref_first,
-                      band_raster.dl_nref_last,
-                      band_raster.dl_nref_step)};
+  return make_unexpected(
+      fmt::format("DL ARFCN must be within the interval [{},{}], in steps of {}, for the chosen band",
+                  band_raster.dl_nref_first,
+                  band_raster.dl_nref_last,
+                  band_raster.dl_nref_step));
 }
 
 // Validates band n46, whose valid ARFCN values depend on the channel BW, as per Table 5.4.2.3-1, TS 38.104,
@@ -472,7 +474,7 @@ static error_type<std::string> validate_band_n46(uint32_t arfcn, bs_channel_band
   const nr_band_raster band_raster = fetch_band_raster(nr_band::n46, {});
   if (band_raster.band == srsran::nr_band::invalid or arfcn < band_raster.dl_nref_first or
       arfcn > band_raster.dl_nref_last) {
-    return error_type<std::string>{fmt::format("Band n46 channel raster not found")};
+    return make_unexpected(fmt::format("Band n46 channel raster not found"));
   }
 
   auto dl_arfcn_exist = [](span<const unsigned> band_list, unsigned dl_arfcn) {
@@ -482,37 +484,31 @@ static error_type<std::string> validate_band_n46(uint32_t arfcn, bs_channel_band
   const char* error_msg = {"Only a restricted set of DL-ARFCN values are allowed in band n46"};
   switch (bw) {
     case bs_channel_bandwidth_fr1::MHz10: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_10_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_10_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                           : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz20: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_20_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_20_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                           : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz40: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_40_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_40_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                           : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz60: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_60_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_60_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                           : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz80: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_80_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_80_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                           : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz100: {
-      return dl_arfcn_exist(span<const unsigned>(n46_b_100_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(n46_b_100_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                            : make_unexpected(fmt::format(error_msg));
     }
     default:
-      return error_type<std::string>{fmt::format("DL-ARFCN not valid for band n46.")};
+      return make_unexpected(fmt::format("DL-ARFCN not valid for band n46."));
   }
 }
 
@@ -558,7 +554,7 @@ static error_type<std::string> validate_band_n96(uint32_t arfcn, bs_channel_band
   const nr_band_raster band_raster = fetch_band_raster(nr_band::n96, {});
   if (band_raster.band == srsran::nr_band::invalid or arfcn < band_raster.dl_nref_first or
       arfcn > band_raster.dl_nref_last) {
-    return error_type<std::string>{fmt::format("Band n96 channel raster not found")};
+    return make_unexpected(fmt::format("Band n96 channel raster not found"));
   }
 
   auto dl_arfcn_exist = [](span<const unsigned> band_list, unsigned dl_arfcn) {
@@ -568,32 +564,27 @@ static error_type<std::string> validate_band_n96(uint32_t arfcn, bs_channel_band
   const char* error_msg = {"Only a restricted set of DL-ARFCN values are allowed in band n96"};
   switch (bw) {
     case bs_channel_bandwidth_fr1::MHz20: {
-      return dl_arfcn_exist(span<const unsigned>(b_20_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_20_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz40: {
-      return dl_arfcn_exist(span<const unsigned>(b_40_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_40_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz60: {
-      return dl_arfcn_exist(span<const unsigned>(b_60_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_60_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz80: {
-      return dl_arfcn_exist(span<const unsigned>(b_80_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_80_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz100: {
-      return dl_arfcn_exist(span<const unsigned>(b_100_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_100_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                        : make_unexpected(fmt::format(error_msg));
     }
     default:
-      return error_type<std::string>{fmt::format("DL-ARFCN not valid for band n96.")};
+      return make_unexpected(fmt::format("DL-ARFCN not valid for band n96."));
   }
 }
 
@@ -623,7 +614,7 @@ static error_type<std::string> validate_band_n102(uint32_t arfcn, bs_channel_ban
   const nr_band_raster band_raster = fetch_band_raster(nr_band::n102, {});
   if (band_raster.band == srsran::nr_band::invalid or arfcn < band_raster.dl_nref_first or
       arfcn > band_raster.dl_nref_last) {
-    return error_type<std::string>{fmt::format("Band n102 channel raster not found")};
+    return make_unexpected(fmt::format("Band n102 channel raster not found"));
   }
 
   auto dl_arfcn_exist = [](span<const unsigned> band_list, unsigned dl_arfcn) {
@@ -633,32 +624,27 @@ static error_type<std::string> validate_band_n102(uint32_t arfcn, bs_channel_ban
   const char* error_msg = {"Only a restricted set of DL-ARFCN values are allowed in band n102"};
   switch (bw) {
     case bs_channel_bandwidth_fr1::MHz20: {
-      return dl_arfcn_exist(span<const unsigned>(b_20_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_20_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz40: {
-      return dl_arfcn_exist(span<const unsigned>(b_40_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_40_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz60: {
-      return dl_arfcn_exist(span<const unsigned>(b_60_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_60_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz80: {
-      return dl_arfcn_exist(span<const unsigned>(b_80_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_80_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                       : make_unexpected(fmt::format(error_msg));
     }
     case bs_channel_bandwidth_fr1::MHz100: {
-      return dl_arfcn_exist(span<const unsigned>(b_100_dlarfnc), arfcn)
-                 ? error_type<std::string>{}
-                 : error_type<std::string>{fmt::format(error_msg)};
+      return dl_arfcn_exist(span<const unsigned>(b_100_dlarfnc), arfcn) ? error_type<std::string>{}
+                                                                        : make_unexpected(fmt::format(error_msg));
     }
     default:
-      return error_type<std::string>{fmt::format("DL-ARFCN not valid for band n102.")};
+      return make_unexpected(fmt::format("DL-ARFCN not valid for band n102."));
   }
 }
 
@@ -670,7 +656,7 @@ static error_type<std::string> validate_band_n90(uint32_t arfcn, subcarrier_spac
   // Try first 100kHz channel raster.
   nr_band_raster band_raster = fetch_band_raster(nr_band::n90, delta_freq_raster::kHz100);
   if (band_raster.band == srsran::nr_band::invalid) {
-    return error_type<std::string>{fmt::format("Band n90 channel raster for SCS {} not found", to_string(scs))};
+    return make_unexpected(fmt::format("Band n90 channel raster for SCS {} not found", to_string(scs)));
   }
 
   if (arfcn >= band_raster.dl_nref_first and arfcn <= band_raster.dl_nref_last and
@@ -687,8 +673,8 @@ static error_type<std::string> validate_band_n90(uint32_t arfcn, subcarrier_spac
       return error_type<std::string>{};
     }
   }
-  return {
-      fmt::format("DL ARFCN for band n90 is either outside the allowed interval or not compatible with the step size")};
+  return make_unexpected(
+      fmt::format("DL ARFCN for band n90 is either outside the allowed interval or not compatible with the step size"));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -756,16 +742,17 @@ error_type<std::string> srsran::band_helper::is_dl_arfcn_valid_given_band(nr_ban
           ((arfcn - raster_band.dl_nref_first) % raster_band.dl_nref_step) == 0) {
         return {};
       }
-      return {fmt::format("DL ARFCN must be within the interval [{},{}], in steps of {}, for the chosen band",
-                          raster_band.dl_nref_first,
-                          raster_band.dl_nref_last,
-                          raster_band.dl_nref_step)};
+      return make_unexpected(
+          fmt::format("DL ARFCN must be within the interval [{},{}], in steps of {}, for the chosen band",
+                      raster_band.dl_nref_first,
+                      raster_band.dl_nref_last,
+                      raster_band.dl_nref_step));
     }
   }
-  return {fmt::format("Band is not valid")};
+  return make_unexpected(fmt::format("Band is not valid"));
 }
 
-uint32_t srsran::band_helper::get_ul_arfcn_from_dl_arfcn(uint32_t dl_arfcn, optional<nr_band> band)
+uint32_t srsran::band_helper::get_ul_arfcn_from_dl_arfcn(uint32_t dl_arfcn, std::optional<nr_band> band)
 {
   // NOTE: The procedure implemented in this function is implementation-defined.
   const nr_band operating_band = band.has_value() ? band.value() : get_band_from_dl_arfcn(dl_arfcn);
@@ -840,6 +827,29 @@ ssb_pattern_case srsran::band_helper::get_ssb_pattern(nr_band band, subcarrier_s
 
   // Band is out of range, so consider invalid.
   return ssb_pattern_case::invalid;
+}
+
+uint8_t srsran::band_helper::get_ssb_l_max(nr_band band, subcarrier_spacing scs, uint32_t nr_arfcn)
+{
+  // As per TS 38.213, Section 4.1.
+  switch (get_ssb_pattern(band, scs)) {
+    case ssb_pattern_case::A:
+    case ssb_pattern_case::C: {
+      const uint32_t ssb_cut_off_freq =
+          is_paired_spectrum(band) ? CUTOFF_FREQ_ARFCN_CASE_A_B_C : CUTOFF_FREQ_ARFCN_CASE_C_UNPAIRED;
+      return (nr_arfcn <= ssb_cut_off_freq) ? 4U : 8U;
+    }
+    case ssb_pattern_case::B: {
+      return 8U;
+    }
+    case ssb_pattern_case::D:
+    case ssb_pattern_case::E: {
+      return 64U;
+    }
+    default:
+      report_fatal_error("SSB pattern case is invalid");
+      return 0U;
+  }
 }
 
 subcarrier_spacing srsran::band_helper::get_most_suitable_ssb_scs(nr_band band, subcarrier_spacing scs_common)
@@ -1159,18 +1169,19 @@ static interval<unsigned> get_ssb_crbs(subcarrier_spacing    scs_common,
   return interval<unsigned>{ssb_crb_0, ssb_crb_0 + ssb_nof_crbs + additional_crb};
 }
 
-optional<ssb_coreset0_freq_location> srsran::band_helper::get_ssb_coreset0_freq_location(unsigned           dl_arfcn,
-                                                                                         nr_band            band,
-                                                                                         unsigned           n_rbs,
-                                                                                         subcarrier_spacing scs_common,
-                                                                                         subcarrier_spacing scs_ssb,
-                                                                                         uint8_t            ss0_idx,
-                                                                                         uint8_t max_coreset0_duration)
+std::optional<ssb_coreset0_freq_location>
+srsran::band_helper::get_ssb_coreset0_freq_location(unsigned           dl_arfcn,
+                                                    nr_band            band,
+                                                    unsigned           n_rbs,
+                                                    subcarrier_spacing scs_common,
+                                                    subcarrier_spacing scs_ssb,
+                                                    uint8_t            ss0_idx,
+                                                    uint8_t            max_coreset0_duration)
 {
   srsran_assert(scs_ssb < subcarrier_spacing::kHz60,
                 "Only 15kHz and 30kHz currently supported for SSB subcarrier spacing");
 
-  optional<ssb_coreset0_freq_location> result;
+  std::optional<ssb_coreset0_freq_location> result;
 
   // Get f_ref, point_A from dl_arfcn, band and bandwidth.
   ssb_freq_position_generator du_cfg{dl_arfcn, band, n_rbs, scs_common, scs_ssb};
@@ -1184,15 +1195,15 @@ optional<ssb_coreset0_freq_location> srsran::band_helper::get_ssb_coreset0_freq_
   ssb_freq_location ssb                            = du_cfg.get_next_ssb_location();
   while (ssb.is_valid) {
     // Iterate over the searchSpace0_indices and corresponding configurations.
-    optional<unsigned> cset0_idx = get_coreset0_index(band,
-                                                      n_rbs,
-                                                      scs_common,
-                                                      scs_ssb,
-                                                      ssb.offset_to_point_A,
-                                                      ssb.k_ssb,
-                                                      du_cfg.get_ssb_first_symbol(),
-                                                      ss0_idx,
-                                                      max_coreset0_duration);
+    std::optional<unsigned> cset0_idx = get_coreset0_index(band,
+                                                           n_rbs,
+                                                           scs_common,
+                                                           scs_ssb,
+                                                           ssb.offset_to_point_A,
+                                                           ssb.k_ssb,
+                                                           du_cfg.get_ssb_first_symbol(),
+                                                           ss0_idx,
+                                                           max_coreset0_duration);
 
     if (cset0_idx.has_value()) {
       const unsigned nof_avail_cset0_rbs = get_nof_coreset0_rbs_not_intersecting_ssb(
@@ -1224,7 +1235,7 @@ optional<ssb_coreset0_freq_location> srsran::band_helper::get_ssb_coreset0_freq_
   return result;
 }
 
-optional<ssb_coreset0_freq_location>
+std::optional<ssb_coreset0_freq_location>
 srsran::band_helper::get_ssb_coreset0_freq_location_for_cset0_idx(unsigned           dl_arfcn,
                                                                   nr_band            band,
                                                                   unsigned           n_rbs,
@@ -1236,7 +1247,7 @@ srsran::band_helper::get_ssb_coreset0_freq_location_for_cset0_idx(unsigned      
   srsran_assert(scs_ssb < subcarrier_spacing::kHz60,
                 "Only 15kHz and 30kHz currently supported for SSB subcarrier spacing");
 
-  optional<ssb_coreset0_freq_location> result;
+  std::optional<ssb_coreset0_freq_location> result;
 
   // Get f_ref, point_A from dl_arfcn, band and bandwidth.
   ssb_freq_position_generator du_cfg{dl_arfcn, band, n_rbs, scs_common, scs_ssb};
@@ -1301,15 +1312,15 @@ srsran::band_helper::get_ssb_coreset0_freq_location_for_cset0_idx(unsigned      
   return result;
 }
 
-optional<unsigned> srsran::band_helper::get_coreset0_index(nr_band               band,
-                                                           unsigned              n_rbs,
-                                                           subcarrier_spacing    scs_common,
-                                                           subcarrier_spacing    scs_ssb,
-                                                           ssb_offset_to_pointA  offset_to_point_A,
-                                                           ssb_subcarrier_offset k_ssb,
-                                                           uint8_t               ssb_first_symbol,
-                                                           uint8_t               ss0_idx,
-                                                           optional<unsigned>    nof_coreset0_symb)
+std::optional<unsigned> srsran::band_helper::get_coreset0_index(nr_band                 band,
+                                                                unsigned                n_rbs,
+                                                                subcarrier_spacing      scs_common,
+                                                                subcarrier_spacing      scs_ssb,
+                                                                ssb_offset_to_pointA    offset_to_point_A,
+                                                                ssb_subcarrier_offset   k_ssb,
+                                                                uint8_t                 ssb_first_symbol,
+                                                                uint8_t                 ss0_idx,
+                                                                std::optional<unsigned> nof_coreset0_symb)
 {
   // CRB index where the first SSB's subcarrier is located.
   const unsigned crbs_ssb =
@@ -1319,8 +1330,8 @@ optional<unsigned> srsran::band_helper::get_coreset0_index(nr_band              
   const unsigned max_cset0_idx = get_max_coreset0_index(band, scs_common, scs_ssb);
 
   // Iterate over the coreset0_indices and corresponding configurations.
-  unsigned           max_nof_avail_rbs = 0;
-  optional<unsigned> chosen_cset0_idx;
+  unsigned                max_nof_avail_rbs = 0;
+  std::optional<unsigned> chosen_cset0_idx;
   for (int cset0_idx = static_cast<int>(max_cset0_idx); cset0_idx >= 0; --cset0_idx) {
     auto coreset0_cfg = pdcch_type0_css_coreset_get(band, scs_ssb, scs_common, cset0_idx, k_ssb.to_uint());
     if (max_nof_avail_rbs > coreset0_cfg.nof_rb_coreset) {
@@ -1389,13 +1400,13 @@ n_ta_offset srsran::band_helper::get_ta_offset(nr_band band)
   }
 }
 
-optional<unsigned> srsran::band_helper::get_ssb_arfcn(unsigned              dl_arfcn,
-                                                      nr_band               band,
-                                                      unsigned              n_rbs,
-                                                      subcarrier_spacing    scs_common,
-                                                      subcarrier_spacing    scs_ssb,
-                                                      ssb_offset_to_pointA  offset_to_point_A,
-                                                      ssb_subcarrier_offset k_ssb)
+std::optional<unsigned> srsran::band_helper::get_ssb_arfcn(unsigned              dl_arfcn,
+                                                           nr_band               band,
+                                                           unsigned              n_rbs,
+                                                           subcarrier_spacing    scs_common,
+                                                           subcarrier_spacing    scs_ssb,
+                                                           ssb_offset_to_pointA  offset_to_point_A,
+                                                           ssb_subcarrier_offset k_ssb)
 {
   srsran_assert(scs_ssb < subcarrier_spacing::kHz60,
                 "Only 15kHz and 30kHz currently supported for SSB subcarrier spacing");
@@ -1418,10 +1429,9 @@ error_type<std::string> srsran::band_helper::is_ssb_arfcn_valid_given_band(uint3
                                                                            bs_channel_bandwidth_fr1 bw)
 {
   // Convert the ARFCN to GSCN.
-  optional<unsigned> gscn = band_helper::get_gscn_from_ss_ref(nr_arfcn_to_freq(ssb_arfcn));
+  std::optional<unsigned> gscn = band_helper::get_gscn_from_ss_ref(nr_arfcn_to_freq(ssb_arfcn));
   if (not gscn.has_value()) {
-    return error_type<std::string>{
-        fmt::format("GSCN {} is not valid for band {} with SSB SCS {}", gscn, band, ssb_scs)};
+    return make_unexpected(fmt::format("GSCN {} is not valid for band {} with SSB SCS {}", gscn, band, ssb_scs));
   }
   // If the GCSN exists, check if it is a valid one.
   return band_helper::is_gscn_valid_given_band(gscn.value(), band, ssb_scs, bw);

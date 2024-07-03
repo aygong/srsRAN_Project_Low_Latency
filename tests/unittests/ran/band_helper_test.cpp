@@ -635,12 +635,25 @@ TEST(test_get_min_channel_bw, invalid_cases)
 TEST(test_is_valid_ssb_arfcn, mixed_bands)
 {
   // ARFCN 427970 is a valid SSB ARFCN for n1, expect no error.
-  ASSERT_FALSE(band_helper::is_ssb_arfcn_valid_given_band(427970U, nr_band::n1, subcarrier_spacing::kHz15).is_error());
+  ASSERT_TRUE(band_helper::is_ssb_arfcn_valid_given_band(427970U, nr_band::n1, subcarrier_spacing::kHz15).has_value());
   // ARFCN 433970 is NOT a valid SSB ARFCN for n1, expect an error.
-  ASSERT_TRUE(band_helper::is_ssb_arfcn_valid_given_band(433970U, nr_band::n1, subcarrier_spacing::kHz15).is_error());
+  ASSERT_FALSE(band_helper::is_ssb_arfcn_valid_given_band(433970U, nr_band::n1, subcarrier_spacing::kHz15).has_value());
 
   // ARFCN 427970 is a valid SSB ARFCN for n1, expect no error.
-  ASSERT_FALSE(band_helper::is_ssb_arfcn_valid_given_band(755712U, nr_band::n46, subcarrier_spacing::kHz30).is_error());
+  ASSERT_TRUE(band_helper::is_ssb_arfcn_valid_given_band(755712U, nr_band::n46, subcarrier_spacing::kHz30).has_value());
   // ARFCN 433970 is NOT a valid SSB ARFCN for n1, expect an error.
-  ASSERT_TRUE(band_helper::is_ssb_arfcn_valid_given_band(785856U, nr_band::n46, subcarrier_spacing::kHz30).is_error());
+  ASSERT_FALSE(
+      band_helper::is_ssb_arfcn_valid_given_band(785856U, nr_band::n46, subcarrier_spacing::kHz30).has_value());
+}
+
+TEST(test_get_ssb_l_max, test_different_ssb_cases)
+{
+  // Case A.
+  ASSERT_EQ(4, band_helper::get_ssb_l_max(nr_band::n3, subcarrier_spacing::kHz15, 363640U));
+  // Case B.
+  ASSERT_EQ(8, band_helper::get_ssb_l_max(nr_band::n5, subcarrier_spacing::kHz30, 176800U));
+  // Case C, f < f_cutoff.
+  ASSERT_EQ(4, band_helper::get_ssb_l_max(nr_band::n50, subcarrier_spacing::kHz30, 296400U));
+  // Case C, f > f_cutoff.
+  ASSERT_EQ(8, band_helper::get_ssb_l_max(nr_band::n104, subcarrier_spacing::kHz30, 860000U));
 }

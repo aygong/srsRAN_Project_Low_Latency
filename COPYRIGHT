@@ -40,11 +40,6 @@ Copyright: 2017-2023 University of Cincinnati, developed by Henry Schreiner
 License:   BSD-3-clause
 
 
-Files:     external/variant/variant.hpp
-Copyright: 2015-2017 Michael Park
-License:   Boost Software License, Version 1.0
-
-
 Files:     external/rigtorp/MPMCQueue.hpp
 Copyright: 2018 Erik Rigtorp
 License:   MIT
@@ -85,6 +80,31 @@ License: MIT
   portions of this Software are embedded into a machine-executable object
   form of such source code, you may redistribute such embedded portions in
   such object form without including the above copyright and permission notices.
+
+
+License: BSD-2-clause (Simplified BSD)
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are
+   met:
+   .
+   1. Redistributions of source code must retain the above copyright notice, 
+   this list of conditions and the following disclaimer.
+   .
+   2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+   
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+   “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+   HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 License: BSD-3-clause

@@ -26,10 +26,14 @@
 
 namespace srsran {
 
-// Network slice information, see TS 38.413, Sec. 9.3.1.24
+/// Network slice information, see TS 38.413, Sec. 9.3.1.24
 struct s_nssai_t {
-  uint8_t            sst = 0; // Slice/Service type (max 8bits)
-  optional<uint32_t> sd;      // Slice Differentiator (max 24bits)
+  /// Slice/Service type (max 8bits).
+  uint8_t sst = 0;
+  /// Slice Differentiator (max 24bits).
+  std::optional<uint32_t> sd;
+
+  bool operator==(const s_nssai_t& other) const { return sst == other.sst && sd == other.sd; }
 };
 
 } // namespace srsran
