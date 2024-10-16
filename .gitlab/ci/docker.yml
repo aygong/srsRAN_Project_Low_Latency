@@ -38,12 +38,12 @@ variables:
 .uhd_params:
   variables: &uhd_params
     LIB: uhd
-    LIB_VERSION: "4.6.0.0"
+    LIB_VERSION: "4.7.0.0"
 
 .dpdk_params:
   variables: &dpdk_params
     LIB: dpdk
-    LIB_VERSION: "23.11"
+    LIB_VERSION: "23.11.1"
 
 ################################################################################
 # Static
@@ -124,7 +124,7 @@ metrics version check in retina:
   tags:
     - amd64-avx2
   timeout: 2h
-  before_script:
+  before_script: &docker_setup
     - dockerd-entrypoint.sh &
     - |
       while ! ( nc -zv localhost 2376 2>&1 >/dev/null )
@@ -132,7 +132,7 @@ metrics version check in retina:
           sleep 1
       done
 
-gnb docker compose:
+.gnb docker compose:
   extends: .docker compose
   variables: &build_in_compose_variables
     KUBERNETES_CPU_REQUEST: 6
@@ -148,15 +148,27 @@ gnb docker compose:
         paths:
           - docker/docker-compose.yml
     - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
-  script:
+      interruptible: false
+  before_script:
+    - *docker_setup
     - docker compose -f docker/docker-compose.yml build --build-arg NUM_CORES=${KUBERNETES_CPU_LIMIT} --build-arg LIB=${LIB} --build-arg LIB_VERSION=${LIB_VERSION} gnb
-    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb ${TEST_CMD}"
-  parallel:
-    matrix:
-      - <<: *uhd_params
-        TEST_CMD: gnb amf --no_core=true ru_sdr --device_driver uhd | grep 'Failed to open device with address'
-      - <<: *dpdk_params
-        TEST_CMD: gnb amf --no_core=true hal --eal_args='--help'
+    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb which srscu"
+    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb which srsdu"
+
+gnb docker compose uhd:
+  extends: .gnb docker compose
+  variables:
+    <<: *uhd_params
+  script:
+    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb gnb cu_cp amf --no_core=true ru_sdr --device_driver uhd | grep 'Failed to open device with address'"
+
+gnb docker compose dpdk:
+  extends: .gnb docker compose
+  variables:
+    <<: *dpdk_params
+  script:
+    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb which ru_emulator"
+    - sh -c "docker compose -f docker/docker-compose.yml run --no-deps gnb gnb cu_cp amf --no_core=true hal --eal_args='--help'"
 
 5gc docker compose:
   extends: .docker compose
@@ -169,6 +181,7 @@ gnb docker compose:
           - docker/open5gs/**/*
           - docker/docker-compose.yml
     - if: $CI_DESCRIPTION =~ /Weekly/
+      interruptible: false
   script:
     - docker compose -f docker/docker-compose.yml build --build-arg NUM_CORES=${KUBERNETES_CPU_LIMIT} 5gc
     - docker compose -f docker/docker-compose.yml run 5gc 5gc -v
@@ -183,6 +196,7 @@ grafana docker compose:
           - docker/grafana/**/*
           - docker/docker-compose.yml
     - if: $CI_DESCRIPTION =~ /Weekly/
+      interruptible: false
   script:
     - docker compose -f docker/docker-compose.yml run --no-deps grafana --version
 
@@ -195,6 +209,7 @@ influxdb docker compose:
           - docker/.env
           - docker/docker-compose.yml
     - if: $CI_DESCRIPTION =~ /Weekly/
+      interruptible: false
   script:
     - docker compose -f docker/docker-compose.yml run influxdb influx version
 
@@ -208,6 +223,7 @@ metrics-server docker compose:
           - docker/metrics_server/**/*
           - docker/docker-compose.yml
     - if: $CI_DESCRIPTION =~ /Weekly/
+      interruptible: false
   script:
     - docker compose -f docker/docker-compose.yml run metrics-server metrics-server --help
 
@@ -272,10 +288,8 @@ grafana server image latest:
       changes:
         <<: *srs_container_changes
       variables:
-        MODE: build
     - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
-      variables:
-        MODE: publish
+      interruptible: false
   variables:
     KUBERNETES_CPU_REQUEST: 6
     KUBERNETES_CPU_LIMIT: 6
@@ -284,18 +298,15 @@ grafana server image latest:
     REGISTRY_URI: $GITLAB_REGISTRY_URI
     CONTEXT: ${CI_PROJECT_DIR}
     DOCKERFILE: docker
-    VERSION: latest
-    OVERWRITE: "true"
+    MODE: build
+  timeout: 2 hours
   tags:
     - ${TAG}
   before_script:
     - |
-      export NAME="srsran_${SPLIT}_${SUFFIX}"
-      export BUILD_ARGS="LIB=${LIB};LIB_VERSION=${LIB_VERSION};ARCH=${ARCH};NUM_CORES=${KUBERNETES_CPU_LIMIT};EXTRA_CMAKE_ARGS=\"${EXTRA_CMAKE_ARGS}\""
-  needs:
-    - job: gnb docker compose
-      optional: true
-      artifacts: false
+      export NAME="srsran-project"
+      export VERSION="${SPLIT}_${SUFFIX}"
+      export BUILD_ARGS="LIB=${LIB};LIB_VERSION=${LIB_VERSION};MARCH=${MARCH};NUM_CORES=${KUBERNETES_CPU_LIMIT};EXTRA_CMAKE_ARGS=\"${EXTRA_CMAKE_ARGS}\""
 
 srsran image split72:
   extends: .srsran image
@@ -306,37 +317,38 @@ srsran image split72:
     matrix:
       # AMD AVX2
       - SUFFIX: release_avx2
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off
-        ARCH: x86-64-v3
+        MARCH: x86-64-v3
         TAG: amd64-avx2
         PLATFORM: amd64
       - SUFFIX: release_with_debug_avx2
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off -DFORCE_DEBUG_INFO=On
-        ARCH: x86-64-v3
+        EXTRA_CMAKE_ARGS: -DFORCE_DEBUG_INFO=On
+        MARCH: x86-64-v3
         TAG: amd64-avx2
         PLATFORM: amd64
       # AMD AVX512
       - SUFFIX: release_avx512
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off
-        ARCH: x86-64-v4
+        MARCH: x86-64-v4
         TAG: amd64-avx2-avx512
         PLATFORM: amd64
       - SUFFIX: release_with_debug_avx512
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off -DFORCE_DEBUG_INFO=On
-        ARCH: x86-64-v4
+        EXTRA_CMAKE_ARGS: -DFORCE_DEBUG_INFO=On
+        MARCH: x86-64-v4
         TAG: amd64-avx2-avx512
         PLATFORM: amd64
       # ARM
       - SUFFIX: release_arm
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off
-        ARCH: armv8.2-a+crypto+fp16+dotprod
+        MARCH: armv8.2-a+crypto+fp16+dotprod
         TAG: arm64
         PLATFORM: arm64
       - SUFFIX: release_with_debug_arm
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off -DFORCE_DEBUG_INFO=On
-        ARCH: armv8.2-a+crypto+fp16+dotprod
+        EXTRA_CMAKE_ARGS: -DFORCE_DEBUG_INFO=On
+        MARCH: armv8.2-a+crypto+fp16+dotprod
         TAG: arm64
         PLATFORM: arm64
+  needs:
+    - job: gnb docker compose dpdk
+      optional: true
+      artifacts: false
 
 srsran image split8:
   extends: .srsran image
@@ -347,23 +359,25 @@ srsran image split8:
     matrix:
       # AMD AVX2
       - SUFFIX: release_avx2
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off
-        ARCH: x86-64-v3
+        MARCH: x86-64-v3
         TAG: amd64-avx2
         PLATFORM: amd64
       - SUFFIX: release_with_debug_avx2
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off -DFORCE_DEBUG_INFO=On
-        ARCH: x86-64-v3
+        EXTRA_CMAKE_ARGS: -DFORCE_DEBUG_INFO=On
+        MARCH: x86-64-v3
         TAG: amd64-avx2
         PLATFORM: amd64
       # ARM
       - SUFFIX: release_arm
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off
-        ARCH: armv8.2-a+crypto+fp16+dotprod
+        MARCH: armv8.2-a+crypto+fp16+dotprod
         TAG: arm64
         PLATFORM: arm64
       - SUFFIX: release_with_debug_arm
-        EXTRA_CMAKE_ARGS: -DAUTO_DETECT_ISA=Off -DFORCE_DEBUG_INFO=On
-        ARCH: armv8.2-a+crypto+fp16+dotprod
+        EXTRA_CMAKE_ARGS: -DFORCE_DEBUG_INFO=On
+        MARCH: armv8.2-a+crypto+fp16+dotprod
         TAG: arm64
         PLATFORM: arm64
+  needs:
+    - job: gnb docker compose uhd
+      optional: true
+      artifacts: false

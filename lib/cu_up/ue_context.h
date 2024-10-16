@@ -54,7 +54,9 @@ public:
              e1ap_control_message_handler&               e1ap_,
              network_interface_config&                   net_config_,
              n3_interface_config&                        n3_config_,
+             const cu_up_test_mode_config&               test_mode_config_,
              std::unique_ptr<ue_executor_mapper>         ue_exec_mapper_,
+             fifo_async_task_scheduler&                  task_sched_,
              timer_factory                               ue_dl_timer_factory_,
              timer_factory                               ue_ul_timer_factory_,
              timer_factory                               ue_ctrl_timer_factory_,
@@ -64,7 +66,7 @@ public:
              gtpu_tunnel_common_tx_upper_layer_notifier& gtpu_tx_notifier_,
              gtpu_demux_ctrl&                            gtpu_rx_demux_,
              dlt_pcap&                                   gtpu_pcap) :
-    task_sched(UE_TASK_QUEUE_SIZE),
+    task_sched(task_sched_),
     ue_exec_mapper(std::move(ue_exec_mapper_)),
     index(index_),
     cfg(std::move(cfg_)),
@@ -75,6 +77,7 @@ public:
                         cfg.security_info,
                         net_config_,
                         n3_config_,
+                        test_mode_config_,
                         logger,
                         ue_inactivity_timer,
                         ue_dl_timer_factory_,
@@ -137,7 +140,7 @@ public:
 
   [[nodiscard]] const cu_up_ue_logger& get_logger() const { return logger; };
 
-  fifo_async_task_scheduler task_sched;
+  fifo_async_task_scheduler& task_sched;
 
   std::unique_ptr<ue_executor_mapper> ue_exec_mapper;
 

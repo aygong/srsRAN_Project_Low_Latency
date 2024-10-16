@@ -31,14 +31,12 @@ using namespace asn1::rrc_nr;
 rrc_reconfiguration_procedure::rrc_reconfiguration_procedure(rrc_ue_context_t&                            context_,
                                                              const rrc_reconfiguration_procedure_request& args_,
                                                              rrc_ue_reconfiguration_proc_notifier& rrc_ue_notifier_,
-                                                             rrc_ue_context_update_notifier&       cu_cp_notifier_,
                                                              rrc_ue_event_manager&                 event_mng_,
-                                                             rrc_ue_srb_handler&                   srb_notifier_,
+                                                             rrc_ue_control_message_handler&       srb_notifier_,
                                                              rrc_ue_logger&                        logger_) :
   context(context_),
   args(args_),
   rrc_ue(rrc_ue_notifier_),
-  cu_cp_notifier(cu_cp_notifier_),
   event_mng(event_mng_),
   srb_notifier(srb_notifier_),
   logger(logger_)
@@ -75,13 +73,9 @@ void rrc_reconfiguration_procedure::operator()(coro_context<async_task<bool>>& c
     logger.log_debug("\"{}\" finished successfully", name());
     procedure_result = true;
   } else {
-    logger.log_warning("\"{}\" timed out after {}ms", name(), context.cfg.rrc_procedure_timeout_ms);
-    // Notify NGAP to request UE context release from AMF
-    CORO_AWAIT(cu_cp_notifier.on_ue_release_required(
-        {context.ue_index, {}, ngap_cause_radio_network_t::release_due_to_ngran_generated_reason}));
+    logger.log_warning("\"{}\" timed out after {}ms", name(), context.cfg.rrc_procedure_timeout_ms.count());
   }
 
-  logger.log_debug("\"{}\" finalized", name());
   CORO_RETURN(procedure_result);
 }
 

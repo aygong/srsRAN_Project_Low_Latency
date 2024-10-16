@@ -21,8 +21,15 @@
  */
 
 #include "cu_cp_test_environment.h"
+#include "test_helpers.h"
 #include "tests/test_doubles/f1ap/f1ap_test_message_validators.h"
 #include "tests/test_doubles/f1ap/f1ap_test_messages.h"
+#include "tests/unittests/f1ap/common/f1ap_cu_test_messages.h"
+#include "tests/unittests/ngap/ngap_test_messages.h"
+#include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
+#include "srsran/asn1/rrc_nr/dl_ccch_msg.h"
+#include "srsran/f1ap/f1ap_message.h"
+#include "srsran/ngap/ngap_message.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -31,7 +38,7 @@ using namespace srs_cu_cp;
 class cu_cp_setup_test : public cu_cp_test_environment, public ::testing::Test
 {
 public:
-  cu_cp_setup_test() : cu_cp_test_environment(cu_cp_test_env_params{8, 8, 8192, create_mock_amf()})
+  cu_cp_setup_test() : cu_cp_test_environment(cu_cp_test_env_params{})
   {
     // Run NG setup to completion.
     run_ng_setup();

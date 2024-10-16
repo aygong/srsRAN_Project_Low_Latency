@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "srsran/cu_up/cu_up_executor_pool.h"
+#include "srsran/cu_up/cu_up_executor_mapper.h"
 #include "srsran/e1ap/common/e1ap_common.h"
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
 #include "srsran/e1ap/gateways/e1_connection_client.h"
@@ -60,8 +60,15 @@ struct network_interface_config {
   /// Maximum amount of packets received in a single syscall.
   int n3_rx_max_mmsg = 256;
 
+  /// Pool occupancy threshold after which we drop packets.
+  float pool_threshold = 0.9;
+
   /// Local IP address to bind for connection from DU to receive uplink user-plane traffic.
   std::string f1u_bind_addr = "127.0.2.1";
+
+  /// External IP address that is advertised to receive NR-U packets from the DU.
+  /// It defaults to \c f1u_bind_addr but may differ in case the CU-UP is behind a NAT.
+  std::string f1u_ext_addr = "auto";
 
   /// Local port to bind for connection from DU to receive uplink user-plane traffic.
   int f1u_bind_port = GTPU_PORT;
@@ -77,22 +84,28 @@ struct e1ap_config_params {
   e1ap_connection_manager* e1ap_conn_mng  = nullptr;
 };
 
+struct cu_up_test_mode_config {
+  bool     enabled           = false;
+  bool     integrity_enabled = true;
+  bool     ciphering_enabled = true;
+  uint16_t nea_algo          = 2;
+  uint16_t nia_algo          = 2;
+};
+
 /// Configuration passed to CU-UP.
 struct cu_up_configuration {
-  cu_up_executor_pool* ue_exec_pool   = nullptr;
-  task_executor*       ctrl_executor  = nullptr; ///< CU-UP executor for control
-  task_executor*       io_ul_executor = nullptr; ///< CU-UP executor for UL data IO
-  task_executor*       cu_up_e2_exec  = nullptr;
-  e1ap_config_params   e1ap;
-  f1u_cu_up_gateway*   f1u_gateway = nullptr;
-  ngu_gateway*         ngu_gw      = nullptr;
-  timer_manager*       timers      = nullptr;
-  dlt_pcap*            gtpu_pcap   = nullptr;
+  cu_up_executor_mapper* exec_mapper = nullptr;
+  e1ap_config_params     e1ap;
+  f1u_cu_up_gateway*     f1u_gateway = nullptr;
+  ngu_gateway*           ngu_gw      = nullptr;
+  timer_manager*         timers      = nullptr;
+  dlt_pcap*              gtpu_pcap   = nullptr;
 
   std::map<five_qi_t, cu_up_qos_config> qos; // 5QI as key
 
   network_interface_config net_cfg;
   n3_interface_config      n3_cfg;
+  cu_up_test_mode_config   test_mode_cfg;
 
   unsigned    cu_up_id   = 0;
   std::string cu_up_name = "srs_cu_up_01";
@@ -116,8 +129,7 @@ struct formatter<srsran::srs_cu_up::network_interface_config> {
   }
 
   template <typename FormatContext>
-  auto format(srsran::srs_cu_up::network_interface_config cfg, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::srs_cu_up::network_interface_config& cfg, FormatContext& ctx)
   {
     return format_to(ctx.out(),
                      "upf_port={}, n3_bind_addr={}, n3_bind_port={}, f1u_bind_addr={}, f1u_bind_port={}",

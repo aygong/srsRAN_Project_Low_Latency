@@ -20,9 +20,9 @@
  *
  */
 
-#include "../../../../unittests/phy/upper/channel_processors/pdsch_processor_test_doubles.h"
+#include "../../../../unittests/phy/upper/channel_processors/pdsch/pdsch_processor_test_doubles.h"
 #include "srsran/phy/support/support_factories.h"
-#include "srsran/phy/upper/channel_processors/channel_processor_factories.h"
+#include "srsran/phy/upper/channel_processors/pdsch/factories.h"
 #include "srsran/ran/precoding/precoding_codebooks.h"
 #include "srsran/ran/sch/tbs_calculator.h"
 #include "srsran/support/benchmark_utils.h"
@@ -450,29 +450,31 @@ static std::vector<test_case_type> generate_test_cases(const test_profile& profi
         unsigned tbs            = tbs_calculator_calculate(tbs_config);
 
         // Build the PDSCH PDU configuration.
-        pdsch_processor::pdu_t config = {std::nullopt,
-                                         slot_point(to_numerology_value(profile.scs), 0),
-                                         1,
-                                         nof_prb,
-                                         0,
-                                         profile.cp,
-                                         {pdsch_processor::codeword_description{mcs.modulation, i_rv}},
-                                         0,
-                                         pdsch_processor::pdu_t::CRB0,
-                                         dmrs_symbol_mask,
-                                         dmrs_type::options::TYPE1,
-                                         0,
-                                         false,
-                                         nof_cdm_groups_without_data,
-                                         rb_allocation::make_type1(config.bwp_start_rb, nof_prb),
-                                         profile.start_symbol,
-                                         profile.nof_symbols,
-                                         get_ldpc_base_graph(mcs.get_normalised_target_code_rate(), units::bits(tbs)),
-                                         units::bits(ldpc::MAX_CODEBLOCK_SIZE).truncate_to_bytes(),
-                                         {},
-                                         0.0,
-                                         0.0,
-                                         precoding_config};
+        pdsch_processor::pdu_t config = {
+            .context                     = std::nullopt,
+            .slot                        = slot_point(to_numerology_value(profile.scs), 0),
+            .rnti                        = 1,
+            .bwp_size_rb                 = nof_prb,
+            .bwp_start_rb                = 0,
+            .cp                          = profile.cp,
+            .codewords                   = {pdsch_processor::codeword_description{mcs.modulation, i_rv}},
+            .n_id                        = 0,
+            .ref_point                   = pdsch_processor::pdu_t::CRB0,
+            .dmrs_symbol_mask            = dmrs_symbol_mask,
+            .dmrs                        = dmrs_type::options::TYPE1,
+            .scrambling_id               = 0,
+            .n_scid                      = false,
+            .nof_cdm_groups_without_data = nof_cdm_groups_without_data,
+            .freq_alloc                  = rb_allocation::make_type1(config.bwp_start_rb, nof_prb),
+            .start_symbol_index          = profile.start_symbol,
+            .nof_symbols                 = profile.nof_symbols,
+            .ldpc_base_graph             = get_ldpc_base_graph(mcs.get_normalised_target_code_rate(), units::bits(tbs)),
+            .tbs_lbrm                    = units::bits(ldpc::MAX_CODEBLOCK_SIZE).truncate_to_bytes(),
+            .reserved                    = {},
+            .ptrs                        = std::nullopt,
+            .ratio_pdsch_dmrs_to_sss_dB  = 0.0,
+            .ratio_pdsch_data_to_sss_dB  = 0.0,
+            .precoding                   = precoding_config};
         test_case_set.emplace_back(std::tuple<pdsch_processor::pdu_t, unsigned>(config, tbs));
       }
     }
@@ -503,6 +505,13 @@ create_sw_pdsch_encoder_factory(std::shared_ptr<crc_calculator_factory> crc_calc
 static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelerator_pdsch_enc_factory()
 {
 #ifdef HWACC_PDSCH_ENABLED
+  // Create a bbdev accelerator factory.
+  static std::unique_ptr<dpdk::bbdev_acc_factory> bbdev_acc_factory = nullptr;
+  if (!bbdev_acc_factory) {
+    bbdev_acc_factory = srsran::dpdk::create_bbdev_acc_factory("srs");
+    TESTASSERT(bbdev_acc_factory, "Failed to create the bbdev accelerator factory.");
+  }
+
   // Intefacing to the bbdev-based hardware-accelerator.
   srslog::basic_logger& logger = srslog::fetch_basic_logger("HWACC", false);
   logger.set_level(hal_log_level);
@@ -512,11 +521,11 @@ static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelera
   bbdev_config.nof_ldpc_dec_lcores                   = 0;
   bbdev_config.nof_fft_lcores                        = 0;
   bbdev_config.nof_mbuf                              = static_cast<unsigned>(pow2(log2_ceil(MAX_NOF_SEGMENTS)));
-  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = create_bbdev_acc(bbdev_config, logger);
+  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = bbdev_acc_factory->create(bbdev_config, logger);
   TESTASSERT(bbdev_accelerator);
 
-  // Set the hardware-accelerator configuration.
-  hal::hw_accelerator_pdsch_enc_configuration hw_encoder_config;
+  // Set the PDSCH encoder hardware-accelerator factory configuration for the ACC100.
+  hal::bbdev_hwacc_pdsch_enc_factory_configuration hw_encoder_config;
   hw_encoder_config.acc_type          = "acc100";
   hw_encoder_config.bbdev_accelerator = bbdev_accelerator;
   hw_encoder_config.cb_mode           = cb_mode;
@@ -524,7 +533,7 @@ static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelera
   hw_encoder_config.dedicated_queue   = dedicated_queue;
 
   // ACC100 hardware-accelerator implementation.
-  return create_hw_accelerator_pdsch_enc_factory(hw_encoder_config);
+  return srsran::hal::create_bbdev_pdsch_enc_acc_factory(hw_encoder_config, "srs");
 #else  // HWACC_PDSCH_ENABLED
   return nullptr;
 #endif // HWACC_PDSCH_ENABLED
@@ -622,7 +631,7 @@ static pdsch_processor_factory& get_processor_factory()
   }
 
   // Create synchronous PDSCH processor pool if the processor is synchronous.
-  if (pdsch_proc_factory) {
+  if (pdsch_proc_factory && (nof_threads > 1)) {
     // Only valid for generic and lite.
     pdsch_proc_factory = create_pdsch_processor_pool(std::move(pdsch_proc_factory), nof_threads);
   }
@@ -766,13 +775,18 @@ int main(int argc, char** argv)
 
   // Inform of the benchmark configuration.
   if (benchmark_mode != benchmark_modes::silent) {
+    std::string hwacc_verbose = "";
+    if (ldpc_encoder_type == "acc100") {
+      hwacc_verbose = fmt::format(" ({} VFs)", nof_threads);
+    }
     fmt::print("Launching benchmark for {} threads, {} times per thread, and {} repetitions. Using {} profile, and {} "
-               "LDPC encoder.\n",
+               "LDPC encoder{}.\n",
                nof_threads,
                batch_size_per_thread,
                nof_repetitions,
                selected_profile_name,
-               ldpc_encoder_type);
+               ldpc_encoder_type,
+               hwacc_verbose);
   }
 
   benchmarker perf_meas("PDSCH processor", nof_repetitions);

@@ -33,7 +33,8 @@ using namespace srsran;
 class rlc_tx_am_test_frame : public rlc_tx_upper_layer_data_notifier,
                              public rlc_tx_upper_layer_control_notifier,
                              public rlc_tx_lower_layer_notifier,
-                             public rlc_rx_am_status_provider
+                             public rlc_rx_am_status_provider,
+                             public rlc_metrics_notifier
 {
 public:
   rlc_am_sn_size    sn_size;
@@ -46,7 +47,7 @@ public:
   rlc_tx_am_test_frame(rlc_am_sn_size sn_size_) : sn_size(sn_size_), status(sn_size_) {}
 
   // rlc_tx_upper_layer_data_notifier interface
-  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn) override {}
+  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn, uint32_t desired_buf_size) override {}
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override {}
   void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override {}
   void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override {}
@@ -62,12 +63,16 @@ public:
   rlc_am_status_pdu& get_status_pdu() override { return status; }
   uint32_t           get_status_pdu_length() override { return status.get_packed_size(); }
   bool               status_report_required() override { return status_required; }
+
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 /// Mocking class of the surrounding layers invoked by the RLC AM Rx entity.
 class rlc_rx_am_test_frame : public rlc_rx_upper_layer_data_notifier,
                              public rlc_tx_am_status_handler,
-                             public rlc_tx_am_status_notifier
+                             public rlc_tx_am_status_notifier,
+                             public rlc_metrics_notifier
 {
 public:
   rlc_rx_am_test_frame() {}
@@ -76,9 +81,11 @@ public:
   void on_new_sdu(byte_buffer_chain sdu) override {}
 
   // rlc_tx_am_status_handler interface
-  virtual void on_status_pdu(rlc_am_status_pdu status_) override {}
+  void on_status_pdu(rlc_am_status_pdu status_) override {}
   // rlc_tx_am_status_notifier interface
-  virtual void on_status_report_changed() override {}
+  void on_status_report_changed() override {}
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 struct bench_params {
@@ -129,14 +136,15 @@ std::vector<byte_buffer> generate_pdus(bench_params params, rx_order order)
 {
   // Set Tx config
   rlc_tx_am_config config;
-  config.sn_field_length = rlc_am_sn_size::size18bits;
-  config.pdcp_sn_len     = pdcp_sn_size::size18bits;
-  config.t_poll_retx     = 45;
-  config.max_retx_thresh = 4;
-  config.poll_pdu        = 4;
-  config.poll_byte       = 25;
-  config.queue_size      = 4096;
-  config.max_window      = 0;
+  config.sn_field_length  = rlc_am_sn_size::size18bits;
+  config.pdcp_sn_len      = pdcp_sn_size::size18bits;
+  config.t_poll_retx      = 45;
+  config.max_retx_thresh  = 4;
+  config.poll_pdu         = 4;
+  config.poll_byte        = 25;
+  config.queue_size       = 4096;
+  config.queue_size_bytes = 4096 * 1507;
+  config.max_window       = 0;
 
   // Create test frame
   auto tester = std::make_unique<rlc_tx_am_test_frame>(config.sn_field_length);
@@ -146,27 +154,31 @@ std::vector<byte_buffer> generate_pdus(bench_params params, rx_order order)
   manual_task_worker ue_worker{128};
 
   // Create RLC AM TX entity
-  std::unique_ptr<rlc_tx_am_entity> rlc_tx = nullptr;
+  std::unique_ptr<rlc_tx_am_entity>       rlc_tx      = nullptr;
+  std::unique_ptr<rlc_metrics_aggregator> metrics_agg = nullptr;
 
   auto& logger = srslog::fetch_basic_logger("RLC");
   logger.set_level(srslog::basic_levels::warning);
 
   null_rlc_pcap pcap;
 
+  metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+      gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{0}, tester.get(), ue_worker);
+
   // Make PDUs
   std::vector<byte_buffer> pdus;
   rlc_tx = std::make_unique<rlc_tx_am_entity>(gnb_du_id_t::min,
                                               du_ue_index_t::MIN_DU_UE_INDEX,
-                                              srb_id_t::srb0,
+                                              drb_id_t::drb1,
                                               config,
                                               *tester,
                                               *tester,
                                               *tester,
-                                              timer_factory{timers, pcell_worker},
+                                              *metrics_agg,
+                                              pcap,
                                               pcell_worker,
                                               ue_worker,
-                                              false,
-                                              pcap);
+                                              timers);
 
   // Bind AM Rx/Tx interconnect
   rlc_tx->set_status_provider(tester.get());
@@ -177,7 +189,7 @@ std::vector<byte_buffer> generate_pdus(bench_params params, rx_order order)
   int num_pdus  = 0;
   int pdu_size  = params.pdu_size;
   for (int i = 0; i < num_sdus; i++) {
-    byte_buffer sdu = test_helpers::create_pdcp_pdu(config.pdcp_sn_len, i, num_bytes, i);
+    byte_buffer sdu = test_helpers::create_pdcp_pdu(config.pdcp_sn_len, /* is_srb = */ false, i, num_bytes, i);
     rlc_tx->handle_sdu(std::move(sdu), false);
     while (rlc_tx->get_buffer_state() > 0) {
       std::vector<uint8_t> pdu_buf;
@@ -237,16 +249,19 @@ void benchmark_rx_pdu(const bench_params& params, rx_order order)
   config.t_status_prohibit = 0;
   config.t_reassembly      = 200;
 
+  auto metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+      gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{0}, tester.get(), ue_worker);
+
   // Create RLC AM RX entity
   std::unique_ptr<rlc_rx_am_entity> rlc_rx = std::make_unique<rlc_rx_am_entity>(gnb_du_id_t::min,
                                                                                 du_ue_index_t::MIN_DU_UE_INDEX,
-                                                                                srb_id_t::srb0,
+                                                                                drb_id_t::drb1,
                                                                                 config,
                                                                                 *tester,
-                                                                                timer_factory{timers, ue_worker},
+                                                                                *metrics_agg,
+                                                                                pcap,
                                                                                 ue_worker,
-                                                                                false,
-                                                                                pcap);
+                                                                                timers);
 
   // Bind AM Rx/Tx interconnect
   rlc_rx->set_status_notifier(tester.get());
@@ -317,7 +332,7 @@ struct formatter<rx_order> {
   template <typename FormatContext>
   auto format(rx_order order, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
   {
-    constexpr static const char* options[] = {"in order", "swapped edges", "reverse order", "even odd"};
+    static constexpr const char* options[] = {"in order", "swapped edges", "reverse order", "even odd"};
     return format_to(ctx.out(), "{}", options[static_cast<unsigned>(order)]);
   }
 };

@@ -33,14 +33,51 @@ using namespace srsran;
 
 static bool validate_mobility_appconfig(gnb_id_t gnb_id, const cu_cp_unit_mobility_config& config)
 {
-  // check that report config ids are unique
   std::map<unsigned, std::string> report_cfg_ids_to_report_type;
   for (const auto& report_cfg : config.report_configs) {
+    // check that report config ids are unique
     if (report_cfg_ids_to_report_type.find(report_cfg.report_cfg_id) != report_cfg_ids_to_report_type.end()) {
       fmt::print("Report config ids must be unique\n");
       return false;
     }
     report_cfg_ids_to_report_type.emplace(report_cfg.report_cfg_id, report_cfg.report_type);
+
+    // check that report configs are valid
+    if (report_cfg.report_type == "event_triggered") {
+      if (!report_cfg.event_triggered_report_type.has_value()) {
+        fmt::print("Invalid CU-CP configuration. If report type is set to \"event_triggered\" then "
+                   "\"event_triggered_report_type\" must be set\n");
+        return false;
+      }
+
+      if (report_cfg.event_triggered_report_type.value() == "a1" or
+          report_cfg.event_triggered_report_type.value() == "a2" or
+          report_cfg.event_triggered_report_type.value() == "a4") {
+        if (!report_cfg.meas_trigger_quantity.has_value() or
+            !report_cfg.meas_trigger_quantity_threshold_db.has_value() or !report_cfg.hysteresis_db.has_value() or
+            !report_cfg.time_to_trigger_ms.has_value()) {
+          fmt::print("Invalid event A1/A2/A4 measurement report configuration.\n");
+          return false;
+        }
+      }
+      if (report_cfg.event_triggered_report_type.value() == "a3" or
+          report_cfg.event_triggered_report_type.value() == "a6") {
+        if (!report_cfg.meas_trigger_quantity.has_value() or !report_cfg.meas_trigger_quantity_offset_db.has_value() or
+            !report_cfg.hysteresis_db.has_value() or !report_cfg.time_to_trigger_ms.has_value()) {
+          fmt::print("Invalid event A3/A6 measurement report configuration.\n");
+          return false;
+        }
+      }
+      if (report_cfg.event_triggered_report_type.value() == "a5") {
+        if (!report_cfg.meas_trigger_quantity.has_value() or
+            !report_cfg.meas_trigger_quantity_threshold_db.has_value() or
+            !report_cfg.meas_trigger_quantity_threshold_2_db.has_value() or !report_cfg.hysteresis_db.has_value() or
+            !report_cfg.time_to_trigger_ms.has_value()) {
+          fmt::print("Invalid event A5 measurement report configuration.\n");
+          return false;
+        }
+      }
+    }
   }
 
   std::map<nr_cell_identity, std::set<unsigned>> cell_to_report_cfg_id;
@@ -410,19 +447,69 @@ static bool validate_qos_appconfig(span<const cu_cp_unit_qos_config> config)
 }
 
 /// Validates the given AMF configuration. Returns true on success, otherwise false.
-static bool validate_amf_appconfig(const cu_cp_unit_amf_config& config)
+static bool validate_amf_appconfig(const cu_cp_unit_amf_config&                   amf_config,
+                                   const std::vector<cu_cp_unit_amf_config_item>& extra_amfs)
 {
-  // only check for non-empty AMF address and default port
-  if (config.ip_addr.empty() or config.port != 38412) {
-    return false;
+  std::vector<std::string> plmns;
+
+  std::vector<cu_cp_unit_amf_config_item> amfs;
+
+  amfs.push_back(amf_config.amf);
+
+  amfs.insert(amfs.end(), extra_amfs.begin(), extra_amfs.end());
+
+  for (const auto& config : amfs) {
+    // check for non-empty AMF address
+    if (config.ip_addr.empty()) {
+      return false;
+    }
+
+    // check supported tracking areas
+    if (config.supported_tas.size() > 1) {
+      for (unsigned outer_ta_idx = 0; outer_ta_idx < config.supported_tas.size(); outer_ta_idx++) {
+        std::vector<std::string> outer_plmns;
+        for (const auto& plmn_item : config.supported_tas[outer_ta_idx].plmn_list) {
+          outer_plmns.push_back(plmn_item.plmn_id);
+        }
+
+        for (unsigned inner_ta_idx = outer_ta_idx + 1; inner_ta_idx < config.supported_tas.size(); inner_ta_idx++) {
+          if (config.supported_tas[outer_ta_idx].tac == config.supported_tas[inner_ta_idx].tac) {
+            for (const auto& plmn_item : config.supported_tas[inner_ta_idx].plmn_list) {
+              if (std::find(outer_plmns.begin(), outer_plmns.end(), plmn_item.plmn_id) != outer_plmns.end()) {
+                fmt::print("Supported tracking areas of a AMF must be unique\n");
+                return false;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (const auto& ta : config.supported_tas) {
+      for (const auto& plmn_item : ta.plmn_list) {
+        if (std::find(plmns.begin(), plmns.end(), plmn_item.plmn_id) == plmns.end()) {
+          plmns.push_back(plmn_item.plmn_id);
+        } else {
+          fmt::print("PLMN={} is already supported by another AMF\n", plmn_item.plmn_id);
+          return false;
+        }
+
+        if (plmn_item.tai_slice_support_list.empty()) {
+          fmt::print("TAI slice support list for PLMN={} and TAC={} is empty\n", plmn_item.plmn_id, ta.tac);
+          return false;
+        }
+      }
+    }
   }
+
   return true;
 }
 
 /// Validates the given CU-CP configuration. Returns true on success, otherwise false.
 static bool validate_cu_cp_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_config& config)
 {
-  if (!validate_amf_appconfig(config.amf_cfg)) {
+  // validate AMF config
+  if (!validate_amf_appconfig(config.amf_config, config.extra_amfs)) {
     return false;
   }
 
@@ -436,12 +523,6 @@ static bool validate_cu_cp_appconfig(const gnb_id_t gnb_id, const cu_cp_unit_con
   }
 
   if (!validate_qos_appconfig(config.qos_cfg)) {
-    return false;
-  }
-
-  if (config.plmns.size() != config.tacs.size()) {
-    fmt::print("Number of PLMNs '{}' do not match the number of TACs '{}'\n", config.plmns.size(), config.tacs.size());
-
     return false;
   }
 

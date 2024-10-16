@@ -23,6 +23,7 @@
 #include "srsran/phy/constants.h"
 #include "srsran/phy/generic_functions/precoding/precoding_factories.h"
 #include "srsran/ran/cyclic_prefix.h"
+#include "srsran/srsvec/conversion.h"
 #include "srsran/srsvec/zero.h"
 #include "fmt/ostream.h"
 #include <gtest/gtest.h>
@@ -43,18 +44,19 @@ using MultiplePRGParams = std::tuple<
 
 namespace srsran {
 
-static float ASSERT_MAX_ERROR = 1e-4;
-
 static std::ostream& operator<<(std::ostream& os, span<const cf_t> data)
 {
   fmt::print(os, "{}", data);
   return os;
 }
 
-static bool operator==(span<const cf_t> lhs, span<const cf_t> rhs)
+static bool operator==(span<const cf_t> lhs, span<const cbf16_t> rhs)
 {
-  return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](cf_t lhs_val, cf_t rhs_val) {
-    return (std::abs(lhs_val - rhs_val) < ASSERT_MAX_ERROR);
+  static constexpr float max_relative_error_cbf16 = 1.0F / 256.0F;
+  return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](cf_t lhs_cf, cbf16_t rhs_val) {
+    cf_t  rhs_cf = to_cf(rhs_val);
+    float error  = std::abs(lhs_cf - rhs_cf) / std::abs(lhs_cf);
+    return error < max_relative_error_cbf16;
   });
 }
 
@@ -87,7 +89,7 @@ protected:
   }
 
   // Generates and returns random RE values, as many as the specified number of layers and RE.
-  const re_buffer_reader& generate_random_data(unsigned nof_layers, unsigned nof_re)
+  const re_buffer_reader<>& generate_random_data(unsigned nof_layers, unsigned nof_re)
   {
     // Resize buffer.
     random_data.resize(nof_layers, nof_re);
@@ -117,8 +119,8 @@ protected:
   }
 
   // Generates the golden RE sequence, with the dimensions specified by the input buffer and precoding matrix.
-  const re_buffer_reader& generate_golden(const re_buffer_reader&        input,
-                                          const precoding_weight_matrix& precoding_matrix)
+  const re_buffer_reader<>& generate_golden(const re_buffer_reader<>&      input,
+                                            const precoding_weight_matrix& precoding_matrix)
   {
     // Get dimensions.
     unsigned nof_re     = input.get_nof_re();
@@ -152,7 +154,7 @@ protected:
   }
 
   // Generates the golden RE sequence, with the dimensions specified by the input buffer and precoding matrix.
-  const re_buffer_reader& generate_golden(span<const ci8_t> input, const precoding_weight_matrix& precoding_matrix)
+  const re_buffer_reader<>& generate_golden(span<const ci8_t> input, const precoding_weight_matrix& precoding_matrix)
   {
     // Get dimensions.
     unsigned nof_layers = precoding_matrix.get_nof_layers();
@@ -168,15 +170,13 @@ protected:
       // View over the golden sequence for a single PRG and antenna port.
       span<cf_t> golden_re_port = golden_data.get_slice(i_port);
 
-      // Set the output REs to zero.
-      srsvec::zero(golden_re_port);
-
-      for (unsigned i_layer = 0; i_layer != nof_layers; ++i_layer) {
-        for (unsigned i_re = 0; i_re != nof_re; ++i_re) {
+      for (unsigned i_re = 0; i_re != nof_re; ++i_re) {
+        cf_t sum;
+        for (unsigned i_layer = 0; i_layer != nof_layers; ++i_layer) {
           // Accumulate the contributions of all layers, scaled by each respective precoding weight.
-          golden_re_port[i_re] +=
-              precoding_matrix.get_coefficient(i_layer, i_port) * to_cf(input[nof_layers * i_re + i_layer]);
+          sum += precoding_matrix.get_coefficient(i_layer, i_port) * to_cf(input[nof_layers * i_re + i_layer]);
         }
+        golden_re_port[i_re] = sum;
       }
     }
 
@@ -235,24 +235,24 @@ TEST_P(PrecodingFixture, RandomWeightsCft)
   unsigned nof_re = nof_rb * NRE;
 
   // Buffer to hold the precoded RE.
-  static_re_buffer<precoding_constants::MAX_NOF_PORTS, NRE * MAX_RB * MAX_NSYMB_PER_SLOT> precoding_buffer(nof_ports,
-                                                                                                           nof_re);
+  static_re_buffer<precoding_constants::MAX_NOF_PORTS, NRE * MAX_RB * MAX_NSYMB_PER_SLOT, cbf16_t> precoding_buffer(
+      nof_ports, nof_re);
   for (unsigned nof_layers = 1; nof_layers <= nof_ports; ++nof_layers) {
     // Generate random RE arranged by layers.
-    const re_buffer_reader& input_data = generate_random_data(nof_layers, nof_re);
+    const re_buffer_reader<>& input_data = generate_random_data(nof_layers, nof_re);
 
     // Create a random precoding configuration
     precoding_weight_matrix precoding_matrix = generate_random_precoding(nof_layers, nof_ports);
 
     // Generate the golden precoded data.
-    const re_buffer_reader& golden = generate_golden(input_data, precoding_matrix);
+    const re_buffer_reader<>& golden = generate_golden(input_data, precoding_matrix);
 
     // Apply precoding.
     precoder->apply_precoding(precoding_buffer, input_data, precoding_matrix);
 
     // For each antenna port, compare the precoded RE with the golden sequence for all RE and PRG.
     for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
-      ASSERT_EQ(span<const cf_t>(golden.get_slice(i_port)), span<const cf_t>(precoding_buffer.get_slice(i_port)));
+      ASSERT_EQ(span<const cf_t>(golden.get_slice(i_port)), span<const cbf16_t>(precoding_buffer.get_slice(i_port)));
     }
   }
 }
@@ -269,8 +269,8 @@ TEST_P(PrecodingFixture, RandomWeightsCi8)
   unsigned nof_re = nof_rb * NRE;
 
   // Buffer to hold the precoded RE.
-  static_re_buffer<precoding_constants::MAX_NOF_PORTS, NRE * MAX_RB * MAX_NSYMB_PER_SLOT> precoding_buffer(nof_ports,
-                                                                                                           nof_re);
+  static_re_buffer<precoding_constants::MAX_NOF_PORTS, NRE * MAX_RB * MAX_NSYMB_PER_SLOT, cbf16_t> precoding_buffer(
+      nof_ports, nof_re);
   for (unsigned nof_layers = 1; nof_layers <= nof_ports; ++nof_layers) {
     // Generate random RE arranged by layers.
     span<const ci8_t> input_data = generate_random_data_ci8(nof_layers, nof_re);
@@ -279,14 +279,14 @@ TEST_P(PrecodingFixture, RandomWeightsCi8)
     precoding_weight_matrix precoding_matrix = generate_random_precoding(nof_layers, nof_ports);
 
     // Generate the golden precoded data.
-    const re_buffer_reader& golden = generate_golden(input_data, precoding_matrix);
+    const re_buffer_reader<>& golden = generate_golden(input_data, precoding_matrix);
 
     // Apply precoding.
     precoder->apply_layer_map_and_precoding(precoding_buffer, input_data, precoding_matrix);
 
     // For each antenna port, compare the precoded RE with the golden sequence for all RE and PRG.
     for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
-      ASSERT_EQ(span<const cf_t>(golden.get_slice(i_port)), span<const cf_t>(precoding_buffer.get_slice(i_port)))
+      ASSERT_EQ(golden.get_slice(i_port), precoding_buffer.get_slice(i_port))
           << " nof_ports=" << nof_ports << " nof_layers=" << nof_layers;
     }
   }

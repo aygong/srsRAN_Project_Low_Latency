@@ -70,8 +70,7 @@ pucch_info srsran::build_pucch_info(const bwp_configuration* bwp_cfg,
   return pucch_test;
 }
 
-// Verify if the PUCCH scheduler output (or PUCCH PDU) is correct.
-bool srsran::assess_ul_pucch_info(const pucch_info& expected, const pucch_info& test)
+bool srsran::pucch_info_match(const pucch_info& expected, const pucch_info& test)
 {
   bool is_equal = expected.crnti == test.crnti && *expected.bwp_cfg == *test.bwp_cfg && expected.format == test.format;
   is_equal      = is_equal && expected.resources.prbs == test.resources.prbs &&
@@ -118,6 +117,16 @@ bool srsran::assess_ul_pucch_info(const pucch_info& expected, const pucch_info& 
   return is_equal;
 }
 
+namespace {
+
+class dummy_harq_timeout_notifier : public harq_timeout_notifier
+{
+public:
+  void on_harq_timeout(du_ue_index_t ue_idx, bool is_dl, bool ack) override {}
+};
+
+} // namespace
+
 /////////        TEST BENCH for PUCCH scheduler        /////////
 
 // Test bench with all that is needed for the PUCCH.
@@ -133,11 +142,13 @@ test_bench::test_bench(const test_bench_params& params,
             expert_cfg, make_custom_sched_cell_configuration_request(params.pucch_res_common, params.is_tdd)));
     return *cell_cfg_list[to_du_cell_index(0)];
   }()},
+  cell_harqs{MAX_NOF_DU_UES, MAX_NOF_HARQS, std::make_unique<dummy_harq_timeout_notifier>()},
   dci_info{make_default_dci(params.n_cces, &cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common.coreset0.value())},
   k0(cell_cfg.dl_cfg_common.init_dl_bwp.pdsch_common.pdsch_td_alloc_list[0].k0),
   max_pucchs_per_slot{max_pucchs_per_slot_},
   max_ul_grants_per_slot{max_ul_grants_per_slot_},
   pucch_f2_more_prbs{params.pucch_f2_more_prbs},
+  use_format_0(params.use_format_0),
   pucch_alloc{cell_cfg, max_pucchs_per_slot, max_ul_grants_per_slot},
   uci_alloc(pucch_alloc),
   uci_sched{cell_cfg, uci_alloc, ues},
@@ -146,7 +157,7 @@ test_bench::test_bench(const test_bench_params& params,
   cell_config_builder_params cfg_params{};
   cfg_params.csi_rs_enabled                = true;
   cfg_params.scs_common                    = params.is_tdd ? subcarrier_spacing::kHz30 : subcarrier_spacing::kHz15;
-  cfg_params.dl_arfcn                      = params.is_tdd ? 520000U : 365000U;
+  cfg_params.dl_f_ref_arfcn                = params.is_tdd ? 520000U : 365000U;
   sched_ue_creation_request_message ue_req = test_helpers::create_default_sched_ue_creation_request(cfg_params);
   ue_req.ue_index                          = main_ue_idx;
 
@@ -177,6 +188,17 @@ test_bench::test_bench(const test_bench_params& params,
   }
 
   if (params.cfg_for_mimo_4x4) {
+    auto& pucch_cfg = ue_req.cfg.cells->back().serv_cell_cfg.ul_config->init_ul_bwp.pucch_cfg.value();
+    pucch_cfg.format_2_common_param.value().max_c_rate = max_pucch_code_rate::dot_35;
+    const auto& res_f2                                 = std::find_if(pucch_cfg.pucch_res_list.begin(),
+                                      pucch_cfg.pucch_res_list.end(),
+                                      [](const auto& pucch) { return pucch.format == pucch_format::FORMAT_2; });
+    srsran_assert(res_f2 != pucch_cfg.pucch_res_list.end(), "PUCCH format 2 not found");
+    const auto& res_f2_cfg = std::get<pucch_format_2_3_cfg>(res_f2->format_params);
+    pucch_cfg.format_max_payload[pucch_format_to_uint(pucch_format::FORMAT_2)] =
+        get_pucch_format2_max_payload(res_f2_cfg.nof_prbs,
+                                      res_f2_cfg.nof_symbols,
+                                      to_max_code_rate_float(pucch_cfg.format_2_common_param.value().max_c_rate));
     ue_req.cfg.cells->back().serv_cell_cfg.csi_meas_cfg =
         csi_helper::make_csi_meas_config(csi_helper::csi_builder_params{.nof_ports = 4});
     auto& beta_offsets = std::get<uci_on_pusch::beta_offsets_semi_static>(ue_req.cfg.cells->back()
@@ -192,9 +214,21 @@ test_bench::test_bench(const test_bench_params& params,
   csi_report.report_slot_period = params.csi_period;
   csi_report.report_slot_offset = params.csi_offset;
 
+  if (use_format_0) {
+    srs_du::pucch_builder_params pucch_params{};
+    pucch_params.nof_ue_pucch_f0_or_f1_res_harq = 6;
+    pucch_params.nof_ue_pucch_f2_res_harq       = 6;
+    pucch_params.f0_or_f1_params.emplace<srs_du::pucch_f0_params>();
+    pucch_builder.setup(
+        cell_cfg.ul_cfg_common.init_ul_bwp, params.is_tdd ? cell_cfg.tdd_cfg_common : std::nullopt, pucch_params);
+    bool new_ue_added = pucch_builder.add_build_new_ue_pucch_cfg(ue_req.cfg.cells.value().back().serv_cell_cfg);
+    if (not new_ue_added) {
+      srsran_terminate("UE PUCCH configuration couldn't be built");
+    }
+  }
+
   ue_ded_cfgs.push_back(std::make_unique<ue_configuration>(ue_req.ue_index, ue_req.crnti, cell_cfg_list, ue_req.cfg));
-  ues.add_ue(
-      std::make_unique<ue>(ue_creation_command{*ue_ded_cfgs.back(), ue_req.starts_in_fallback, harq_timeout_handler}));
+  ues.add_ue(std::make_unique<ue>(ue_creation_command{*ue_ded_cfgs.back(), ue_req.starts_in_fallback, cell_harqs}));
   uci_sched.add_ue(ues[ue_req.ue_index].get_pcell().cfg());
   last_allocated_rnti   = ue_req.crnti;
   last_allocated_ue_idx = main_ue_idx;
@@ -226,9 +260,12 @@ void test_bench::add_ue()
 
   ue_req.crnti = to_rnti(static_cast<std::underlying_type<rnti_t>::type>(last_allocated_rnti) + 1);
 
+  srsran_assert(not use_format_0 or
+                    pucch_builder.add_build_new_ue_pucch_cfg(ue_req.cfg.cells.value().back().serv_cell_cfg),
+                "UE PUCCH configuration couldn't be built");
+
   ue_ded_cfgs.push_back(std::make_unique<ue_configuration>(ue_req.ue_index, ue_req.crnti, cell_cfg_list, ue_req.cfg));
-  ues.add_ue(
-      std::make_unique<ue>(ue_creation_command{*ue_ded_cfgs.back(), ue_req.starts_in_fallback, harq_timeout_handler}));
+  ues.add_ue(std::make_unique<ue>(ue_creation_command{*ue_ded_cfgs.back(), ue_req.starts_in_fallback, cell_harqs}));
   last_allocated_rnti = ue_req.crnti;
 }
 

@@ -170,7 +170,7 @@ private:
   /// \param[out] this_var_to_check  Buffer to store the updated variable-to-check messages.
   /// \param[in]  this_soft_bits     Current soft bits.
   /// \param[in]  this_check_to_var  Current check-to-variable messages.
-  /// \remard An exception is raised if the size of the three spans is not the same.
+  /// \remark An exception is raised if the size of the three spans is not the same.
   virtual void compute_var_to_check_msgs(span<log_likelihood_ratio>       this_var_to_check,
                                          span<const log_likelihood_ratio> this_soft_bits,
                                          span<const log_likelihood_ratio> this_check_to_var) = 0;
@@ -189,6 +189,10 @@ protected:
   std::array<log_likelihood_ratio, static_cast<size_t>(ldpc::MAX_BG_N_FULL* ldpc::MAX_LIFTING_SIZE)> soft_bits;
 
 private:
+  /// Soft bits clamp lower bound.
+  static constexpr log_likelihood_ratio soft_bits_clamp_low = -64;
+  /// Soft bits clamp higher bound.
+  static constexpr log_likelihood_ratio soft_bits_clamp_high = 64;
   /// Pointer to the Tanner graph (~ parity check matrix) used by the encoding algorithm.
   const ldpc_graph_impl* current_graph = nullptr;
   /// Total number of base graph variable nodes in the current graph.

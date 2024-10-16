@@ -23,15 +23,30 @@
 #include "pusch_processor_impl.h"
 #include "pusch_decoder_buffer_dummy.h"
 #include "pusch_processor_notifier_adaptor.h"
+#include "pusch_processor_validator_impl.h"
+
+#include "srsran/phy/upper/channel_processors/pusch/formatters.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_codeword_buffer.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_decoder_buffer.h"
 #include "srsran/phy/upper/unique_rx_buffer.h"
 #include "srsran/ran/pusch/ulsch_info.h"
 #include "srsran/ran/sch/sch_dmrs_power.h"
+#include "srsran/ran/transform_precoding/transform_precoding_helpers.h"
 #include "srsran/ran/uci/uci_formatters.h"
 #include "srsran/ran/uci/uci_part2_size_calculator.h"
 
 using namespace srsran;
+
+/// Looks at the output of the validator and, if unsuccessful, fills msg with the error message.
+/// This is used to call the validator inside the process methods only if asserts are active.
+[[maybe_unused]] static bool handle_validation(std::string& msg, const error_type<std::string>& err)
+{
+  bool is_success = err.has_value();
+  if (!is_success) {
+    msg = err.error();
+  }
+  return is_success;
+}
 
 namespace {
 class pusch_processor_csi_part1_feedback_impl : public pusch_processor_csi_part1_feedback
@@ -127,7 +142,9 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   channel_estimate& ch_estimate = dependencies.get_channel_estimate();
 
   // Assert PDU.
-  assert_pdu(pdu, ch_estimate);
+  [[maybe_unused]] std::string msg;
+  srsran_assert(
+      handle_validation(msg, pusch_processor_validator_impl(ch_estimate.capacity()).is_valid(pdu)), "{}", msg);
 
   // Number of RB used by this transmission.
   unsigned nof_rb = pdu.freq_alloc.get_nof_rb();
@@ -140,6 +157,24 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   if (pdu.dc_position.has_value()) {
     unsigned dc_position_prb = pdu.dc_position.value() / NRE;
     overlap_dc               = rb_mask.test(dc_position_prb);
+  }
+
+  bool      enable_transform_precoding  = false;
+  unsigned  scrambling_id               = 0;
+  unsigned  n_rs_id                     = 0;
+  bool      n_scid                      = 0;
+  unsigned  nof_cdm_groups_without_data = 2;
+  dmrs_type dmrs_type                   = srsran::dmrs_type::TYPE1;
+  if (std::holds_alternative<srsran::pusch_processor::dmrs_configuration>(pdu.dmrs)) {
+    const auto& dmrs_config     = std::get<srsran::pusch_processor::dmrs_configuration>(pdu.dmrs);
+    scrambling_id               = dmrs_config.scrambling_id;
+    n_scid                      = dmrs_config.n_scid;
+    nof_cdm_groups_without_data = dmrs_config.nof_cdm_groups_without_data;
+    dmrs_type                   = dmrs_config.dmrs;
+  } else {
+    const auto& dmrs_config    = std::get<srsran::pusch_processor::dmrs_transform_precoding_configuration>(pdu.dmrs);
+    enable_transform_precoding = true;
+    n_rs_id                    = dmrs_config.n_rs_id;
   }
 
   // Get UL-SCH information as if there was no CSI Part 2 in the PUSCH.
@@ -156,26 +191,28 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   ulsch_config.nof_rb                = nof_rb;
   ulsch_config.start_symbol_index    = pdu.start_symbol_index;
   ulsch_config.nof_symbols           = pdu.nof_symbols;
-  ulsch_config.dmrs_type             = pdu.dmrs == dmrs_type::TYPE1 ? dmrs_config_type::type1 : dmrs_config_type::type2;
-  ulsch_config.dmrs_symbol_mask      = pdu.dmrs_symbol_mask;
-  ulsch_config.nof_cdm_groups_without_data = pdu.nof_cdm_groups_without_data;
+  ulsch_config.dmrs_type        = (dmrs_type == dmrs_type::TYPE1 ? dmrs_config_type::type1 : dmrs_config_type::type2);
+  ulsch_config.dmrs_symbol_mask = pdu.dmrs_symbol_mask;
+  ulsch_config.nof_cdm_groups_without_data = nof_cdm_groups_without_data;
   ulsch_config.nof_layers                  = pdu.nof_tx_layers;
   ulsch_config.contains_dc                 = overlap_dc;
   ulsch_information info                   = get_ulsch_information(ulsch_config);
 
   // Estimate channel.
   dmrs_pusch_estimator::configuration ch_est_config;
-  ch_est_config.slot          = pdu.slot;
-  ch_est_config.type          = pdu.dmrs;
-  ch_est_config.scrambling_id = pdu.scrambling_id;
-  ch_est_config.n_scid        = pdu.n_scid;
-  ch_est_config.scaling       = convert_dB_to_amplitude(-get_sch_to_dmrs_ratio_dB(pdu.nof_cdm_groups_without_data));
-  ch_est_config.c_prefix      = pdu.cp;
-  ch_est_config.symbols_mask  = pdu.dmrs_symbol_mask;
-  ch_est_config.rb_mask       = rb_mask;
-  ch_est_config.first_symbol  = pdu.start_symbol_index;
-  ch_est_config.nof_symbols   = pdu.nof_symbols;
-  ch_est_config.nof_tx_layers = pdu.nof_tx_layers;
+  ch_est_config.slot = pdu.slot;
+  if (enable_transform_precoding) {
+    ch_est_config.sequence_config = dmrs_pusch_estimator::low_papr_sequence_configuration{.n_rs_id = n_rs_id};
+  } else {
+    ch_est_config.sequence_config = dmrs_pusch_estimator::pseudo_random_sequence_configuration{
+        .type = dmrs_type, .nof_tx_layers = pdu.nof_tx_layers, .scrambling_id = scrambling_id, .n_scid = n_scid};
+  }
+  ch_est_config.scaling      = convert_dB_to_amplitude(-get_sch_to_dmrs_ratio_dB(nof_cdm_groups_without_data));
+  ch_est_config.c_prefix     = pdu.cp;
+  ch_est_config.symbols_mask = pdu.dmrs_symbol_mask;
+  ch_est_config.rb_mask      = rb_mask;
+  ch_est_config.first_symbol = pdu.start_symbol_index;
+  ch_est_config.nof_symbols  = pdu.nof_symbols;
   ch_est_config.rx_ports.assign(pdu.rx_ports.begin(), pdu.rx_ports.end());
   dependencies.get_estimator().estimate(ch_estimate, grid, ch_est_config);
 
@@ -209,7 +246,7 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   demux_config.start_symbol_index          = pdu.start_symbol_index;
   demux_config.nof_symbols                 = pdu.nof_symbols;
   demux_config.nof_harq_ack_rvd            = info.nof_harq_ack_rvd.value();
-  demux_config.dmrs                        = pdu.dmrs;
+  demux_config.dmrs                        = dmrs_type;
   demux_config.dmrs_symbol_mask            = ulsch_config.dmrs_symbol_mask;
   demux_config.nof_cdm_groups_without_data = ulsch_config.nof_cdm_groups_without_data;
   demux_config.nof_harq_ack_bits           = ulsch_config.nof_harq_ack_bits.value();
@@ -287,49 +324,12 @@ void pusch_processor_impl::process(span<uint8_t>                    data,
   demod_config.start_symbol_index          = pdu.start_symbol_index;
   demod_config.nof_symbols                 = pdu.nof_symbols;
   demod_config.dmrs_symb_pos               = pdu.dmrs_symbol_mask;
-  demod_config.dmrs_config_type            = pdu.dmrs;
-  demod_config.nof_cdm_groups_without_data = pdu.nof_cdm_groups_without_data;
+  demod_config.dmrs_config_type            = dmrs_type;
+  demod_config.nof_cdm_groups_without_data = nof_cdm_groups_without_data;
   demod_config.n_id                        = pdu.n_id;
   demod_config.nof_tx_layers               = pdu.nof_tx_layers;
+  demod_config.enable_transform_precoding  = enable_transform_precoding;
   demod_config.rx_ports                    = pdu.rx_ports;
   dependencies.get_demodulator().demodulate(
       demodulator_buffer, notifier_adaptor.get_demodulator_notifier(), grid, ch_estimate, demod_config);
-}
-
-void pusch_processor_impl::assert_pdu(const pusch_processor::pdu_t& pdu, const channel_estimate& ch_estimate) const
-{
-  using namespace units::literals;
-  interval<unsigned, true> nof_tx_layers_range(1, ch_estimate.capacity().nof_tx_layers);
-
-  // Make sure the configuration is supported.
-  srsran_assert((pdu.bwp_start_rb + pdu.bwp_size_rb) <= ch_estimate.capacity().nof_prb,
-                "The sum of the BWP start (i.e., {}) and size (i.e., {}) exceeds the maximum grid size (i.e., {} PRB).",
-                pdu.bwp_start_rb,
-                pdu.bwp_size_rb,
-                ch_estimate.capacity().nof_prb);
-  srsran_assert(pdu.dmrs == dmrs_type::TYPE1, "Only DM-RS Type 1 is currently supported.");
-  srsran_assert(pdu.nof_cdm_groups_without_data == 2, "Only two CDM groups without data are currently supported.");
-  srsran_assert(nof_tx_layers_range.contains(pdu.nof_tx_layers),
-                "The number of transmit layers (i.e., {}) is out of the range {}.",
-                pdu.nof_tx_layers,
-                nof_tx_layers_range);
-  srsran_assert(pdu.rx_ports.size() <= ch_estimate.capacity().nof_rx_ports,
-                "The number of receive ports (i.e., {}) exceeds the maximum number of receive ports (i.e., {}).",
-                pdu.rx_ports.size(),
-                ch_estimate.capacity().nof_rx_ports);
-
-  srsran_assert(pdu.uci.csi_part2_size.is_valid(pdu.uci.nof_csi_part1),
-                "CSI Part 1 UCI field length (i.e., {}) does not correspond with the CSI Part 2 (i.e., {})",
-                pdu.uci.nof_csi_part1,
-                pdu.uci.csi_part2_size);
-  srsran_assert(pdu.tbs_lbrm > 0_bytes, "Invalid LBRM size (0 bytes).");
-
-  // Check DC is whithin the CE.
-  if (pdu.dc_position.has_value()) {
-    interval<unsigned> dc_position_range(0, ch_estimate.size().nof_prb * NRE);
-    srsran_assert(dc_position_range.contains(pdu.dc_position.value()),
-                  "DC position (i.e., {}) is out of range {}.",
-                  pdu.dc_position.value(),
-                  dc_position_range);
-  }
 }

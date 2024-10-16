@@ -21,7 +21,7 @@
  */
 
 #include "du_manager_procedure_test_helpers.h"
-#include "lib/du_manager/procedures/ue_creation_procedure.h"
+#include "lib/du/du_high/du_manager/procedures/ue_creation_procedure.h"
 #include "srsran/asn1/rrc_nr/cell_group_config.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/support/test_utils.h"
@@ -91,7 +91,7 @@ protected:
 
   void set_sr_offset(du_ue_index_t ue_index, du_cell_index_t cell_idx, unsigned sr_offset)
   {
-    this->cell_res_alloc.next_context_update_result.cells[0]
+    this->cell_res_alloc.next_context_update_result.cell_group.cells[0]
         .serv_cell_cfg.ul_config->init_ul_bwp.pucch_cfg->sr_res_list[0]
         .offset = sr_offset;
   }
@@ -147,7 +147,7 @@ TEST_F(du_manager_ue_creation_tester,
   // Test Preamble.
   // > Generate SR offsets for two UEs.
   du_ue_index_t ue_idx1 = to_du_ue_index(0), ue_idx2 = to_du_ue_index(1);
-  unsigned      sr_period  = sr_periodicity_to_slot(this->cell_res_alloc.next_context_update_result.cells[0]
+  unsigned      sr_period  = sr_periodicity_to_slot(this->cell_res_alloc.next_context_update_result.cell_group.cells[0]
                                                   .serv_cell_cfg.ul_config->init_ul_bwp.pucch_cfg->sr_res_list[0]
                                                   .period);
   unsigned      sr_offset1 = test_rgen::uniform_int<unsigned>(0, sr_period - 1);

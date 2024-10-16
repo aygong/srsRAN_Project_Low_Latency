@@ -33,13 +33,13 @@ static constexpr unsigned MAX_NOF_RBGS = 18;
 // expected message.
 static void test_validator(const dci_size_config& invalid_config, const std::string& expected_assert_message)
 {
+  const error_type<std::string> error = validate_dci_size_config(invalid_config);
+
   // Make sure the configuration is invalid.
-  ASSERT_FALSE(validate_dci_size_config(invalid_config));
+  ASSERT_FALSE(error);
 
   // Perform size alignment procedure.
-#ifdef ASSERTS_ENABLED
-  ASSERT_DEATH({ get_dci_sizes(invalid_config); }, expected_assert_message);
-#endif // ASSERTS_ENABLED
+  ASSERT_EQ(error.error(), expected_assert_message);
 }
 
 namespace {
@@ -109,8 +109,8 @@ private:
       0,
       // PUSCH frequency hopping flag.
       false,
-      // Non-codebook based transmission flag.
-      false,
+      // PUSCH transmission scheme.
+      tx_scheme_non_codebook(),
       // UL transform precoding flag.
       false,
       // PT-RS signals flag.
@@ -129,10 +129,6 @@ private:
       1,
       // Maximum number of PUSCH layers for non-codebook based operation.
       1,
-      // Maximum UE transmission rank for codebook based operation.
-      1,
-      // Subset of PMIs addressed by TPMI.
-      tx_scheme_codebook_subset::non_coherent,
       // UL DM-RS type for DM-RS mapping type A.
       dmrs_config_type::type1,
       // Maximum number of OFDM symbols occupied by the front-loaded UL DM-RS for DM-RS mapping type A.
@@ -212,9 +208,7 @@ TEST_F(DciValidatorFallbackFixture, BadInitialBandwidth)
     dci_size_config config   = get_base_dci_config();
     config.ul_bwp_initial_bw = MAX_RB + 1;
     std::string assert_message =
-        fmt::format(R"(The initial UL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.ul_bwp_initial_bw,
-                    MAX_RB);
+        fmt::format("UL initial BWP bandwidth {} is out of range [1..{}].", config.ul_bwp_initial_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -222,9 +216,7 @@ TEST_F(DciValidatorFallbackFixture, BadInitialBandwidth)
     dci_size_config config   = get_base_dci_config();
     config.ul_bwp_initial_bw = 0;
     std::string assert_message =
-        fmt::format(R"(The initial UL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.ul_bwp_initial_bw,
-                    MAX_RB);
+        fmt::format("UL initial BWP bandwidth {} is out of range [1..{}].", config.ul_bwp_initial_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -232,9 +224,7 @@ TEST_F(DciValidatorFallbackFixture, BadInitialBandwidth)
     dci_size_config config   = get_base_dci_config();
     config.dl_bwp_initial_bw = MAX_RB + 1;
     std::string assert_message =
-        fmt::format(R"(The initial DL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.dl_bwp_initial_bw,
-                    MAX_RB);
+        fmt::format("DL initial BWP bandwidth {} is out of range [1..{}].", config.dl_bwp_initial_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -242,17 +232,15 @@ TEST_F(DciValidatorFallbackFixture, BadInitialBandwidth)
     dci_size_config config   = get_base_dci_config();
     config.dl_bwp_initial_bw = 0;
     std::string assert_message =
-        fmt::format(R"(The initial DL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.dl_bwp_initial_bw,
-                    MAX_RB);
+        fmt::format("DL initial BWP bandwidth {} is out of range [1..{}].", config.dl_bwp_initial_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config     = get_base_dci_config();
-    config.coreset0_bw         = MAX_RB + 1;
-    std::string assert_message = fmt::format(
-        R"(The CORESET 0 bandwidth\, i\.e\.\, {} must be within the range \[0\, {}\]\.)", config.coreset0_bw, MAX_RB);
+    dci_size_config config = get_base_dci_config();
+    config.coreset0_bw     = MAX_RB + 1;
+    std::string assert_message =
+        fmt::format("CORESET0 bandwidth {} is out of range [0..{}].", config.coreset0_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -265,9 +253,7 @@ TEST_F(DciValidatorFallbackFixture, BadActiveBandwidth)
     dci_size_config config  = get_base_dci_config();
     config.ul_bwp_active_bw = MAX_RB + 1;
     std::string assert_message =
-        fmt::format(R"(The active UL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.ul_bwp_active_bw,
-                    MAX_RB);
+        fmt::format("UL active BWP bandwidth {} is out of range [1..{}].", config.ul_bwp_active_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -276,9 +262,7 @@ TEST_F(DciValidatorFallbackFixture, BadActiveBandwidth)
     dci_size_config config  = get_base_dci_config();
     config.dl_bwp_active_bw = MAX_RB + 1;
     std::string assert_message =
-        fmt::format(R"(The active DL BWP bandwidth\, i\.e\.\, {} must be within the range \[1\, {}\]\.)",
-                    config.dl_bwp_active_bw,
-                    MAX_RB);
+        fmt::format("DL active BWP bandwidth {} is out of range [1..{}].", config.dl_bwp_active_bw, MAX_RB);
 
     test_validator(config, assert_message);
   }
@@ -289,7 +273,7 @@ TEST_F(DciValidatorFallbackFixture, SupplementaryUplinkNotSupported)
 {
   dci_size_config config     = get_base_dci_config();
   config.sul_configured      = true;
-  std::string assert_message = fmt::format(R"(SUL is not currently supported\.)");
+  std::string assert_message = fmt::format("SUL is not currently supported by the DCI size alignment procedure.");
 
   test_validator(config, assert_message);
 }
@@ -298,19 +282,19 @@ TEST_F(DciValidatorFallbackFixture, SupplementaryUplinkNotSupported)
 TEST_F(DciValidatorNonFallbackFixture, BadNofBwpConfiguredByHigherLayers)
 {
   {
-    dci_size_config config     = get_base_dci_config();
-    config.nof_ul_bwp_rrc      = 5;
-    std::string assert_message = fmt::format(
-        R"(The number of UL BWP configured by higher layers\, i\.e\.\, {}\, cannot exceed 4\.)", config.nof_ul_bwp_rrc);
+    dci_size_config config = get_base_dci_config();
+    config.nof_ul_bwp_rrc  = 5;
+    std::string assert_message =
+        fmt::format("The number of RRC configured UL BWP {} is out of range [0..4].", config.nof_ul_bwp_rrc);
 
     test_validator(config, assert_message);
   }
 
   {
-    dci_size_config config     = get_base_dci_config();
-    config.nof_dl_bwp_rrc      = 5;
-    std::string assert_message = fmt::format(
-        R"(The number of DL BWP configured by higher layers\, i\.e\.\, {}\, cannot exceed 4\.)", config.nof_dl_bwp_rrc);
+    dci_size_config config = get_base_dci_config();
+    config.nof_dl_bwp_rrc  = 5;
+    std::string assert_message =
+        fmt::format("The number of RRC configured DL BWP {} is out of range [0..4].", config.nof_dl_bwp_rrc);
 
     test_validator(config, assert_message);
   }
@@ -322,36 +306,44 @@ TEST_F(DciValidatorNonFallbackFixture, BadNofTimeDomainResources)
   {
     dci_size_config config        = get_base_dci_config();
     config.nof_ul_time_domain_res = 17;
-    std::string assert_message    = fmt::format(
-        R"(The number of UL time domain resource allocations\, i\.e\.\, {} must be within the range \[1\, 16\]\.)",
-        config.nof_ul_time_domain_res);
+    std::string assert_message    = fmt::format("The number of UL time domain resources {} is out of range [1..16].",
+                                             config.nof_ul_time_domain_res);
 
     test_validator(config, assert_message);
   }
   {
     dci_size_config config        = get_base_dci_config();
     config.nof_ul_time_domain_res = 0;
-    std::string assert_message    = fmt::format(
-        R"(The number of UL time domain resource allocations\, i\.e\.\, {} must be within the range \[1\, 16\]\.)",
-        config.nof_ul_time_domain_res);
+    std::string assert_message    = fmt::format("The number of UL time domain resources {} is out of range [1..16].",
+                                             config.nof_ul_time_domain_res);
 
     test_validator(config, assert_message);
   }
   {
     dci_size_config config        = get_base_dci_config();
     config.nof_dl_time_domain_res = 17;
-    std::string assert_message    = fmt::format(
-        R"(The number of DL time domain resource allocations\, i\.e\.\, {} must be within the range \[1\, 16\]\.)",
-        config.nof_dl_time_domain_res);
+    std::string assert_message    = fmt::format("The number of DL time domain resources {} is out of range [1..16].",
+                                             config.nof_dl_time_domain_res);
 
     test_validator(config, assert_message);
   }
   {
     dci_size_config config        = get_base_dci_config();
     config.nof_dl_time_domain_res = 0;
-    std::string assert_message    = fmt::format(
-        R"(The number of DL time domain resource allocations\, i\.e\.\, {} must be within the range \[1\, 16\]\.)",
-        config.nof_dl_time_domain_res);
+    std::string assert_message    = fmt::format("The number of DL time domain resources {} is out of range [1..16].",
+                                             config.nof_dl_time_domain_res);
+
+    test_validator(config, assert_message);
+  }
+}
+
+// Check the number of aperiodic ZP CSI-RS resource sets.
+TEST_F(DciValidatorNonFallbackFixture, MissingTransmitScheme)
+{
+  {
+    dci_size_config config     = get_base_dci_config();
+    config.pusch_tx_scheme     = std::nullopt;
+    std::string assert_message = "PUSCH Transmit scheme is required for DCI 0_1.";
 
     test_validator(config, assert_message);
   }
@@ -362,9 +354,8 @@ TEST_F(DciValidatorNonFallbackFixture, BadAperiodicZpCsiResourceSets)
 {
   dci_size_config config      = get_base_dci_config();
   config.nof_aperiodic_zp_csi = 4;
-  std::string assert_message =
-      fmt::format(R"(The number of aperiodic ZP CSI-RS resource sets, i.e., {}, cannot be larger than 3.)",
-                  config.nof_aperiodic_zp_csi);
+  std::string assert_message  = fmt::format("The number of aperiodic ZP-CSI resource sets {} is out of range [0..3].",
+                                           config.nof_aperiodic_zp_csi);
 
   test_validator(config, assert_message);
 }
@@ -375,7 +366,7 @@ TEST_F(DciValidatorNonFallbackFixture, BadReportTriggerSize)
   dci_size_config config     = get_base_dci_config();
   config.report_trigger_size = 7;
   std::string assert_message =
-      fmt::format(R"(The report trigger size\, i\.e\.\, {}\, cannot be larger than 6\.)", config.report_trigger_size);
+      fmt::format("CSI report trigger size {} is out of range [0..6].", config.report_trigger_size);
 
   test_validator(config, assert_message);
 }
@@ -386,18 +377,16 @@ TEST_F(DciValidatorNonFallbackFixture, BadNumberOfDonwlinkAckTimings)
   {
     dci_size_config config       = get_base_dci_config();
     config.nof_pdsch_ack_timings = 9;
-    std::string assert_message =
-        fmt::format(R"(The number of PDSCH HARQ-ACK timings\, i\.e\.\, {}\, must be within the range \[1\, 8\]\.)",
-                    config.nof_pdsch_ack_timings);
+    std::string assert_message   = fmt::format(
+        "The number of HARQ-ACK feedback timing entries {} is out of range [1..8].", config.nof_pdsch_ack_timings);
 
     test_validator(config, assert_message);
   }
   {
     dci_size_config config       = get_base_dci_config();
     config.nof_pdsch_ack_timings = 0;
-    std::string assert_message =
-        fmt::format(R"(The number of PDSCH HARQ-ACK timings\, i\.e\.\, {}\, must be within the range \[1, 8\]\.)",
-                    config.nof_pdsch_ack_timings);
+    std::string assert_message   = fmt::format(
+        "The number of HARQ-ACK feedback timing entries {} is out of range [1..8].", config.nof_pdsch_ack_timings);
 
     test_validator(config, assert_message);
   }
@@ -407,18 +396,18 @@ TEST_F(DciValidatorNonFallbackFixture, BadNumberOfDonwlinkAckTimings)
 TEST_F(DciValidatorNonFallbackFixture, BadNumberOfCodeBlockGroupsPerTransportBlock)
 {
   {
-    dci_size_config config     = get_base_dci_config();
-    config.max_cbg_tb_pusch    = 1;
-    std::string assert_message = fmt::format(
-        R"(Invalid Maximum CBG per PUSCH TB\, i\.e\.\, {}\. Valid options\: 2\, 4\, 6\, 8\.)", config.max_cbg_tb_pusch);
+    dci_size_config config  = get_base_dci_config();
+    config.max_cbg_tb_pusch = 1;
+    std::string assert_message =
+        fmt::format("The maximum CBG per PUSCH TB {} is neither 2, 4, 6, nor 8.", config.max_cbg_tb_pusch);
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config     = get_base_dci_config();
-    config.max_cbg_tb_pdsch    = 1;
-    std::string assert_message = fmt::format(
-        R"(Invalid Maximum CBG per PDSCH TB\, i\.e\.\, {}\. Valid options\: 2\, 4\, 6\, 8\.)", config.max_cbg_tb_pdsch);
+    dci_size_config config  = get_base_dci_config();
+    config.max_cbg_tb_pdsch = 1;
+    std::string assert_message =
+        fmt::format("The maximum CBG per PDSCH TB {} is neither 2, 4, 6, nor 8.", config.max_cbg_tb_pdsch);
 
     test_validator(config, assert_message);
   }
@@ -431,8 +420,7 @@ TEST_F(DciValidatorNonFallbackFixture, TransformPrecodingInvalidConfig)
     dci_size_config config             = get_base_dci_config();
     config.transform_precoding_enabled = true;
     config.pusch_dmrs_A_type           = dmrs_config_type::type2;
-    std::string assert_message =
-        fmt::format(R"(UL DM-RS configuration type 2 cannot be used with transform precoding\.)");
+    std::string assert_message = fmt::format("PUSCH DM-RS (A) Type2 is not supported with transform precoding.");
 
     test_validator(config, assert_message);
   }
@@ -440,8 +428,7 @@ TEST_F(DciValidatorNonFallbackFixture, TransformPrecodingInvalidConfig)
     dci_size_config config             = get_base_dci_config();
     config.transform_precoding_enabled = true;
     config.pusch_dmrs_B_type           = dmrs_config_type::type2;
-    std::string assert_message =
-        fmt::format(R"(UL DM-RS configuration type 2 cannot be used with transform precoding\.)");
+    std::string assert_message = fmt::format("PUSCH DM-RS (B) Type2 is not supported with transform precoding.");
 
     test_validator(config, assert_message);
   }
@@ -454,7 +441,7 @@ TEST_F(DciValidatorNonFallbackFixture, DynamicPdschHarqAckCodebookInvalidConfig)
   config.pdsch_harq_ack_cb = pdsch_harq_ack_codebook::dynamic;
   config.dynamic_dual_harq_ack_cb.reset();
   std::string assert_message =
-      fmt::format(R"(Dynamic dual HARQ-ACK codebook flag is required for dynamic PDSCH HARQ-ACK codebook\.)");
+      fmt::format("Dynamic dual HARQ-ACK codebook flag is required for dynamic PDSCH HARQ-ACK codebook.");
 
   test_validator(config, assert_message);
 }
@@ -466,7 +453,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     dci_size_config config           = get_base_dci_config();
     config.pusch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_ul_rb_groups.reset();
-    std::string assert_message = fmt::format(R"(The number of UL RBGs is required for resource allocation type 0\.)");
+    std::string assert_message = fmt::format("The number of UL RBGs is required for resource allocation type 0.");
 
     test_validator(config, assert_message);
   }
@@ -475,9 +462,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     config.pusch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_ul_rb_groups          = MAX_NOF_RBGS + 1;
     std::string assert_message =
-        fmt::format(R"(The number of UL RBGs\, i\.e\.\, {}\, must be within the range \[1\, {}\]\.)",
-                    config.nof_ul_rb_groups.value(),
-                    MAX_NOF_RBGS);
+        fmt::format("The number of UL RBGs {} is out of range [1..{}].", config.nof_ul_rb_groups.value(), MAX_NOF_RBGS);
 
     test_validator(config, assert_message);
   }
@@ -486,9 +471,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     config.pusch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_ul_rb_groups          = 0;
     std::string assert_message =
-        fmt::format(R"(The number of UL RBGs\, i\.e\.\, {}\, must be within the range \[1\, {}\]\.)",
-                    config.nof_ul_rb_groups.value(),
-                    MAX_NOF_RBGS);
+        fmt::format("The number of UL RBGs {} is out of range [1..{}].", config.nof_ul_rb_groups.value(), MAX_NOF_RBGS);
 
     test_validator(config, assert_message);
   }
@@ -496,7 +479,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     dci_size_config config           = get_base_dci_config();
     config.pdsch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_dl_rb_groups.reset();
-    std::string assert_message = fmt::format(R"(The number of DL RBGs is required for resource allocation type 0\.)");
+    std::string assert_message = fmt::format("The number of DL RBGs is required for resource allocation type 0.");
 
     test_validator(config, assert_message);
   }
@@ -505,9 +488,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     config.pdsch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_dl_rb_groups          = MAX_NOF_RBGS + 1;
     std::string assert_message =
-        fmt::format(R"(The number of DL RBGs\, i\.e\.\, {}\, must be within the range \[1\, {}\]\.)",
-                    config.nof_dl_rb_groups.value(),
-                    MAX_NOF_RBGS);
+        fmt::format("The number of DL RBGs {} is out of range [1..{}].", config.nof_dl_rb_groups.value(), MAX_NOF_RBGS);
 
     test_validator(config, assert_message);
   }
@@ -516,9 +497,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeZeroInvalidConfig)
     config.pdsch_res_allocation_type = resource_allocation::resource_allocation_type_0;
     config.nof_dl_rb_groups          = 0;
     std::string assert_message =
-        fmt::format(R"(The number of DL RBGs\, i\.e\.\, {}\, must be within the range \[1\, {}\]\.)",
-                    config.nof_dl_rb_groups.value(),
-                    MAX_NOF_RBGS);
+        fmt::format("The number of DL RBGs {} is out of range [1..{}].", config.nof_dl_rb_groups.value(), MAX_NOF_RBGS);
 
     test_validator(config, assert_message);
   }
@@ -531,7 +510,7 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeOneInvalidConfig)
   config.pdsch_res_allocation_type = resource_allocation::resource_allocation_type_1;
   config.interleaved_vrb_prb_mapping.reset();
   std::string assert_message =
-      fmt::format(R"(Interleaved VRB to PRB mapping flag is required for PDSCH resource allocation type 1\.)");
+      fmt::format("Interleaved VRB to PRB mapping flag is required for PDSCH resource allocation type 1.");
 
   test_validator(config, assert_message);
 }
@@ -540,50 +519,48 @@ TEST_F(DciValidatorNonFallbackFixture, ResourceAllocationTypeOneInvalidConfig)
 TEST_F(DciValidatorNonFallbackFixture, NonCodebookTransmissionInvalidConfig)
 {
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme = tx_scheme_non_codebook();
     config.pusch_max_layers.reset();
     std::string assert_message =
-        fmt::format(R"(Maximum number of PUSCH layers is required for non-codebook transmission\.)");
+        fmt::format("Maximum number of PUSCH layers is required for non-codebook transmission.");
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
-    config.pusch_max_layers       = 5;
+    dci_size_config config  = get_base_dci_config();
+    config.pusch_tx_scheme  = tx_scheme_non_codebook();
+    config.pusch_max_layers = 5;
     std::string assert_message =
-        fmt::format(R"(Maximum number of PUSH layers\, i\.e\.\, {}\, must be within the valid range \[1\, 4\]\.)",
-                    config.pusch_max_layers.value());
+        fmt::format("Maximum number of PUSCH layers {} is out of range [1..4].", config.pusch_max_layers.value());
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
-    config.pusch_max_layers       = 0;
+    dci_size_config config  = get_base_dci_config();
+    config.pusch_tx_scheme  = tx_scheme_non_codebook();
+    config.pusch_max_layers = 0;
     std::string assert_message =
-        fmt::format(R"(Maximum number of PUSH layers\, i\.e\.\, {}\, must be within the valid range \[1\, 4\]\.)",
-                    config.pusch_max_layers.value());
+        fmt::format("Maximum number of PUSCH layers {} is out of range [1..4].", config.pusch_max_layers.value());
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
-    config.nof_srs_resources      = 5;
-    std::string assert_message    = fmt::format(
-        R"(Number of SRS resources\, i\.e\.\, {}\, must be within the range \[1\, 4\] for non-codebook transmission\.)",
-        config.nof_srs_resources);
+    dci_size_config config   = get_base_dci_config();
+    config.pusch_tx_scheme   = tx_scheme_non_codebook();
+    config.nof_srs_resources = 5;
+    std::string assert_message =
+        fmt::format("The number of SRS resources {} is out of range [1..4] for non-codebook transmission.",
+                    config.nof_srs_resources);
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
-    config.nof_srs_resources      = 0;
-    std::string assert_message    = fmt::format(
-        R"(Number of SRS resources\, i\.e\.\, {}\, must be within the range \[1\, 4\] for non-codebook transmission\.)",
-        config.nof_srs_resources);
+    dci_size_config config   = get_base_dci_config();
+    config.pusch_tx_scheme   = tx_scheme_non_codebook();
+    config.nof_srs_resources = 0;
+    std::string assert_message =
+        fmt::format("The number of SRS resources {} is out of range [1..4] for non-codebook transmission.",
+                    config.nof_srs_resources);
     test_validator(config, assert_message);
   }
 }
@@ -592,10 +569,10 @@ TEST_F(DciValidatorNonFallbackFixture, NonCodebookTransmissionInvalidConfig)
 TEST_F(DciValidatorNonFallbackFixture, NonCodebookTransmissionUnsupportedConfig)
 {
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = true;
-    config.pusch_max_layers       = 2;
-    std::string assert_message    = fmt::format(R"(Multiple layers on PUSCH are not currently supported\.)");
+    dci_size_config config     = get_base_dci_config();
+    config.pusch_tx_scheme     = tx_scheme_non_codebook();
+    config.pusch_max_layers    = 2;
+    std::string assert_message = fmt::format("Multiple layers on PUSCH are not currently supported.");
     test_validator(config, assert_message);
   }
 }
@@ -604,102 +581,64 @@ TEST_F(DciValidatorNonFallbackFixture, NonCodebookTransmissionUnsupportedConfig)
 TEST_F(DciValidatorNonFallbackFixture, CodebookTransmissionInvalidConfig)
 {
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.max_rank.reset();
-    std::string assert_message = fmt::format(R"(Maximum rank is required for codebook transmission\.)");
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme = tx_scheme_codebook{
+        .max_rank = 1, .codebook_subset = tx_scheme_codebook_subset::fully_and_partial_and_non_coherent};
+    config.nof_srs_resources   = 3;
+    std::string assert_message = fmt::format(
+        "The number of SRS resources {} is out of range [1..2] for codebook transmission.", config.nof_srs_resources);
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.max_rank               = 5;
-    std::string assert_message    = fmt::format(
-        R"(Maximum rank\, i\.e\.\, {}\, must be within the valid range \[1\, 4\]\.)", config.max_rank.value());
-
-    test_validator(config, assert_message);
-  }
-  {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.max_rank               = 0;
-    std::string assert_message    = fmt::format(
-        R"(Maximum rank\, i\.e\.\, {}\, must be within the valid range \[1\, 4\]\.)", config.max_rank.value());
-
-    test_validator(config, assert_message);
-  }
-  {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.nof_srs_resources      = 3;
-    std::string assert_message    = fmt::format(
-        R"(Number of SRS resources\, i\.e\.\, {}\, must be within the range \[1\, 2\] for codebook transmission\.)",
-        config.nof_srs_resources);
-
-    test_validator(config, assert_message);
-  }
-  {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme = tx_scheme_codebook{
+        .max_rank = 1, .codebook_subset = tx_scheme_codebook_subset::fully_and_partial_and_non_coherent};
     config.nof_srs_ports.reset();
-    std::string assert_message = fmt::format(R"(Number of SRS antenna ports is required for codebook transmission\.)");
+    std::string assert_message = fmt::format("Number of SRS ports is required for codebook transmission.");
 
     test_validator(config, assert_message);
   }
   {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.nof_srs_ports          = 3;
-    std::string assert_message    = fmt::format(
-        R"(Invalid number of SRS ports\, i\.e\.\, {}\. Valid options\: 1\, 2\, 4\.)", config.nof_srs_ports.value());
-
-    test_validator(config, assert_message);
-  }
-  {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.nof_srs_ports          = 2;
-    config.max_rank               = 3;
-    std::string assert_message    = fmt::format(
-        R"(Maximum rank\, i\.e\.\, {}\, cannot be larger than the number of SRS antenna ports\, i\.e\.\, {}\.)",
-        config.max_rank.value(),
-        config.nof_srs_ports.value());
-
-    test_validator(config, assert_message);
-  }
-  {
-    dci_size_config config        = get_base_dci_config();
-    config.tx_config_non_codebook = false;
-    config.nof_srs_ports          = 2;
-    config.cb_subset.reset();
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme = tx_scheme_codebook{
+        .max_rank = 1, .codebook_subset = tx_scheme_codebook_subset::fully_and_partial_and_non_coherent};
+    config.nof_srs_ports = 3;
     std::string assert_message =
-        fmt::format(R"(Codebook subset is required for codebook transmission with multiple antenna ports.)");
+        fmt::format("The number of SRS ports {} is neither 1, 2, nor 4.", config.nof_srs_ports.value());
 
     test_validator(config, assert_message);
   }
-}
+  {
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme =
+        tx_scheme_codebook{.max_rank = 1, .codebook_subset = tx_scheme_codebook_subset::partial_and_non_coherent};
+    config.nof_srs_ports = 2;
+    std::string assert_message =
+        fmt::format("Codebook subset \"partial and non-coherent\" is not supported for 2 SRS ports.");
 
-// Checks for unsupported DCI configurations with codebook based transmission.
-TEST_F(DciValidatorNonFallbackFixture, CodebookTransmissionUnsupportedConfig)
-{
-  dci_size_config config        = get_base_dci_config();
-  config.tx_config_non_codebook = false;
-  config.nof_srs_ports          = 2;
-  std::string assert_message    = fmt::format(R"(UL precoding is not currently supported\.)");
+    test_validator(config, assert_message);
+  }
+  {
+    dci_size_config config = get_base_dci_config();
+    config.pusch_tx_scheme =
+        tx_scheme_codebook{.max_rank = 3, .codebook_subset = tx_scheme_codebook_subset::partial_and_non_coherent};
+    config.nof_srs_ports = 2;
+    std::string assert_message =
+        fmt::format("Maximum rank {} cannot be larger than the number of SRS antenna ports {}.",
+                    std::get<tx_scheme_codebook>(config.pusch_tx_scheme.value()).max_rank,
+                    config.nof_srs_ports.value());
 
-  test_validator(config, assert_message);
+    test_validator(config, assert_message);
+  }
 }
 
 // Checks for unsupported DCI configurations with PT-RS.
 TEST_F(DciValidatorNonFallbackFixture, PtrsUnsupportedConfig)
 {
-  dci_size_config config             = get_base_dci_config();
-  config.ptrs_uplink_configured      = true;
-  config.transform_precoding_enabled = false;
-  config.tx_config_non_codebook      = true;
-  std::string assert_message =
-      fmt::format(R"(PT\-RS with more than one DM\-RS is not currently supported\.)", config.max_cbg_tb_pdsch);
+  dci_size_config config        = get_base_dci_config();
+  config.ptrs_uplink_configured = true;
+  std::string assert_message    = "PT-RS is not currently supported.";
 
   test_validator(config, assert_message);
 }
@@ -711,8 +650,7 @@ TEST_F(DciValidatorNonFallbackFixture, DmrsConfigurationNotPresent)
     dci_size_config config = get_base_dci_config();
     config.pusch_dmrs_A_type.reset();
     config.pusch_dmrs_B_max_len.reset();
-    std::string assert_message =
-        fmt::format(R"(At least one PUSCH DM\-RS mapping \(type A or type B\) must be configured\.)");
+    std::string assert_message = fmt::format("At least one PUSCH DM-RS mapping (type A or type B) must be configured.");
 
     test_validator(config, assert_message);
   }
@@ -720,8 +658,7 @@ TEST_F(DciValidatorNonFallbackFixture, DmrsConfigurationNotPresent)
     dci_size_config config = get_base_dci_config();
     config.pdsch_dmrs_A_type.reset();
     config.pdsch_dmrs_B_max_len.reset();
-    std::string assert_message =
-        fmt::format(R"(At least one PDSCH DM\-RS mapping \(type A or type B\) must be configured\.)");
+    std::string assert_message = fmt::format("At least one PDSCH DM-RS mapping (type A or type B) must be configured.");
 
     test_validator(config, assert_message);
   }

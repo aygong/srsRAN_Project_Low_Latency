@@ -22,9 +22,9 @@
 
 #include "lib/cu_cp/ue_manager/ue_manager_impl.h"
 #include "lib/ngap/ngap_asn1_helpers.h"
-#include "lib/ngap/ngap_asn1_packer.h"
 #include "lib/ngap/ngap_error_indication_helper.h"
 #include "tests/unittests/ngap/test_helpers.h"
+#include "srsran/cu_cp/cu_cp_configuration_helpers.h"
 #include "srsran/gateways/sctp_network_gateway_factory.h"
 #include "srsran/ngap/ngap_configuration_helpers.h"
 #include "srsran/ngap/ngap_factory.h"
@@ -118,93 +118,58 @@ private:
 class ngap_integration_test : public ::testing::Test
 {
 protected:
+  ngap_integration_test() :
+    cu_cp_cfg([this]() {
+      sctp_network_connector_config nw_config;
+      nw_config.dest_name         = "AMF";
+      nw_config.if_name           = "N2";
+      nw_config.connect_address   = "10.12.1.105";
+      nw_config.connect_port      = 38412;
+      nw_config.bind_address      = "10.8.1.10";
+      nw_config.bind_port         = 0;
+      nw_config.non_blocking_mode = true;
+      adapter                     = std::make_unique<ngap_network_adapter>(nw_config);
+
+      cu_cp_configuration cucfg     = config_helpers::make_default_cu_cp_config();
+      cucfg.services.timers         = &timers;
+      cucfg.services.cu_cp_executor = &ctrl_worker;
+      cucfg.ngaps.push_back(
+          cu_cp_configuration::ngap_params{adapter.get(), {{7, {{plmn_identity::test_value(), {{1}}}}}}});
+      return cucfg;
+    }())
+  {
+    cfg.gnb_id                    = cu_cp_cfg.node.gnb_id;
+    cfg.ran_node_name             = cu_cp_cfg.node.ran_node_name;
+    cfg.supported_tas             = cu_cp_cfg.ngaps.front().supported_tas;
+    cfg.pdu_session_setup_timeout = cu_cp_cfg.ue.pdu_session_setup_timeout;
+  }
+
   void SetUp() override
   {
     srslog::fetch_basic_logger("TEST").set_level(srslog::basic_levels::debug);
     srslog::init();
 
-    cfg.gnb_id        = {411, 22};
-    cfg.ran_node_name = "srsgnb01";
-    cfg.plmn          = plmn_identity::test_value();
-    cfg.tac           = 7;
-    s_nssai_t slice_cfg;
-    slice_cfg.sst = 1;
-    cfg.slice_configurations.push_back(slice_cfg);
-
-    sctp_network_connector_config nw_config;
-    nw_config.dest_name         = "AMF";
-    nw_config.if_name           = "N2";
-    nw_config.connect_address   = "10.12.1.105";
-    nw_config.connect_port      = 38412;
-    nw_config.bind_address      = "10.8.1.10";
-    nw_config.bind_port         = 0;
-    nw_config.non_blocking_mode = true;
-    adapter                     = std::make_unique<ngap_network_adapter>(nw_config);
-
-    ngap = create_ngap(cfg, cu_cp_notifier, cu_cp_paging_notifier, *adapter, timers, ctrl_worker);
+    ngap = create_ngap(cfg, cu_cp_notifier, *cu_cp_cfg.ngaps.front().n2_gw, timers, ctrl_worker);
   }
 
-  ngap_configuration                    cfg;
-  ue_configuration                      ue_config;
-  up_resource_manager_cfg               up_config;
-  timer_manager                         timers;
-  manual_task_worker                    ctrl_worker{128};
-  ue_manager                            ue_mng{ue_config, up_config, {}, timers, ctrl_worker};
+  timer_manager       timers;
+  manual_task_worker  ctrl_worker{128};
+  cu_cp_configuration cu_cp_cfg;
+  ngap_configuration  cfg;
+
+  ue_manager                            ue_mng{cu_cp_cfg};
   dummy_ngap_cu_cp_notifier             cu_cp_notifier{ue_mng};
-  dummy_ngap_cu_cp_paging_notifier      cu_cp_paging_notifier;
   std::unique_ptr<ngap_network_adapter> adapter;
   std::unique_ptr<ngap_interface>       ngap;
 
   srslog::basic_logger& test_logger = srslog::fetch_basic_logger("TEST");
 };
 
-ngap_ng_setup_request generate_ng_setup_request(ngap_configuration ngap_cfg)
-{
-  ngap_ng_setup_request request_msg = {};
-
-  ngap_ng_setup_request request;
-
-  // fill global ran node id
-  request.global_ran_node_id.gnb_id  = ngap_cfg.gnb_id;
-  request.global_ran_node_id.plmn_id = ngap_cfg.plmn;
-  // fill ran node name
-  request.ran_node_name = ngap_cfg.ran_node_name;
-  // fill supported ta list
-  // TODO: add support for more items
-  ngap_supported_ta_item supported_ta_item;
-
-  ngap_broadcast_plmn_item broadcast_plmn_item;
-  broadcast_plmn_item.plmn_id = ngap_cfg.plmn;
-
-  for (const auto& slice_config : ngap_cfg.slice_configurations) {
-    slice_support_item_t slice_support_item;
-    slice_support_item.s_nssai.sst = slice_config.sst;
-    if (slice_config.sd.has_value()) {
-      slice_support_item.s_nssai.sd = slice_config.sd.value();
-    }
-    broadcast_plmn_item.tai_slice_support_list.push_back(slice_support_item);
-  }
-
-  supported_ta_item.broadcast_plmn_list.push_back(broadcast_plmn_item);
-  supported_ta_item.tac = ngap_cfg.tac;
-
-  request.supported_ta_list.push_back(supported_ta_item);
-
-  // fill paging drx
-  request.default_paging_drx = 256;
-
-  return request_msg;
-}
-
 /// Test successful ng setup procedure
 TEST_F(ngap_integration_test, when_ng_setup_response_received_then_amf_connected)
 {
-  // Action 1: Launch NG setup procedure
-  ngap_configuration    ngap_cfg    = srsran::config_helpers::make_default_ngap_config();
-  ngap_ng_setup_request request_msg = generate_ng_setup_request(ngap_cfg);
-
   test_logger.info("Launching NG setup procedure...");
-  async_task<ngap_ng_setup_result>         t = ngap->handle_ng_setup_request(request_msg);
+  async_task<ngap_ng_setup_result>         t = ngap->handle_ng_setup_request(1);
   lazy_task_launcher<ngap_ng_setup_result> t_launcher(t);
 
   // Status: Procedure not yet ready.

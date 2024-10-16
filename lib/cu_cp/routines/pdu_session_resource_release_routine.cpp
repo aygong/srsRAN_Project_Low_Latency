@@ -31,16 +31,16 @@ pdu_session_resource_release_routine::pdu_session_resource_release_routine(
     const cu_cp_pdu_session_resource_release_command& release_cmd_,
     e1ap_bearer_context_manager&                      e1ap_bearer_ctxt_mng_,
     f1ap_ue_context_manager&                          f1ap_ue_ctxt_mng_,
-    ngap_control_message_handler&                     ngap_handler_,
-    du_processor_rrc_ue_control_message_notifier&     rrc_ue_notifier_,
+    rrc_ue_interface*                                 rrc_ue_,
+    cu_cp_rrc_ue_interface&                           cu_cp_notifier_,
     ue_task_scheduler&                                task_sched_,
     up_resource_manager&                              up_resource_mng_,
     srslog::basic_logger&                             logger_) :
   release_cmd(release_cmd_),
   e1ap_bearer_ctxt_mng(e1ap_bearer_ctxt_mng_),
   f1ap_ue_ctxt_mng(f1ap_ue_ctxt_mng_),
-  ngap_handler(ngap_handler_),
-  rrc_ue_notifier(rrc_ue_notifier_),
+  rrc_ue(rrc_ue_),
+  cu_cp_notifier(cu_cp_notifier_),
   task_sched(task_sched_),
   up_resource_mng(up_resource_mng_),
   logger(logger_)
@@ -79,8 +79,18 @@ void pdu_session_resource_release_routine::operator()(
     next_config = up_resource_mng.calculate_update(release_cmd);
   }
 
-  // Inform CU-UP about the release of a bearer
-  {
+  // Inform the CU-UP about the release of the bearer context
+  if (next_config.pdu_sessions_to_remove_list.size() == up_resource_mng.get_nof_pdu_sessions()) {
+    bearer_context_release_command.ue_index = release_cmd.ue_index;
+    bearer_context_release_command.cause    = e1ap_cause_radio_network_t::unspecified;
+
+    /// NOTE: Only the Bearer Context at the CU-UP will be released. We don't want to release the UE.
+
+    // Request BearerContextRelease
+    CORO_AWAIT(e1ap_bearer_ctxt_mng.handle_bearer_context_release_command(bearer_context_release_command));
+
+  } else { // Inform CU-UP about the release of a bearer
+
     // prepare BearerContextModificationRequest and call e1 notifier
     bearer_context_modification_request.ue_index = release_cmd.ue_index;
 
@@ -133,7 +143,7 @@ void pdu_session_resource_release_routine::operator()(
                                   next_config.drb_to_remove_list,
                                   ue_context_modification_response.du_to_cu_rrc_info,
                                   nas_pdus,
-                                  rrc_ue_notifier.generate_meas_config(),
+                                  rrc_ue->generate_meas_config(),
                                   false,
                                   false,
                                   false,
@@ -144,7 +154,7 @@ void pdu_session_resource_release_routine::operator()(
       }
     }
 
-    CORO_AWAIT_VALUE(rrc_reconfig_result, rrc_ue_notifier.on_rrc_reconfiguration_request(rrc_reconfig_args));
+    CORO_AWAIT_VALUE(rrc_reconfig_result, rrc_ue->handle_rrc_reconfiguration_request(rrc_reconfig_args));
 
     // Handle RRC Reconfiguration result.
     if (not handle_procedure_response(response_msg, release_cmd, rrc_reconfig_result, logger)) {
@@ -180,13 +190,8 @@ pdu_session_resource_release_routine::handle_pdu_session_resource_release_respon
     logger.info("ue={}: \"{}\" failed", release_cmd.ue_index, name());
 
     // Trigger UE context release request.
-    cu_cp_ue_context_release_request req{release_cmd.ue_index};
-    req.cause = ngap_cause_radio_network_t::radio_conn_with_ue_lost;
-    task_sched.schedule_async_task(launch_async([ngap_notif = &ngap_handler, req](coro_context<async_task<void>>& ctx) {
-      CORO_BEGIN(ctx);
-      CORO_AWAIT(ngap_notif->handle_ue_context_release_request(req));
-      CORO_RETURN();
-    }));
+    task_sched.schedule_async_task(cu_cp_notifier.handle_ue_context_release(
+        {release_cmd.ue_index, {}, ngap_cause_radio_network_t::radio_conn_with_ue_lost}));
   }
 
   return response_msg;

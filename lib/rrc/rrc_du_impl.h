@@ -33,13 +33,10 @@ namespace srsran {
 namespace srs_cu_cp {
 
 /// Main RRC representation with the DU
-class rrc_du_impl : public rrc_du_interface
+class rrc_du_impl : public rrc_du
 {
 public:
-  rrc_du_impl(const rrc_cfg_t&                    cfg_,
-              rrc_ue_nas_notifier&                nas_notif_,
-              rrc_ue_control_notifier&            ngap_ctrl_notif_,
-              rrc_du_measurement_config_notifier& meas_config_notifier_);
+  rrc_du_impl(const rrc_cfg_t& cfg_, rrc_du_measurement_config_notifier& meas_config_notifier_);
   ~rrc_du_impl() = default;
 
   // rrc_du_cell_manager
@@ -53,7 +50,9 @@ public:
   // rrc_ue_handler
   rrc_ue_interface* find_ue(ue_index_t ue_index) override
   {
-    srsran_assert(ue_db.find(ue_index) != ue_db.end(), "UE not found");
+    if (ue_db.find(ue_index) == ue_db.end()) {
+      return nullptr;
+    }
     return ue_db.at(ue_index).get();
   }
   void remove_ue(ue_index_t ue_index) override;
@@ -68,10 +67,8 @@ public:
 
 private:
   // helpers
-  const rrc_cfg_t& cfg;
+  const rrc_cfg_t cfg;
 
-  rrc_ue_nas_notifier&                nas_notifier;         // PDU notifier to the NGAP
-  rrc_ue_control_notifier&            ngap_ctrl_notifier;   // Control notifier to the NGAP
   rrc_du_measurement_config_notifier& meas_config_notifier; // notifier to the CU-CP
   srslog::basic_logger&               logger;
 

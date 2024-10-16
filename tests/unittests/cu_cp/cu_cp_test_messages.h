@@ -32,8 +32,10 @@ namespace srs_cu_cp {
 
 /// \brief Generate a dummy UE Context Release Command.
 /// \param[in] ue_index The UE Index to use.
+/// \param[in] cause The cause to use.
 /// \return The dummy UE Context Release Command.
-cu_cp_ue_context_release_command generate_ue_context_release_command(ue_index_t ue_index);
+cu_cp_ue_context_release_command
+generate_ue_context_release_command(ue_index_t ue_index, ngap_cause_t cause = ngap_cause_radio_network_t::unspecified);
 
 /// \brief Generate a dummy PDU Session Resource Setup request.
 cu_cp_pdu_session_resource_setup_request generate_pdu_session_resource_setup(ue_index_t ue_index = ue_index_t::min,
@@ -59,10 +61,6 @@ e1ap_bearer_context_setup_response generate_e1ap_bearer_context_setup_response(g
 e1ap_bearer_context_modification_response
 generate_e1ap_bearer_context_modification_response(gnb_cu_cp_ue_e1ap_id_t cu_cp_ue_e1ap_id,
                                                    gnb_cu_up_ue_e1ap_id_t cu_up_ue_e1ap_id);
-
-/// \brief Generate a dummy CU-CP UE Context Modification Response.
-f1ap_ue_context_modification_response generate_f1ap_ue_context_modification_response(gnb_cu_ue_f1ap_id_t cu_ue_f1ap_id,
-                                                                                     gnb_du_ue_f1ap_id_t du_ue_f1ap_id);
 
 } // namespace srs_cu_cp
 } // namespace srsran

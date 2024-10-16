@@ -30,22 +30,6 @@ namespace config_helpers {
 
 std::map<uint8_t, srs_cu_cp::cu_cp_qos_config> make_default_ngap_qos_config_list();
 
-/// Generates default cell configuration used by gNB DU. The default configuration should be valid.
-inline srs_cu_cp::ngap_configuration make_default_ngap_config()
-{
-  srs_cu_cp::ngap_configuration cfg{};
-  cfg.gnb_id        = {411, 22};
-  cfg.ran_node_name = "srsgnb01";
-  cfg.plmn          = plmn_identity::test_value();
-  cfg.tac           = 7;
-  s_nssai_t slice_cfg;
-  slice_cfg.sst                 = 1;
-  cfg.pdu_session_setup_timeout = std::chrono::seconds{2};
-  cfg.slice_configurations.push_back(slice_cfg);
-
-  return cfg;
-}
-
 /// Returns true if the given CU-CP configuration is valid, otherwise false.
 inline bool is_valid_configuration(const srs_cu_cp::ngap_configuration& config)
 {

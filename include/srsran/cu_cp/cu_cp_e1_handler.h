@@ -27,17 +27,6 @@
 namespace srsran {
 namespace srs_cu_cp {
 
-/// Handler of the E1 interface of a single CU-UP connected to the CU-CP.
-class cu_up_e1_handler
-{
-public:
-  virtual ~cu_up_e1_handler() = default;
-
-  /// \brief Get the E1AP message handler interface of the CU-UP processor object.
-  /// \return The E1AP message handler interface of the CU-UP processor object.
-  virtual e1ap_message_handler& get_message_handler() = 0;
-};
-
 /// \brief Handler of the E1 interface of the CU-CP.
 ///
 /// This interface is used to forward E1AP messages or CU-UP connection updates to the CU-CP.
@@ -54,13 +43,6 @@ public:
   /// the caller lets the returned object go out of scope, the CU-UP connection will be closed.
   virtual std::unique_ptr<e1ap_message_notifier>
   handle_new_cu_up_connection(std::unique_ptr<e1ap_message_notifier> e1ap_tx_pdu_notifier) = 0;
-
-  /// \brief Handles a remove request. The corresponding CU-UP processor object will be removed.
-  /// \param[in] cu_up_index The index of the CU-UP processor object to delete.
-  virtual void handle_cu_up_remove_request(cu_up_index_t cu_up_index) = 0;
-
-  /// \brief Get handler to a CU-UP connected to the CU-CP.
-  virtual cu_up_e1_handler& get_cu_up(cu_up_index_t cu_up_index) = 0;
 };
 
 } // namespace srs_cu_cp

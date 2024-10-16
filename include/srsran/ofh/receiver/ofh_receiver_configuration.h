@@ -49,13 +49,13 @@ struct receiver_config {
   /// Source MAC address.
   ether::mac_address mac_src_address;
   /// Tag control information field.
-  uint16_t tci;
+  std::optional<uint16_t> tci;
   /// Reception window timing parameters.
   rx_window_timing_parameters rx_timing_params;
   /// \brief RU operating bandwidth.
   ///
   /// Set this option when the operating bandwidth of the RU is larger than the configured bandwidth of the cell.
-  bs_channel_bandwidth_fr1 ru_operating_bw;
+  bs_channel_bandwidth ru_operating_bw;
   /// Uplink compression parameters.
   ofh::ru_compression_params ul_compression_params;
   /// PRACH compression parameters.
@@ -68,6 +68,8 @@ struct receiver_config {
   bool ignore_ecpri_payload_size_field = false;
   /// If set to true, the sequence id encoded in a eCPRI packet is ignored.
   bool ignore_ecpri_seq_id_field = false;
+  /// If set to true, warn of unreceived Radio Unit frames.
+  bool warn_unreceived_ru_frames = true;
 };
 
 } // namespace ofh

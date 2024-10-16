@@ -33,10 +33,11 @@
 using namespace srsran;
 
 // General test configuration parameters.
-static uint64_t                    nof_repetitions  = 1000;
-static std::set<unsigned>          set_nof_rx_ports = {1, 2, 4};
-static std::set<prach_format_type> set_format       = {prach_format_type::zero, prach_format_type::B4};
-static std::set<unsigned>          set_zcz          = {0, 1, 14};
+static uint64_t                    nof_repetitions   = 1000;
+static std::set<unsigned>          set_nof_rx_ports  = {1, 2, 4};
+static std::set<prach_format_type> set_format        = {prach_format_type::zero, prach_format_type::B4};
+static std::set<unsigned>          set_zcz           = {0, 1, 14};
+static std::set<unsigned>          set_nof_preambles = {4, 64};
 
 // Global pseudo-random generator.
 static std::mt19937 rgen(0);
@@ -126,8 +127,8 @@ static std::unique_ptr<prach_buffer> create_buffer(prach_format_type format, uns
 
   for (unsigned i_antenna = 0; i_antenna != nof_antennas; ++i_antenna) {
     for (unsigned i_symbol = 0, i_symbol_end = buffer->get_max_nof_symbols(); i_symbol != i_symbol_end; ++i_symbol) {
-      span<cf_t> prach_symbol = buffer->get_symbol(i_antenna, 0, 0, i_symbol);
-      for (cf_t& sample : prach_symbol) {
+      span<cbf16_t> prach_symbol = buffer->get_symbol(i_antenna, 0, 0, i_symbol);
+      for (cbf16_t& sample : prach_symbol) {
         sample = complex_float_dist(rgen);
       }
     }
@@ -147,31 +148,36 @@ std::vector<prach_detector::configuration> generate_test_cases()
         if (((format == prach_format_type::zero) && (zcz == 14)) || ((format == prach_format_type::B4) && (zcz == 1))) {
           continue;
         }
-        // Create new test case.
-        test_cases.emplace_back();
 
-        // Select test case.
-        prach_detector::configuration& config = test_cases.back();
+        for (unsigned nof_preambles : set_nof_preambles) {
+          std::uniform_int_distribution<unsigned> start_preamble_index_dist(0, 64 - nof_preambles);
 
-        // Select RA subcarrier spacing. Set to 30kHz for all short preambles.
-        prach_subcarrier_spacing ra_scs = prach_subcarrier_spacing::kHz30;
-        if (is_long_preamble(format)) {
-          if (format == prach_format_type::three) {
-            ra_scs = prach_subcarrier_spacing::kHz5;
-          } else {
-            ra_scs = prach_subcarrier_spacing::kHz1_25;
+          // Create new test case.
+          test_cases.emplace_back();
+
+          // Select test case.
+          prach_detector::configuration& config = test_cases.back();
+
+          // Select RA subcarrier spacing. Set to 30kHz for all short preambles.
+          prach_subcarrier_spacing ra_scs = prach_subcarrier_spacing::kHz30;
+          if (is_long_preamble(format)) {
+            if (format == prach_format_type::three) {
+              ra_scs = prach_subcarrier_spacing::kHz5;
+            } else {
+              ra_scs = prach_subcarrier_spacing::kHz1_25;
+            }
           }
-        }
 
-        // Fill test case.
-        config.root_sequence_index   = root_sequence_index_dist(rgen);
-        config.format                = format;
-        config.restricted_set        = restricted_set_config::UNRESTRICTED;
-        config.zero_correlation_zone = zcz;
-        config.start_preamble_index  = 0;
-        config.nof_preamble_indices  = 64;
-        config.ra_scs                = ra_scs;
-        config.nof_rx_ports          = nof_rx_ports;
+          // Fill test case.
+          config.root_sequence_index   = root_sequence_index_dist(rgen);
+          config.format                = format;
+          config.restricted_set        = restricted_set_config::UNRESTRICTED;
+          config.zero_correlation_zone = zcz;
+          config.start_preamble_index  = start_preamble_index_dist(rgen);
+          config.nof_preamble_indices  = nof_preambles;
+          config.ra_scs                = ra_scs;
+          config.nof_rx_ports          = nof_rx_ports;
+        }
       }
     }
   }

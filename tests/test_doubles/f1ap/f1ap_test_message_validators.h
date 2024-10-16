@@ -23,7 +23,7 @@
 #pragma once
 
 #include "srsran/adt/optional.h"
-#include "srsran/f1ap/common/f1ap_ue_id.h"
+#include "srsran/f1ap/f1ap_ue_id_types.h"
 #include "srsran/ran/lcid.h"
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/ran/rnti.h"
@@ -42,17 +42,32 @@ bool is_init_ul_rrc_msg_transfer_valid(const f1ap_message&                      
 
 bool is_valid_dl_rrc_message_transfer(const f1ap_message& msg);
 
-const byte_buffer& get_rrc_container(const f1ap_message& dl_rrc_msg_transfer);
+const byte_buffer& get_rrc_container(const f1ap_message& msg);
+
+byte_buffer get_du_to_cu_container(const f1ap_message& msg);
 
 bool is_valid_dl_rrc_message_transfer_with_msg4(const f1ap_message& msg);
 
 bool is_ul_rrc_msg_transfer_valid(const f1ap_message& msg, srb_id_t srb_id);
 
+bool is_valid_ue_context_setup_request(const f1ap_message& msg);
+
+bool is_valid_ue_context_setup_request_with_ue_capabilities(const f1ap_message& msg);
+
 bool is_ue_context_setup_response_valid(const f1ap_message& msg);
 
 bool is_valid_ue_context_modification_request(const f1ap_message& msg);
 
+enum class ue_context_mod_context { default_case, reestablistment };
+bool is_valid_ue_context_modification_response(const f1ap_message&    msg,
+                                               ue_context_mod_context context = ue_context_mod_context::default_case);
+bool is_valid_ue_context_modification_response(const f1ap_message&    resp_msg,
+                                               const f1ap_message&    req_msg,
+                                               ue_context_mod_context context = ue_context_mod_context::default_case);
+
 bool is_valid_ue_context_release_command(const f1ap_message& msg);
+
+bool is_valid_paging(const f1ap_message& msg);
 
 } // namespace test_helpers
 } // namespace srsran

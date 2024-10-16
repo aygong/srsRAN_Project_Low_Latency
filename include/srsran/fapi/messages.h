@@ -42,6 +42,7 @@
 #include "srsran/ran/sch/modulation_scheme.h"
 #include "srsran/ran/slot_pdu_capacity_constants.h"
 #include "srsran/ran/srs/srs_channel_matrix.h"
+#include "srsran/ran/srs/srs_configuration.h"
 #include "srsran/ran/ssb_properties.h"
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/ran/uci/uci_configuration.h"
@@ -746,29 +747,29 @@ struct ul_srs_params_v4 {
 
 /// SRS PDU.
 struct ul_srs_pdu {
-  rnti_t             rnti;
-  uint32_t           handle;
-  uint16_t           bwp_size;
-  uint16_t           bwp_start;
-  subcarrier_spacing scs;
-  cyclic_prefix      cp;
-  uint8_t            num_ant_ports;
-  uint8_t            num_symbols;
-  uint8_t            num_repetitions;
-  uint8_t            time_start_position;
-  uint8_t            config_index;
-  uint16_t           sequence_id;
-  uint8_t            bandwidth_index;
-  uint8_t            comb_size;
-  uint8_t            comb_offset;
-  uint8_t            cyclic_shift;
-  uint8_t            frequency_position;
-  uint16_t           frequency_shift;
-  uint8_t            frequency_hopping;
-  uint8_t            group_or_sequence_hopping;
-  uint8_t            resource_type;
-  uint16_t           t_srs;
-  uint16_t           t_offset;
+  rnti_t                        rnti;
+  uint32_t                      handle;
+  uint16_t                      bwp_size;
+  uint16_t                      bwp_start;
+  subcarrier_spacing            scs;
+  cyclic_prefix                 cp;
+  uint8_t                       num_ant_ports;
+  uint8_t                       num_symbols;
+  srs_nof_symbols               num_repetitions;
+  uint8_t                       time_start_position;
+  uint8_t                       config_index;
+  uint16_t                      sequence_id;
+  uint8_t                       bandwidth_index;
+  tx_comb_size                  comb_size;
+  uint8_t                       comb_offset;
+  uint8_t                       cyclic_shift;
+  uint8_t                       frequency_position;
+  uint16_t                      frequency_shift;
+  uint8_t                       frequency_hopping;
+  srs_group_or_sequence_hopping group_or_sequence_hopping;
+  srs_resource_type             resource_type;
+  srs_periodicity               t_srs;
+  uint16_t                      t_offset;
   // :TODO: beamforming.
   ul_srs_params_v4 srs_params_v4;
 };
@@ -792,14 +793,12 @@ struct ul_tti_request_message : public base_message {
 
   /// Maximum number of supported UL PDU types in this release.
   static constexpr unsigned MAX_NUM_UL_TYPES = 6;
-  /// Maximum number of supported UL PDUs in this message.
-  static constexpr unsigned MAX_NUM_UL_PDUS = 128;
 
-  uint16_t                                           sfn;
-  uint16_t                                           slot;
-  std::array<uint16_t, MAX_NUM_UL_TYPES>             num_pdus_of_each_type;
-  uint16_t                                           num_groups;
-  static_vector<ul_tti_request_pdu, MAX_NUM_UL_PDUS> pdus;
+  uint16_t                                                sfn;
+  uint16_t                                                slot;
+  std::array<uint16_t, MAX_NUM_UL_TYPES>                  num_pdus_of_each_type;
+  uint16_t                                                num_groups;
+  static_vector<ul_tti_request_pdu, MAX_UL_PDUS_PER_SLOT> pdus;
   //: TODO: groups array
 };
 
@@ -1047,13 +1046,9 @@ struct uci_indication_pdu {
 
 /// UCI indication message.
 struct uci_indication_message : public base_message {
-  /// Maximum number of supported UCI PDUs in this message.
-  //: TODO: shared with ul_dci_request_message
-  static constexpr unsigned MAX_NUM_UCI_PDUS = 128;
-
-  uint16_t                                            sfn;
-  uint16_t                                            slot;
-  static_vector<uci_indication_pdu, MAX_NUM_UCI_PDUS> pdus;
+  uint16_t                                                    sfn;
+  uint16_t                                                    slot;
+  static_vector<uci_indication_pdu, MAX_UCI_PDUS_PER_UCI_IND> pdus;
 };
 
 /// Encodes the PRGs.
@@ -1127,16 +1122,15 @@ struct srs_channel_svd_representation {
   std::array<srs_svd_prg, NUM_MAX_PRG> svd_prg;
 };
 
-/// Encodes the usage of the srs.
-enum class srs_usage_mode : uint8_t { beam_management, codebook, non_codebook, antenna_switching, reserved };
-
 /// SRS indication pdu.
 struct srs_indication_pdu {
-  uint32_t           handle;
-  rnti_t             rnti;
-  uint16_t           timing_advance_offset;
-  int16_t            timing_advance_offset_ns;
-  srs_usage_mode     srs_usage;
+  uint32_t handle;
+  rnti_t   rnti;
+  uint16_t timing_advance_offset;
+  int16_t  timing_advance_offset_ns;
+  /// \remark The enum doesn't contain the \c reserved value defined in the FAPI spec. This is because the value is
+  /// currently not used anywhere.
+  srs_usage          usage;
   uint8_t            report_type;
   tlv_info           report;
   srs_channel_matrix matrix;
@@ -1144,13 +1138,10 @@ struct srs_indication_pdu {
 
 /// SRS indication message.
 struct srs_indication_message : public base_message {
-  /// Maximum number of supported SRS PDUs in this message.
-  static constexpr unsigned MAX_NUM_SRS_PDUS = 32;
-
-  uint16_t                                            sfn;
-  uint16_t                                            slot;
-  uint16_t                                            control_length;
-  static_vector<srs_indication_pdu, MAX_NUM_SRS_PDUS> pdus;
+  uint16_t                                                    sfn;
+  uint16_t                                                    slot;
+  uint16_t                                                    control_length;
+  static_vector<srs_indication_pdu, MAX_SRS_PDUS_PER_SRS_IND> pdus;
 };
 
 /// RACH indication pdu preamble.

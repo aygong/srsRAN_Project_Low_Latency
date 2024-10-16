@@ -24,25 +24,68 @@
 
 #include "apps/units/cu_cp/cu_cp_unit_pcap_config.h"
 #include "cu_cp_unit_logger_config.h"
-#include "srsran/ran/five_qi.h"
+#include "srsran/e2/e2ap_configuration.h"
 #include "srsran/ran/nr_band.h"
 #include "srsran/ran/nr_cell_identity.h"
 #include "srsran/ran/pci.h"
+#include "srsran/ran/qos/five_qi.h"
 #include "srsran/ran/s_nssai.h"
 #include <vector>
 
 namespace srsran {
 
+struct cu_cp_unit_plmn_item {
+  std::string plmn_id;
+  /// Supported Slices by the RAN node.
+  std::vector<s_nssai_t> tai_slice_support_list;
+};
+
+struct cu_cp_unit_supported_ta_item {
+  unsigned                          tac;
+  std::vector<cu_cp_unit_plmn_item> plmn_list;
+};
+
+/// All tracking area related configuration parameters.
+struct cu_cp_unit_ta_config {
+  /// List of all tracking areas supported by the CU-CP.
+  std::vector<cu_cp_unit_supported_ta_item> supported_tas;
+};
+
+struct cu_cp_unit_amf_config_item {
+  std::string ip_addr                = "127.0.0.1";
+  uint16_t    port                   = 38412;
+  std::string bind_addr              = "127.0.0.1";
+  std::string bind_interface         = "auto";
+  int         sctp_rto_initial       = 120;
+  int         sctp_rto_min           = 120;
+  int         sctp_rto_max           = 500;
+  int         sctp_init_max_attempts = 3;
+  int         sctp_max_init_timeo    = 500;
+  bool        sctp_nodelay           = false;
+  /// List of all tracking areas supported by the AMF.
+  std::vector<cu_cp_unit_supported_ta_item> supported_tas;
+};
+
+struct cu_cp_unit_amf_config {
+  cu_cp_unit_amf_config_item amf;
+  /// Allow CU-CP to run without a core, e.g. for test mode.
+  bool no_core = false;
+};
+
 /// Report configuration, for now only supporting the A3 event.
 struct cu_cp_unit_report_config {
-  unsigned                report_cfg_id;
-  std::string             report_type;
-  std::optional<unsigned> report_interval_ms;
-  std::string             a3_report_type;
-  /// [-30..30] Note the actual value is field value * 0.5 dB. E.g. putting a value of -6 here results in -3dB offset.
-  std::optional<int>      a3_offset_db;
-  std::optional<unsigned> a3_hysteresis_db;
-  std::optional<unsigned> a3_time_to_trigger_ms;
+  unsigned    report_cfg_id;
+  std::string report_type;
+  unsigned    report_interval_ms;
+
+  std::optional<std::string> event_triggered_report_type;
+  std::optional<std::string> meas_trigger_quantity;
+  std::optional<int>         meas_trigger_quantity_threshold_db;
+  std::optional<int>         meas_trigger_quantity_threshold_2_db;
+  std::optional<int> meas_trigger_quantity_offset_db; ///< [-30..30] Note the actual value is field value * 0.5 dB. E.g.
+                                                      ///< putting a value of -6 here results in -3dB offset.
+  std::optional<unsigned> hysteresis_db;
+  std::optional<unsigned> time_to_trigger_ms;
 };
 
 struct cu_cp_unit_neighbor_cell_config_item {
@@ -108,8 +151,8 @@ struct cu_cp_unit_security_config {
 
 /// F1AP-CU configuration parameters.
 struct cu_cp_unit_f1ap_config {
-  /// Timeout for the UE context setup procedure in milliseconds.
-  unsigned ue_context_setup_timeout = 1000;
+  /// Timeout for the F1AP procedures in milliseconds.
+  unsigned procedure_timeout = 1000;
 };
 
 /// RLC UM TX configuration
@@ -218,41 +261,30 @@ struct cu_cp_unit_metrics_config {
   unsigned cu_cp_statistics_report_period = 1;
 };
 
-struct cu_cp_unit_amf_config {
-  std::string ip_addr                = "127.0.0.1";
-  uint16_t    port                   = 38412;
-  std::string bind_addr              = "127.0.0.1";
-  std::string n2_bind_addr           = "auto";
-  std::string n2_bind_interface      = "auto";
-  int         sctp_rto_initial       = 120;
-  int         sctp_rto_min           = 120;
-  int         sctp_rto_max           = 500;
-  int         sctp_init_max_attempts = 3;
-  int         sctp_max_init_timeo    = 500;
-  bool        sctp_nodelay           = false;
-  bool        no_core                = false;
-};
-
 /// CU-CP application unit configuration.
 struct cu_cp_unit_config {
   /// Node name.
   std::string ran_node_name = "cu_cp_01";
   /// gNB identifier.
   gnb_id_t gnb_id = {411, 22};
-  /// List of accepted PLMNs.
-  std::vector<std::string> plmns;
-  /// List of accepted TACs.
-  std::vector<unsigned> tacs;
   /// Maximum number of DUs.
   uint16_t max_nof_dus = 6;
   /// Maximum number of CU-UPs.
   uint16_t max_nof_cu_ups = 6;
   /// Maximum number of UEs.
   uint64_t max_nof_ues = 8192;
+  /// Maximum number of DRBs per UE.
+  uint8_t max_nof_drbs_per_ue = 8;
   /// Inactivity timer in seconds.
   int inactivity_timer = 120;
   /// PDU session setup timeout in seconds (must be larger than T310).
   unsigned pdu_session_setup_timeout = 3;
+  /// Load enterprise plugins.
+  bool load_plugins = false;
+  /// Function pointer to connect to AMFs from plugin
+  void* connect_amfs_func_ptr;
+  /// Function pointer to disconnect from AMFs from plugin
+  void* disconnect_amfs_func_ptr;
   /// Loggers configuration.
   cu_cp_unit_logger_config loggers;
   /// PCAPs configuration.
@@ -260,7 +292,9 @@ struct cu_cp_unit_config {
   /// Metrics configuration.
   cu_cp_unit_metrics_config metrics;
   /// AMF configuration.
-  cu_cp_unit_amf_config amf_cfg;
+  cu_cp_unit_amf_config amf_config;
+  // List of all AMFs the CU-CP should connect to.
+  std::vector<cu_cp_unit_amf_config_item> extra_amfs;
   /// Mobility configuration.
   cu_cp_unit_mobility_config mobility_config;
   /// RRC configuration.
@@ -273,6 +307,8 @@ struct cu_cp_unit_config {
   std::vector<cu_cp_unit_qos_config> qos_cfg;
   /// Network slice configuration.
   std::vector<s_nssai_t> slice_cfg = {s_nssai_t{1}};
+  /// E2 configuration.
+  e2_config e2_cfg;
 };
 
 } // namespace srsran

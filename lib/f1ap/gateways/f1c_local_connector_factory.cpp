@@ -22,7 +22,7 @@
 
 #include "srsran/f1ap/gateways/f1c_local_connector_factory.h"
 #include "srsran/asn1/f1ap/f1ap.h"
-#include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/f1ap_message.h"
 #include "srsran/f1ap/gateways/f1c_network_client_factory.h"
 #include "srsran/f1ap/gateways/f1c_network_server_factory.h"
 #include "srsran/pcap/dlt_pcap.h"
@@ -87,6 +87,9 @@ public:
 
     // Create direct connection between CU-CP and DU notifier.
     auto cu_notifier = cu_cp_du_mng->handle_new_du_connection(std::move(du_notifier));
+    if (cu_notifier == nullptr) {
+      return nullptr;
+    }
 
     // Decorate CU-CP RX notifier with pcap writing.
     if (pcap_writer.is_write_enabled()) {

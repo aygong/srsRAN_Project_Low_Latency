@@ -39,6 +39,7 @@ pdu_session_manager_impl::pdu_session_manager_impl(ue_index_t                   
                                                    const security::sec_as_config&                   security_info_,
                                                    network_interface_config&                        net_config_,
                                                    n3_interface_config&                             n3_config_,
+                                                   const cu_up_test_mode_config&                    test_mode_config_,
                                                    cu_up_ue_logger&                                 logger_,
                                                    unique_timer&                               ue_inactivity_timer_,
                                                    timer_factory                               ue_dl_timer_factory_,
@@ -59,6 +60,7 @@ pdu_session_manager_impl::pdu_session_manager_impl(ue_index_t                   
   security_info(security_info_),
   net_config(net_config_),
   n3_config(n3_config_),
+  test_mode_config(test_mode_config_),
   logger(logger_),
   ue_inactivity_timer(ue_inactivity_timer_),
   ue_dl_timer_factory(ue_dl_timer_factory_),
@@ -134,6 +136,7 @@ pdu_session_setup_result pdu_session_manager_impl::setup_pdu_session(const e1ap_
   msg.cfg.rx.local_teid                = new_session->local_teid;
   msg.cfg.rx.t_reordering              = n3_config.gtpu_reordering_timer;
   msg.cfg.rx.warn_expired_t_reordering = n3_config.warn_on_drop;
+  msg.cfg.rx.test_mode                 = test_mode_config.enabled;
   msg.rx_lower                         = &new_session->gtpu_to_sdap_adapter;
   msg.tx_upper                         = &gtpu_tx_notifier;
   msg.gtpu_pcap                        = &gtpu_pcap;
@@ -198,8 +201,7 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
   if (drb_to_setup.qos_flow_info_to_be_setup.empty()) {
     return drb_result;
   }
-  five_qi_t five_qi =
-      drb_to_setup.qos_flow_info_to_be_setup.begin()->qos_flow_level_qos_params.qos_characteristics.get_five_qi();
+  five_qi_t five_qi = drb_to_setup.qos_flow_info_to_be_setup.begin()->qos_flow_level_qos_params.qos_desc.get_5qi();
   if (qos_cfg.find(five_qi) == qos_cfg.end()) {
     drb_result.cause = e1ap_cause_radio_network_t::not_supported_5qi_value;
     return drb_result;
@@ -219,7 +221,7 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
     flow_result.qos_flow_id           = qos_flow_info.qos_flow_id;
 
     if (!new_session.sdap->is_mapped(qos_flow_info.qos_flow_id) &&
-        qos_flow_info.qos_flow_level_qos_params.qos_characteristics.get_five_qi() == five_qi) {
+        qos_flow_info.qos_flow_level_qos_params.qos_desc.get_5qi() == five_qi) {
       // create QoS flow context
       const auto& qos_flow                     = qos_flow_info;
       new_drb->qos_flows[qos_flow.qos_flow_id] = std::make_unique<qos_flow_context>(qos_flow);
@@ -282,28 +284,22 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
   new_drb->pdcp                                 = srsran::create_pdcp_entity(pdcp_msg);
 
   security::sec_128_as_config sec_128 = security::truncate_config(security_info);
+  auto                        integrity_enabled =
+      new_session.security_ind.integrity_protection_ind == integrity_protection_indication_t::not_needed
+                                 ? security::integrity_enabled::off
+                                 : security::integrity_enabled::on;
+  auto ciphering_enabled =
+      new_session.security_ind.confidentiality_protection_ind == confidentiality_protection_indication_t::not_needed
+          ? security::ciphering_enabled::off
+          : security::ciphering_enabled::on;
+
   // configure tx security
   auto& pdcp_tx_ctrl = new_drb->pdcp->get_tx_upper_control_interface();
-  pdcp_tx_ctrl.configure_security(sec_128);
-  pdcp_tx_ctrl.set_integrity_protection(new_session.security_ind.integrity_protection_ind ==
-                                                integrity_protection_indication_t::not_needed
-                                            ? security::integrity_enabled::off
-                                            : security::integrity_enabled::on);
-  pdcp_tx_ctrl.set_ciphering(new_session.security_ind.confidentiality_protection_ind ==
-                                     confidentiality_protection_indication_t::not_needed
-                                 ? security::ciphering_enabled::off
-                                 : security::ciphering_enabled::on);
+  pdcp_tx_ctrl.configure_security(sec_128, integrity_enabled, ciphering_enabled);
+
   // configure rx security
   auto& pdcp_rx_ctrl = new_drb->pdcp->get_rx_upper_control_interface();
-  pdcp_rx_ctrl.configure_security(sec_128);
-  pdcp_rx_ctrl.set_integrity_protection(new_session.security_ind.integrity_protection_ind ==
-                                                integrity_protection_indication_t::not_needed
-                                            ? security::integrity_enabled::off
-                                            : security::integrity_enabled::on);
-  pdcp_rx_ctrl.set_ciphering(new_session.security_ind.confidentiality_protection_ind ==
-                                     confidentiality_protection_indication_t::not_needed
-                                 ? security::ciphering_enabled::off
-                                 : security::ciphering_enabled::on);
+  pdcp_rx_ctrl.configure_security(sec_128, integrity_enabled, ciphering_enabled);
 
   // Connect "PDCP-E1AP" adapter to E1AP
   new_drb->pdcp_tx_to_e1ap_adapter.connect_e1ap(); // TODO: pass actual E1AP handler
@@ -340,8 +336,15 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
                                               ue_inactivity_timer,
                                               ue_ul_exec);
 
-  new_drb->f1u_ul_teid  = f1u_ul_teid;
-  drb_result.gtp_tunnel = f1u_ul_tunnel_addr;
+  new_drb->f1u_ul_teid = f1u_ul_teid;
+
+  // Advertise either local or external IP address of F1-U interface
+  if (net_config.f1u_ext_addr.empty() || net_config.f1u_ext_addr == "auto") {
+    drb_result.gtp_tunnel = f1u_ul_tunnel_addr;
+  } else {
+    drb_result.gtp_tunnel =
+        up_transport_layer_info{transport_layer_address::create_from_string(net_config.f1u_ext_addr), f1u_ul_teid};
+  }
 
   // Connect F1-U GW bearer RX adapter to NR-U bearer
   new_drb->f1u_gateway_rx_to_nru_adapter.connect_nru_bearer(new_drb->f1u->get_rx_pdu_handler());
@@ -439,6 +442,14 @@ pdu_session_manager_impl::modify_pdu_session(const e1ap_pdu_session_res_to_modif
 
       drb_iter->second->pdcp_to_f1u_adapter.disconnect_f1u();
 
+      // Advertise either local or external IP address of F1-U interface
+      if (net_config.f1u_ext_addr.empty() || net_config.f1u_ext_addr == "auto") {
+        drb_result.gtp_tunnel = f1u_ul_tunnel_addr;
+      } else {
+        drb_result.gtp_tunnel = up_transport_layer_info{
+            transport_layer_address::create_from_string(net_config.f1u_ext_addr), drb->f1u_ul_teid};
+      }
+
       drb_result.gtp_tunnel = f1u_ul_tunnel_addr;
 
       // Connect F1-U GW bearer RX adapter to NR-U bearer
@@ -474,25 +485,10 @@ pdu_session_manager_impl::modify_pdu_session(const e1ap_pdu_session_res_to_modif
       // reestablish tx and configure tx security
       auto& pdcp_tx_ctrl = drb->pdcp->get_tx_upper_control_interface();
       pdcp_tx_ctrl.reestablish(sec_128);
-      pdcp_tx_ctrl.set_integrity_protection(pdu_session->security_ind.integrity_protection_ind ==
-                                                    integrity_protection_indication_t::not_needed
-                                                ? security::integrity_enabled::off
-                                                : security::integrity_enabled::on);
-      pdcp_tx_ctrl.set_ciphering(pdu_session->security_ind.confidentiality_protection_ind ==
-                                         confidentiality_protection_indication_t::not_needed
-                                     ? security::ciphering_enabled::off
-                                     : security::ciphering_enabled::on);
+
       // reestablish rx and configure rx security
       auto& pdcp_rx_ctrl = drb->pdcp->get_rx_upper_control_interface();
       pdcp_rx_ctrl.reestablish(sec_128);
-      pdcp_rx_ctrl.set_integrity_protection(pdu_session->security_ind.integrity_protection_ind ==
-                                                    integrity_protection_indication_t::not_needed
-                                                ? security::integrity_enabled::off
-                                                : security::integrity_enabled::on);
-      pdcp_rx_ctrl.set_ciphering(pdu_session->security_ind.confidentiality_protection_ind ==
-                                         confidentiality_protection_indication_t::not_needed
-                                     ? security::ciphering_enabled::off
-                                     : security::ciphering_enabled::on);
     }
 
     logger.log_info("Modified {}. {} f1u_teid={}", drb_to_mod.drb_id, session.pdu_session_id, drb->f1u_ul_teid);

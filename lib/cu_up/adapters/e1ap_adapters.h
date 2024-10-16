@@ -22,18 +22,18 @@
 
 #pragma once
 
-#include "srsran/cu_up/cu_up.h"
+#include "srsran/cu_up/cu_up_manager.h"
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
 
 namespace srsran::srs_cu_up {
 
-/// Adapter between E1AP and CU-UP
-class e1ap_cu_up_adapter : public e1ap_cu_up_notifier
+/// Adapter between E1AP and CU-UP manager
+class e1ap_cu_up_manager_adapter : public e1ap_cu_up_manager_notifier
 {
 public:
-  e1ap_cu_up_adapter() : logger(srslog::fetch_basic_logger("CU-UP-E1")) {}
+  e1ap_cu_up_manager_adapter() : logger(srslog::fetch_basic_logger("CU-UP-E1")) {}
 
-  void connect_cu_up(cu_up_e1ap_interface& cu_up_handler_) { cu_up_handler = &cu_up_handler_; }
+  void connect_cu_up_manager(cu_up_manager_e1ap_interface& cu_up_handler_) { cu_up_handler = &cu_up_handler_; }
 
   void disconnect() { cu_up_handler = nullptr; }
 
@@ -57,11 +57,14 @@ public:
     return cu_up_handler->handle_bearer_context_modification_request(msg);
   }
 
-  void on_bearer_context_release_command_received(const e1ap_bearer_context_release_command& msg) override
+  async_task<void> on_bearer_context_release_command_received(const e1ap_bearer_context_release_command& msg) override
   {
     if (cu_up_handler == nullptr) {
       logger.warning("Could not handle context release command, no CU-UP handler present. ue={}", msg.ue_index);
-      return;
+      return launch_async([](coro_context<async_task<void>>& ctx) {
+        CORO_BEGIN(ctx);
+        CORO_RETURN();
+      });
     }
     return cu_up_handler->handle_bearer_context_release_command(msg);
   }
@@ -76,8 +79,8 @@ public:
   }
 
 private:
-  cu_up_e1ap_interface* cu_up_handler = nullptr;
-  srslog::basic_logger& logger;
+  cu_up_manager_e1ap_interface* cu_up_handler = nullptr;
+  srslog::basic_logger&         logger;
 };
 
 } // namespace srsran::srs_cu_up

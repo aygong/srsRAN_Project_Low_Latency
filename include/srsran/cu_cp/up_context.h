@@ -33,11 +33,12 @@ namespace srs_cu_cp {
 /// \brief List of all supported 5QIs and their corresponding PDCP/SDAP configs
 struct up_resource_manager_cfg {
   std::map<five_qi_t, cu_cp_qos_config> five_qi_config; ///< Configuration for available 5QI.
+  uint8_t                               max_nof_drbs_per_ue;
 };
 
 struct up_qos_flow_context {
-  qos_flow_id_t                   qfi = qos_flow_id_t::invalid;
-  cu_cp_qos_flow_level_qos_params qos_params;
+  qos_flow_id_t                 qfi = qos_flow_id_t::invalid;
+  qos_flow_level_qos_parameters qos_params;
 };
 
 struct up_drb_context {
@@ -46,7 +47,7 @@ struct up_drb_context {
   s_nssai_t                                    s_nssai        = {};
   bool                                         default_drb    = false;
   srsran::rlc_mode                             rlc_mod;
-  cu_cp_qos_flow_level_qos_params              qos_params; // DRB QoS params.
+  qos_flow_level_qos_parameters                qos_params; // DRB QoS params.
   std::map<qos_flow_id_t, up_qos_flow_context> qos_flows;  // QoS flow IDs of all QoS flows mapped to this DRB.
   std::vector<up_transport_layer_info>         ul_up_tnl_info_to_be_setup_list; // Allocated by CU-UP.
 

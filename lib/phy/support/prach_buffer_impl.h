@@ -43,7 +43,7 @@ private:
   };
 
   /// Data storage.
-  dynamic_tensor<static_cast<std::underlying_type_t<dims>>(dims::count), cf_t, dims> data;
+  dynamic_tensor<static_cast<std::underlying_type_t<dims>>(dims::count), cbf16_t, dims> data;
 
 public:
   /// Creates a PRACH buffer from the maximum parameters depending on the configuration.
@@ -57,7 +57,7 @@ public:
   }
 
   // See interface for documentation.
-  unsigned int get_max_nof_ports() const override { return data.get_dimension_size(dims::port); }
+  unsigned get_max_nof_ports() const override { return data.get_dimension_size(dims::port); }
 
   // See interface for documentation.
   unsigned get_max_nof_td_occasions() const override { return data.get_dimension_size(dims::td_occasion); }
@@ -72,7 +72,7 @@ public:
   unsigned get_sequence_length() const override { return data.get_dimension_size(dims::re); }
 
   // See interface for documentation.
-  span<cf_t> get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) override
+  span<cbf16_t> get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) override
   {
     srsran_assert(i_port < get_max_nof_ports(),
                   "The port index (i.e., {}) exceeds the maximum number of ports (i.e., {}).",
@@ -95,7 +95,7 @@ public:
   }
 
   // See interface for documentation.
-  span<const cf_t>
+  span<const cbf16_t>
   get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) const override
   {
     srsran_assert(i_port < get_max_nof_ports(),

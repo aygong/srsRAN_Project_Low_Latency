@@ -26,8 +26,8 @@
 #include "ue_bearer_manager.h"
 #include "srsran/adt/slotted_array.h"
 #include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
-#include "srsran/f1ap/common/f1ap_ue_id.h"
 #include "srsran/f1ap/du/f1ap_du.h"
+#include "srsran/f1ap/f1ap_ue_id_types.h"
 #include "srsran/ran/du_types.h"
 
 namespace srsran {
@@ -41,11 +41,12 @@ public:
              f1ap_du_configurator&  du_handler_,
              f1ap_message_notifier& f1ap_msg_notifier_,
              task_executor&         ctrl_exec,
-             task_executor&         ue_exec) :
+             task_executor&         ue_exec,
+             timer_manager&         timers) :
     context(ue_index_, gnb_f1ap_du_ue_id_),
     f1ap_msg_notifier(f1ap_msg_notifier_),
     du_handler(du_handler_),
-    bearers(context, f1ap_msg_notifier, du_handler, ctrl_exec, ue_exec)
+    bearers(context, f1ap_msg_notifier, du_handler, ctrl_exec, ue_exec, timers)
   {
   }
 

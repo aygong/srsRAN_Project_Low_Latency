@@ -44,6 +44,9 @@ byte_buffer generate_container_with_cell_group_config();
 /// \brief Generate RRC Container with RRC Setup Complete message.
 byte_buffer generate_rrc_setup_complete();
 
+// Generate RRC Reconfiguration Complete PDU.
+byte_buffer generate_rrc_reconfiguration_complete_pdu(unsigned transaction_id, uint8_t count);
+
 struct dummy_du_processor_cu_cp_notifier : public du_processor_cu_cp_notifier {
 public:
   explicit dummy_du_processor_cu_cp_notifier(ue_manager* ue_mng_ = nullptr) : ue_mng(ue_mng_) {}
@@ -52,22 +55,6 @@ public:
   {
     cu_cp_handler      = cu_cp_handler_;
     ue_removal_handler = ue_removal_handler_;
-  }
-
-  void on_du_processor_created(du_index_t                       du_index,
-                               f1ap_ue_context_removal_handler& f1ap_handler,
-                               f1ap_statistics_handler&         f1ap_statistic_handler,
-                               rrc_ue_handler&                  rrc_handler,
-                               rrc_du_statistics_handler&       rrc_statistic_handler) override
-  {
-    logger.info("du={}: Received a DU Processor creation notification", du_index);
-
-    if (cu_cp_handler != nullptr) {
-      cu_cp_handler->handle_du_processor_creation(
-          du_index, f1ap_handler, f1ap_statistic_handler, rrc_handler, rrc_statistic_handler);
-    } else {
-      rrc_removal_handler = &rrc_handler;
-    }
   }
 
   void on_rrc_ue_created(ue_index_t ue_index, rrc_ue_interface& rrc_ue) override
@@ -383,6 +370,8 @@ public:
   {
     logger.info("Received a new bearer context release command");
 
+    last_release_command = cmd;
+
     return launch_async([](coro_context<async_task<void>>& ctx) mutable {
       CORO_BEGIN(ctx);
       CORO_RETURN();
@@ -394,6 +383,8 @@ public:
     first_e1ap_request.reset();
     second_e1ap_request.reset();
   }
+
+  e1ap_bearer_context_release_command last_release_command;
 
   std::optional<std::variant<e1ap_bearer_context_setup_request, e1ap_bearer_context_modification_request>>
                                                           first_e1ap_request;
@@ -488,9 +479,9 @@ public:
       res.success = ue_context_modification_outcome.outcome;
       for (const auto& drb_id : ue_context_modification_outcome.drb_success_list) {
         // add only the most relevant items
-        f1ap_drbs_setup_mod_item drb_item;
+        f1ap_drb_setupmod drb_item;
         drb_item.drb_id = uint_to_drb_id(drb_id); // set ID
-        res.drbs_setup_mod_list.emplace(drb_item.drb_id, drb_item);
+        res.drbs_setup_list.push_back(drb_item);
       }
       res.du_to_cu_rrc_info.cell_group_cfg = make_byte_buffer("5800b24223c853a0120c7c080408c008").value();
       // TODO: add failed list and other fields here ..
@@ -503,6 +494,11 @@ public:
   {
     logger.info("Received a new UE context release command");
 
+    last_release_command.ue_index        = msg.ue_index;
+    last_release_command.cause           = msg.cause;
+    last_release_command.rrc_release_pdu = msg.rrc_release_pdu.copy();
+    last_release_command.srb_id          = msg.srb_id;
+
     return launch_async([msg](coro_context<async_task<ue_index_t>>& ctx) mutable {
       CORO_BEGIN(ctx);
       CORO_RETURN(msg.ue_index);
@@ -512,6 +508,8 @@ public:
   bool handle_ue_id_update(ue_index_t ue_index, ue_index_t old_ue_index) override { return true; }
 
   const f1ap_ue_context_modification_request& get_ctxt_mod_request() { return ue_context_modifcation_request; }
+
+  f1ap_ue_context_release_command last_release_command;
 
 private:
   void make_partial_copy(f1ap_ue_context_modification_request&       target,
@@ -527,134 +525,6 @@ private:
   ue_context_outcome_t  ue_context_modification_outcome;
 
   f1ap_ue_context_modification_request ue_context_modifcation_request;
-};
-
-struct dummy_du_processor_rrc_ue_control_message_notifier : public du_processor_rrc_ue_control_message_notifier {
-public:
-  dummy_du_processor_rrc_ue_control_message_notifier() = default;
-
-  void set_rrc_reconfiguration_outcome(bool outcome) { rrc_reconfiguration_outcome = outcome; }
-
-  void set_transaction_id(unsigned transaction_id_) { transaction_id = transaction_id_; }
-
-  async_task<bool> on_ue_capability_transfer_request(const rrc_ue_capability_transfer_request& msg) override
-  {
-    logger.info("Received a new UE capability transfer request");
-
-    return launch_async([this](coro_context<async_task<bool>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-      CORO_RETURN(ue_cap_transfer_outcome);
-    });
-  }
-
-  async_task<bool> on_rrc_reconfiguration_request(const rrc_reconfiguration_procedure_request& msg) override
-  {
-    logger.info("Received a new RRC reconfiguration request");
-    last_radio_bearer_cfg = msg.radio_bearer_cfg;
-
-    return launch_async([this](coro_context<async_task<bool>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-      CORO_RETURN(rrc_reconfiguration_outcome);
-    });
-  }
-
-  rrc_ue_handover_reconfiguration_context
-  get_rrc_ue_handover_reconfiguration_context(const rrc_reconfiguration_procedure_request& request) override
-  {
-    logger.info("Received a new handover reconfiguration request (transaction_id={})", transaction_id);
-    last_radio_bearer_cfg = request.radio_bearer_cfg;
-    return {transaction_id, byte_buffer{}};
-  }
-
-  async_task<bool> on_handover_reconfiguration_complete_expected(uint8_t transaction_id_) override
-  {
-    logger.info("Awaiting a RRC Reconfiguration Complete (transaction_id={})", transaction_id_);
-    last_transaction_id = transaction_id_;
-    return launch_async([this](coro_context<async_task<bool>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-      CORO_RETURN(rrc_reconfiguration_outcome);
-    });
-  }
-
-  rrc_ue_release_context get_rrc_ue_release_context(bool requires_rrc_msg) override
-  {
-    logger.info("Received a new request to get RRC UE release context");
-    rrc_ue_release_context release_context;
-    // TODO: Add values
-    return release_context;
-  }
-
-  std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) override
-  {
-    std::optional<rrc_meas_cfg> meas_config;
-    return meas_config;
-  }
-
-  rrc_ue_transfer_context get_transfer_context() override { return rrc_ue_transfer_context{}; }
-
-  byte_buffer get_packed_handover_preparation_message() override { return byte_buffer{}; }
-
-  byte_buffer on_new_rrc_handover_command(byte_buffer cmd) override { return byte_buffer{}; }
-
-  byte_buffer on_rrc_handover_command_required(const rrc_reconfiguration_procedure_request& request,
-                                               unsigned                                     transaction_id_) override
-  {
-    logger.info("Received a new request to get a RRC Handover Command.");
-    return byte_buffer{};
-  }
-
-  std::optional<rrc_radio_bearer_config> last_radio_bearer_cfg;
-
-  void reset() { last_radio_bearer_cfg.reset(); }
-
-  unsigned last_transaction_id;
-
-private:
-  srslog::basic_logger& logger                      = srslog::fetch_basic_logger("TEST");
-  bool                  ue_cap_transfer_outcome     = true;
-  bool                  rrc_reconfiguration_outcome = false;
-  unsigned              transaction_id;
-};
-
-struct dummy_du_processor_rrc_ue_srb_control_notifier : public du_processor_rrc_ue_srb_control_notifier {
-public:
-  void create_srb(const srb_creation_message& msg) override
-  {
-    logger.info("ue={} Creating {}", msg.ue_index, msg.srb_id);
-    last_srb_id = msg.srb_id;
-    srb_vec.push_back(msg.srb_id);
-  }
-
-  static_vector<srb_id_t, MAX_NOF_SRBS> get_srbs() override { return srb_vec; }
-
-  srb_id_t last_srb_id;
-
-private:
-  srslog::basic_logger&                 logger = srslog::fetch_basic_logger("TEST");
-  static_vector<srb_id_t, MAX_NOF_SRBS> srb_vec;
-};
-
-struct dummy_du_processor_rrc_du_ue_notifier : public du_processor_rrc_du_ue_notifier {
-public:
-  dummy_du_processor_rrc_du_ue_notifier() = default;
-
-  bool on_new_served_cell_list(const std::vector<cu_cp_du_served_cells_item>& served_cell_list) override
-  {
-    logger.info("Received a served cell list");
-    return true;
-  }
-
-  rrc_ue_interface* on_ue_creation_request(const rrc_ue_creation_message& msg) override
-  {
-    logger.info("Received a UE creation request");
-    return nullptr;
-  }
-
-  /// Send RRC Release to all UEs connected to this DU.
-  void on_release_ues() override { logger.info("Releasing all UEs"); }
-
-private:
-  srslog::basic_logger& logger = srslog::fetch_basic_logger("TEST");
 };
 
 struct dummy_cu_up_processor_cu_up_management_notifier : public cu_up_processor_cu_up_management_notifier {
@@ -690,5 +560,68 @@ private:
   timer_manager&            timer_db;
   task_executor&            exec;
 };
+
+class dummy_cu_cp_rrc_ue_interface : public cu_cp_rrc_ue_interface
+{
+public:
+  void add_ue_context(rrc_ue_reestablishment_context_response context) { reest_context = context; }
+
+  bool next_ue_setup_response = true;
+
+  rrc_ue_reestablishment_context_response
+  handle_rrc_reestablishment_request(pci_t old_pci, rnti_t old_c_rnti, ue_index_t ue_index) override
+  {
+    logger.info("ue={} old_pci={} old_c-rnti={}: Received RRC Reestablishment Request", ue_index, old_pci, old_c_rnti);
+
+    return reest_context;
+  }
+
+  async_task<bool> handle_rrc_reestablishment_context_modification_required(ue_index_t ue_index) override
+  {
+    logger.info("ue={}: Received Reestablishment Context Modification Required");
+
+    return launch_async([](coro_context<async_task<bool>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN(true);
+    });
+  }
+
+  void handle_rrc_reestablishment_failure(const cu_cp_ue_context_release_request& request) override
+  {
+    logger.info("ue={}: Received RRC Reestablishment failure notification", request.ue_index);
+  }
+
+  void handle_rrc_reestablishment_complete(ue_index_t old_ue_index) override
+  {
+    logger.info("ue={}: Received RRC Reestablishment complete notification", old_ue_index);
+  }
+
+  async_task<bool> handle_ue_context_transfer(ue_index_t ue_index, ue_index_t old_ue_index) override
+  {
+    logger.info("ue={}: Requested a UE context transfer from old_ue={}", ue_index, old_ue_index);
+    return launch_async([](coro_context<async_task<bool>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN(true);
+    });
+  }
+
+  async_task<void> handle_ue_context_release(const cu_cp_ue_context_release_request& request) override
+  {
+    logger.info("ue={}: Requested a UE release", request.ue_index);
+    last_cu_cp_ue_context_release_request = request;
+
+    return launch_async([](coro_context<async_task<void>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+      CORO_RETURN();
+    });
+  }
+
+  cu_cp_ue_context_release_request last_cu_cp_ue_context_release_request;
+
+private:
+  rrc_ue_reestablishment_context_response reest_context = {};
+  srslog::basic_logger&                   logger        = srslog::fetch_basic_logger("TEST");
+};
+
 } // namespace srs_cu_cp
 } // namespace srsran

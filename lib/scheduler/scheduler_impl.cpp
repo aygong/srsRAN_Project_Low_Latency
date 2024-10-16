@@ -23,13 +23,11 @@
 #include "scheduler_impl.h"
 #include "ue_scheduling/ue_scheduler_impl.h"
 #include "srsran/scheduler/config/scheduler_cell_config_validator.h"
-#include "srsran/scheduler/config/scheduler_ue_config_validator.h"
 
 using namespace srsran;
 
 scheduler_impl::scheduler_impl(const scheduler_config& sched_cfg_) :
   expert_params(sched_cfg_.expert_params),
-  config_notifier(sched_cfg_.config_notifier),
   logger(srslog::fetch_basic_logger("SCHED")),
   metrics(expert_params.metrics_report_period, sched_cfg_.metrics_notifier),
   cfg_mng(sched_cfg_, metrics)
@@ -46,14 +44,13 @@ bool scheduler_impl::handle_cell_configuration_request(const sched_cell_configur
   // Check if it is a new DU Cell Group.
   if (not groups.contains(msg.cell_group_index)) {
     // If it is a new group, create a new instance.
-    groups.emplace(msg.cell_group_index,
-                   std::make_unique<ue_scheduler_impl>(expert_params.ue, config_notifier, metrics));
+    groups.emplace(msg.cell_group_index, std::make_unique<ue_scheduler_impl>(expert_params.ue));
   }
 
   // Create a new cell scheduler instance.
-  cells.emplace(
-      msg.cell_index,
-      std::make_unique<cell_scheduler>(expert_params, msg, *cell_cfg, *groups[msg.cell_group_index], metrics));
+  cells.emplace(msg.cell_index,
+                std::make_unique<cell_scheduler>(
+                    expert_params, msg, *cell_cfg, *groups[msg.cell_group_index], metrics.at(msg.cell_index)));
 
   return true;
 }
@@ -161,6 +158,13 @@ void scheduler_impl::handle_uci_indication(const uci_indication& uci)
   srsran_assert(cells.contains(uci.cell_index), "cell={} does not exist", uci.cell_index);
 
   cells[uci.cell_index]->ue_sched.get_feedback_handler().handle_uci_indication(uci);
+}
+
+void scheduler_impl::handle_srs_indication(const srs_indication& srs)
+{
+  srsran_assert(cells.contains(srs.cell_index), "cell={} does not exist", srs.cell_index);
+
+  cells[srs.cell_index]->ue_sched.get_feedback_handler().handle_srs_indication(srs);
 }
 
 void scheduler_impl::handle_dl_mac_ce_indication(const dl_mac_ce_indication& mac_ce)

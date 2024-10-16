@@ -21,10 +21,10 @@
  */
 
 #include "f1ap_cu_impl.h"
-#include "../common/asn1_helpers.h"
-#include "../common/f1ap_asn1_utils.h"
-#include "../common/log_helpers.h"
+#include "asn1_helpers.h"
 #include "f1ap_asn1_helpers.h"
+#include "f1ap_asn1_utils.h"
+#include "log_helpers.h"
 #include "procedures/f1_removal_procedure.h"
 #include "procedures/f1_setup_procedure.h"
 #include "procedures/f1ap_stop_procedure.h"
@@ -33,7 +33,7 @@
 #include "procedures/ue_context_setup_procedure.h"
 #include "srsran/asn1/f1ap/f1ap.h"
 #include "srsran/cu_cp/cu_cp_types.h"
-#include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/f1ap_message.h"
 
 using namespace srsran;
 using namespace asn1::f1ap;
@@ -120,7 +120,7 @@ async_task<ue_index_t> f1ap_cu_impl::handle_ue_context_release_command(const f1a
     });
   }
 
-  return launch_async<ue_context_release_procedure>(msg, ue_ctxt_list[msg.ue_index], tx_pdu_notifier);
+  return launch_async<ue_context_release_procedure>(cfg, msg, ue_ctxt_list[msg.ue_index], tx_pdu_notifier);
 }
 
 async_task<f1ap_ue_context_modification_response>
@@ -135,7 +135,7 @@ f1ap_cu_impl::handle_ue_context_modification_request(const f1ap_ue_context_modif
     });
   }
 
-  return launch_async<ue_context_modification_procedure>(request, ue_ctxt_list[request.ue_index], tx_pdu_notifier);
+  return launch_async<ue_context_modification_procedure>(cfg, request, ue_ctxt_list[request.ue_index], tx_pdu_notifier);
 }
 
 bool f1ap_cu_impl::handle_ue_id_update(ue_index_t ue_index, ue_index_t old_ue_index)
@@ -359,6 +359,7 @@ void f1ap_cu_impl::handle_successful_outcome(const asn1::f1ap::successful_outcom
       logger.warning("cu_ue={}: Discarding received \"{}\". Cause: UE was not found.",
                      *cu_ue_id,
                      outcome.value.type().to_string());
+      return;
     }
   }
 
@@ -385,6 +386,7 @@ void f1ap_cu_impl::handle_unsuccessful_outcome(const asn1::f1ap::unsuccessful_ou
       logger.warning("cu_ue={}: Discarding received \"{}\". Cause: UE was not found.",
                      *cu_ue_id,
                      outcome.value.type().to_string());
+      return;
     }
   }
 

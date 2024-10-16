@@ -32,9 +32,9 @@ void uplane_rx_symbol_data_flow_writer::write_to_resource_grid(unsigned         
 {
   trace_point access_repo_tp = ofh_tracer.now();
 
-  slot_point     slot       = results.params.slot;
-  unsigned       symbol     = results.params.symbol_id;
-  uplink_context ul_context = ul_context_repo->get(slot, symbol);
+  slot_point            slot       = results.params.slot;
+  unsigned              symbol     = results.params.symbol_id;
+  const uplink_context& ul_context = ul_context_repo->get(slot, symbol);
   if (ul_context.empty()) {
     logger.warning("Dropped received Open Fronthaul message as no uplink slot context was found for slot '{}', symbol "
                    "'{}' and eAxC '{}'",
@@ -72,11 +72,12 @@ void uplane_rx_symbol_data_flow_writer::write_to_resource_grid(unsigned         
 
     trace_point write_rg_tp = ofh_tracer.now();
 
-    ul_context_repo->write_grid(slot,
-                                rg_port,
-                                symbol,
-                                section.start_prb * NOF_SUBCARRIERS_PER_RB,
-                                span<const cf_t>(section.iq_samples).first(nof_prbs_to_write * NOF_SUBCARRIERS_PER_RB));
+    ul_context_repo->write_grid(
+        slot,
+        rg_port,
+        symbol,
+        section.start_prb * NOF_SUBCARRIERS_PER_RB,
+        span<const cbf16_t>(section.iq_samples).first(nof_prbs_to_write * NOF_SUBCARRIERS_PER_RB));
 
     ofh_tracer << trace_event("ofh_receiver_write_rg", write_rg_tp);
 

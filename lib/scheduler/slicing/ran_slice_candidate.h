@@ -32,25 +32,27 @@ template <bool IsDl>
 class common_ran_slice_candidate
 {
 public:
-  common_ran_slice_candidate(ran_slice_instance& instance_, unsigned max_rbs_ = 0) :
-    inst(&instance_), max_rbs(max_rbs_ == 0 ? inst->cfg.max_prb : max_rbs_)
+  common_ran_slice_candidate(ran_slice_instance& instance_, slot_point slot_tx_, unsigned max_rbs_ = 0) :
+    inst(&instance_), max_rbs(max_rbs_ == 0 ? inst->cfg.max_prb : max_rbs_), slot_tx(slot_tx_)
   {
   }
 
   ran_slice_id_t                               id() const { return inst->id; }
   [[nodiscard]] const slice_rrm_policy_config& cfg() const { return inst->cfg; }
-  scheduler_policy&                            policy() { return *inst->policy; }
 
   bool is_candidate(du_ue_index_t ue_idx) const { return inst->contains(ue_idx); }
   bool is_candidate(du_ue_index_t ue_idx, lcid_t lcid) const { return inst->contains(ue_idx, lcid); }
+
+  /// Get UEs belonging to a slice.
+  const slice_ue_repository& get_slice_ues() const { return inst->get_ues(); }
 
   /// Register that a new grant was allocated for a given UE.
   void store_grant(unsigned nof_rbs)
   {
     if constexpr (IsDl) {
-      inst->store_pdsch_grant(nof_rbs);
+      inst->store_pdsch_grant(nof_rbs, slot_tx);
     } else {
-      inst->store_pusch_grant(nof_rbs);
+      inst->store_pusch_grant(nof_rbs, slot_tx);
     }
   }
 
@@ -60,12 +62,19 @@ public:
     if constexpr (IsDl) {
       return max_rbs < inst->pdsch_rb_count ? 0 : max_rbs - inst->pdsch_rb_count;
     }
-    return max_rbs < inst->pusch_rb_count ? 0 : max_rbs - inst->pusch_rb_count;
+    return max_rbs < inst->pusch_rb_count_per_slot[slot_tx.to_uint() % inst->pusch_rb_count_per_slot.size()]
+               ? 0
+               : max_rbs - inst->pusch_rb_count_per_slot[slot_tx.to_uint() % inst->pusch_rb_count_per_slot.size()];
   }
+
+  /// Returns slot at which PUSCH/PDSCH needs to be scheduled for this slice candidate.
+  slot_point get_slot_tx() const { return slot_tx; }
 
 protected:
   ran_slice_instance* inst    = nullptr;
   unsigned            max_rbs = 0;
+  /// Slot at which PUSCH/PDSCH needs to be scheduled for this slice candidate.
+  slot_point slot_tx;
 };
 
 } // namespace detail

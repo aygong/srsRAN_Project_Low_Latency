@@ -28,8 +28,10 @@
 #include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
 #include "srsran/asn1/rrc_nr/dl_ccch_msg.h"
 #include "srsran/asn1/rrc_nr/dl_dcch_msg_ies.h"
+#include "srsran/asn1/rrc_nr/ul_dcch_msg.h"
+#include "srsran/asn1/rrc_nr/ul_dcch_msg_ies.h"
 #include "srsran/e1ap/common/e1ap_message.h"
-#include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/f1ap_message.h"
 #include "srsran/ngap/ngap_message.h"
 #include <gtest/gtest.h>
 
@@ -39,7 +41,7 @@ using namespace srs_cu_cp;
 class cu_cp_connectivity_test : public cu_cp_test_environment, public ::testing::Test
 {
 public:
-  cu_cp_connectivity_test() : cu_cp_test_environment(cu_cp_test_env_params{8, 8, 8192, create_mock_amf()}) {}
+  cu_cp_connectivity_test() : cu_cp_test_environment(cu_cp_test_env_params{}) {}
 };
 
 //----------------------------------------------------------------------------------//
@@ -52,7 +54,7 @@ TEST_F(cu_cp_connectivity_test, when_cu_cp_is_created_then_it_is_not_connected_t
   ASSERT_FALSE(get_amf().try_pop_rx_pdu(ngap_pdu))
       << "The CU-CP should not send a message to the NG interface before being started";
 
-  ASSERT_FALSE(get_cu_cp().get_ng_handler().amf_is_connected());
+  ASSERT_FALSE(get_cu_cp().get_ng_handler().amfs_are_connected());
 }
 
 TEST_F(cu_cp_connectivity_test, when_cu_cp_starts_then_it_initiates_ng_setup_procedure_and_blocks_waiting_for_response)
@@ -69,7 +71,7 @@ TEST_F(cu_cp_connectivity_test, when_cu_cp_starts_then_it_initiates_ng_setup_pro
   ASSERT_TRUE(is_pdu_type(ngap_pdu, asn1::ngap::ngap_elem_procs_o::init_msg_c::types::ng_setup_request))
       << "CU-CP did not setup the AMF connection";
 
-  ASSERT_TRUE(get_cu_cp().get_ng_handler().amf_is_connected());
+  ASSERT_TRUE(get_cu_cp().get_ng_handler().amfs_are_connected());
 }
 
 TEST_F(cu_cp_connectivity_test, when_ng_setup_fails_then_cu_cp_is_not_in_amf_connected_state)
@@ -86,7 +88,7 @@ TEST_F(cu_cp_connectivity_test, when_ng_setup_fails_then_cu_cp_is_not_in_amf_con
   ASSERT_TRUE(is_pdu_type(ngap_pdu, asn1::ngap::ngap_elem_procs_o::init_msg_c::types::ng_setup_request))
       << "CU-CP did not setup the AMF connection";
 
-  ASSERT_FALSE(get_cu_cp().get_ng_handler().amf_is_connected());
+  ASSERT_FALSE(get_cu_cp().get_ng_handler().amfs_are_connected());
 }
 
 //----------------------------------------------------------------------------------//
@@ -156,15 +158,15 @@ TEST_F(cu_cp_connectivity_test, when_dus_with_duplicate_du_ids_connect_then_f1_s
   // Ensure the F1 Setup Response is received and correct for first DU.
   f1ap_message f1ap_pdu;
   ASSERT_TRUE(this->wait_for_f1ap_tx_pdu(du_idx, f1ap_pdu, std::chrono::milliseconds{1000}));
-  ASSERT_EQ(f1ap_pdu.pdu.type().value, f1ap_pdu_c::types_opts::successful_outcome);
+  ASSERT_EQ(f1ap_pdu.pdu.type().value, asn1::f1ap::f1ap_pdu_c::types_opts::successful_outcome);
   ASSERT_EQ(f1ap_pdu.pdu.successful_outcome().value.type().value,
-            f1ap_elem_procs_o::successful_outcome_c::types_opts::f1_setup_resp);
+            asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::f1_setup_resp);
 
   // Ensure the F1 Setup Failure is received for second DU.
   ASSERT_TRUE(this->wait_for_f1ap_tx_pdu(du_idx2, f1ap_pdu, std::chrono::milliseconds{1000}));
-  ASSERT_EQ(f1ap_pdu.pdu.type().value, f1ap_pdu_c::types_opts::unsuccessful_outcome);
+  ASSERT_EQ(f1ap_pdu.pdu.type().value, asn1::f1ap::f1ap_pdu_c::types_opts::unsuccessful_outcome);
   ASSERT_EQ(f1ap_pdu.pdu.unsuccessful_outcome().value.type().value,
-            f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::f1_setup_fail);
+            asn1::f1ap::f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::f1_setup_fail);
 }
 
 TEST_F(cu_cp_connectivity_test, when_a_du_with_non_matching_gnb_id_connects_then_f1_setup_is_rejected)
@@ -185,9 +187,9 @@ TEST_F(cu_cp_connectivity_test, when_a_du_with_non_matching_gnb_id_connects_then
 
   // Ensure the F1 Setup Failure is received for the DU.
   ASSERT_TRUE(this->wait_for_f1ap_tx_pdu(du_idx, f1ap_pdu, std::chrono::milliseconds{1000}));
-  ASSERT_EQ(f1ap_pdu.pdu.type().value, f1ap_pdu_c::types_opts::unsuccessful_outcome);
+  ASSERT_EQ(f1ap_pdu.pdu.type().value, asn1::f1ap::f1ap_pdu_c::types_opts::unsuccessful_outcome);
   ASSERT_EQ(f1ap_pdu.pdu.unsuccessful_outcome().value.type().value,
-            f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::f1_setup_fail);
+            asn1::f1ap::f1ap_elem_procs_o::unsuccessful_outcome_c::types_opts::f1_setup_fail);
 }
 
 TEST_F(cu_cp_connectivity_test, when_max_nof_dus_connected_reached_then_cu_cp_rejects_new_du_connections)

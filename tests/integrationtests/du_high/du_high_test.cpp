@@ -91,8 +91,9 @@ TEST_F(du_high_tester, when_ue_context_setup_completes_then_drb_is_active)
   // Forward several DRB PDUs.
   const unsigned nof_pdcp_pdus = 100, pdcp_pdu_size = 128;
   for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
-    nru_dl_message f1u_pdu{.t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, i, pdcp_pdu_size, i)};
-    cu_up_sim.created_du_notifs[0]->on_new_pdu(f1u_pdu);
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.begin()->second.rx_notifier->on_new_pdu(f1u_pdu);
   }
 
   // Ensure DRB is active by verifying that the DRB PDUs are scheduled.
@@ -150,8 +151,9 @@ TEST_F(du_high_tester, when_ue_context_setup_release_starts_then_drb_activity_st
   const unsigned nof_pdcp_pdus = 100, pdcp_pdu_size = 128;
 
   for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
-    nru_dl_message f1u_pdu{.t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, i, pdcp_pdu_size, i)};
-    cu_up_sim.created_du_notifs[0]->on_new_pdu(f1u_pdu);
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.begin()->second.rx_notifier->on_new_pdu(f1u_pdu);
   }
 
   // DU receives F1AP UE Context Release Command.
@@ -168,12 +170,19 @@ TEST_F(du_high_tester, when_ue_context_setup_release_starts_then_drb_activity_st
   this->test_logger.info("STATUS: RRC Release started being scheduled...");
 
   // Ensure that DRBs stop being scheduled at this point, even if it takes a while for the UE release to complete.
+  unsigned drb_data_count = 0;
   while (cu_notifier.last_f1ap_msgs.empty()) {
     run_slot();
     const dl_msg_alloc* pdsch = find_ue_pdsch(rnti, phy.cells[0].last_dl_res.value().dl_res->ue_grants);
     if (pdsch != nullptr) {
-      // PDSCH scheduled. Ensure it was for SRB1 (DRB1 might fill the rest of the TB though).
-      ASSERT_NE(find_ue_pdsch_with_lcid(rnti, LCID_SRB1, phy.cells[0].last_dl_res.value().dl_res->ue_grants), nullptr);
+      // PDSCH scheduled. Ensure it was for SRB1.
+      // Note: There might be at most one single DRB1 PDSCH that smuggles in after the RRC Release due to race
+      // conditions.
+      auto* drb_pdsch = find_ue_pdsch_with_lcid(rnti, LCID_MIN_DRB, phy.cells[0].last_dl_res.value().dl_res->ue_grants);
+      if (drb_pdsch != nullptr) {
+        drb_data_count++;
+        ASSERT_LT(drb_data_count, 2) << "More than 1 PDSCH grant for DRB data was scheduled after RRC Release";
+      }
     }
   }
 }
@@ -204,8 +213,8 @@ TEST_F(du_high_tester, when_ue_context_setup_received_for_inexistent_ue_then_ue_
   cu_notifier.last_f1ap_msgs.clear();
 
   gnb_cu_ue_f1ap_id_t cu_ue_id =
-      int_to_gnb_cu_ue_f1ap_id(test_rgen::uniform_int<unsigned>(0, (unsigned)gnb_cu_ue_f1ap_id_t::max));
-  f1ap_message cu_cp_msg = test_helpers::create_ue_context_setup_request(cu_ue_id, std::nullopt, {drb_id_t::drb1});
+      int_to_gnb_cu_ue_f1ap_id(test_rgen::uniform_int<uint64_t>(0, (uint64_t)gnb_cu_ue_f1ap_id_t::max));
+  f1ap_message cu_cp_msg = test_helpers::create_ue_context_setup_request(cu_ue_id, std::nullopt, 0, {drb_id_t::drb1});
   this->du_hi->get_f1ap_message_handler().handle_message(cu_cp_msg);
 
   ASSERT_TRUE(this->run_until([this]() { return not cu_notifier.last_f1ap_msgs.empty(); }));
@@ -231,8 +240,9 @@ TEST_F(du_high_tester, when_ue_context_modification_with_rem_drbs_is_received_th
   const unsigned nof_pdcp_pdus = 100, pdcp_pdu_size = 128;
 
   for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
-    nru_dl_message f1u_pdu{.t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, i, pdcp_pdu_size, i)};
-    cu_up_sim.created_du_notifs[0]->on_new_pdu(f1u_pdu);
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.begin()->second.rx_notifier->on_new_pdu(f1u_pdu);
   }
 
   // DU receives F1AP UE Context Modification Command.
@@ -256,4 +266,94 @@ TEST_F(du_high_tester, when_ue_context_modification_with_rem_drbs_is_received_th
     ASSERT_EQ(cell_grp_cfg.rlc_bearer_to_release_list.size(), 1);
     ASSERT_EQ(cell_grp_cfg.rlc_bearer_to_release_list[0], 4) << "DRB1 with LCID=4 should have been removed";
   }
+}
+
+TEST_F(du_high_tester, when_dl_rrc_message_with_old_du_ue_id_received_then_old_ue_traffic_stops)
+{
+  // Create UE1.
+  rnti_t rnti = to_rnti(0x4601);
+  ASSERT_TRUE(add_ue(rnti));
+  ASSERT_TRUE(run_rrc_setup(rnti));
+  ASSERT_TRUE(run_ue_context_setup(rnti));
+
+  // CU-UP forwards many DRB PDUs.
+  const unsigned nof_pdcp_pdus = 100, pdcp_pdu_size = 32;
+  for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.begin()->second.rx_notifier->on_new_pdu(f1u_pdu);
+  }
+
+  // Send DL RRC Message Transfer with old gNB-DU-UE-F1AP-ID.
+  rnti_t rnti2 = to_rnti(0x4602);
+  ASSERT_TRUE(add_ue(rnti2));
+  ASSERT_TRUE(run_rrc_reestablishment(rnti2, rnti, reestablishment_stage::reest_complete));
+
+  ASSERT_FALSE(this->run_until(
+      [this, rnti]() {
+        const dl_msg_alloc* pdsch = find_ue_pdsch(rnti, phy.cells[0].last_dl_res.value().dl_res->ue_grants);
+        if (pdsch != nullptr and pdsch->pdsch_cfg.codewords[0].new_data) {
+          return true;
+        }
+        return false;
+      },
+      100));
+}
+
+TEST_F(du_high_tester, when_dl_rrc_message_with_old_du_ue_id_received_then_drbs_are_reestablished)
+{
+  // Create UE1.
+  rnti_t rnti1 = to_rnti(0x4601);
+  ASSERT_TRUE(add_ue(rnti1));
+  ASSERT_TRUE(run_rrc_setup(rnti1));
+  ASSERT_TRUE(run_ue_context_setup(rnti1));
+
+  // Run Reestablishment
+  rnti_t rnti2 = to_rnti(0x4602);
+  ASSERT_TRUE(add_ue(rnti2));
+  ASSERT_TRUE(run_rrc_reestablishment(rnti2, rnti1));
+
+  // Check that DRBs are active for the new C-RNTI.
+  const unsigned nof_pdcp_pdus = 10, pdcp_pdu_size = 128;
+  for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.at(std::make_pair(1, drb_id_t::drb1)).rx_notifier->on_new_pdu(f1u_pdu);
+  }
+  ASSERT_TRUE(this->run_until(
+      [this, rnti2]() {
+        return find_ue_pdsch_with_lcid(rnti2, LCID_MIN_DRB, phy.cells[0].last_dl_res.value().dl_res->ue_grants) !=
+               nullptr;
+      },
+      100));
+}
+
+TEST_F(du_high_tester,
+       when_dl_rrc_message_with_old_du_ue_id_received_but_same_cu_ue_f1ap_id_then_cu_ue_f1ap_id_is_reused)
+{
+  // Create UE1.
+  rnti_t rnti1 = to_rnti(0x4601);
+  ASSERT_TRUE(add_ue(rnti1));
+  ASSERT_TRUE(run_rrc_setup(rnti1));
+  ASSERT_TRUE(run_ue_context_setup(rnti1));
+
+  // Run Reestablishment, keeping the same gNB-CU-UE-F1AP-ID.
+  this->next_cu_ue_id--;
+  rnti_t rnti2 = to_rnti(0x4602);
+  ASSERT_TRUE(add_ue(rnti2));
+  ASSERT_TRUE(run_rrc_reestablishment(rnti2, rnti1));
+
+  // Check that DRBs are active for the new C-RNTI.
+  const unsigned nof_pdcp_pdus = 10, pdcp_pdu_size = 128;
+  for (unsigned i = 0; i < nof_pdcp_pdus; ++i) {
+    nru_dl_message f1u_pdu{
+        .t_pdu = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ false, i, pdcp_pdu_size, i)};
+    cu_up_sim.bearers.at(std::make_pair(1, drb_id_t::drb1)).rx_notifier->on_new_pdu(f1u_pdu);
+  }
+  ASSERT_TRUE(this->run_until(
+      [this, rnti2]() {
+        return find_ue_pdsch_with_lcid(rnti2, LCID_MIN_DRB, phy.cells[0].last_dl_res.value().dl_res->ue_grants) !=
+               nullptr;
+      },
+      100));
 }

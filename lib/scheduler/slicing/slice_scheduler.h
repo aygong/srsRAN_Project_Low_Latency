@@ -34,18 +34,19 @@ class slice_scheduler
 {
   using priority_type                      = uint32_t;
   using slot_count_type                    = uint32_t;
-  constexpr static priority_type skip_prio = 0;
+  static constexpr priority_type skip_prio = 0;
 
 public:
-  slice_scheduler(const cell_configuration& cell_cfg_);
+  slice_scheduler(const cell_configuration& cell_cfg_, ue_repository& ues_);
 
   /// Reset the state of the slices.
-  void slot_indication();
+  void slot_indication(slot_point slot_tx, const cell_resource_allocator& res_grid);
 
   /// Update the state of the slice with the provided UE configs.
-  void add_ue(const ue_configuration& ue_cfg);
-  void reconf_ue(const ue_configuration& next_ue_cfg, const ue_configuration& prev_ue_cfg);
+  void add_ue(du_ue_index_t ue_idx);
+  void reconf_ue(du_ue_index_t ue_idx);
   void rem_ue(du_ue_index_t ue_idx);
+  void config_applied(du_ue_index_t ue_idx);
 
   /// Get next RAN slice for PDSCH scheduling.
   std::optional<dl_ran_slice_candidate> get_next_dl_candidate();
@@ -55,14 +56,18 @@ public:
 
   size_t                         nof_slices() const { return slices.size(); }
   const slice_rrm_policy_config& slice_config(ran_slice_id_t id) const { return slices[id.value()].inst.cfg; }
+  scheduler_policy&              get_policy(ran_slice_id_t id) { return *slices[id.value()].policy; }
 
 private:
+  /// RAN slice ID for default slice used to schedule SRB(s) traffic.
+  const ran_slice_id_t default_srb_ran_slice_id = ran_slice_id_t{0};
+  /// RAN slice ID for default slice used to schedule DRB(s) traffic.
+  const ran_slice_id_t default_drb_ran_slice_id = ran_slice_id_t{1};
+
   /// Class responsible for tracking the scheduling context of each RAN slice instance.
   struct ran_slice_sched_context {
-    ran_slice_instance inst;
-    // Counter tracking the last time this slice was scheduled as a candidate.
-    slot_count_type last_dl_slot = 0;
-    slot_count_type last_ul_slot = 0;
+    ran_slice_instance                inst;
+    std::unique_ptr<scheduler_policy> policy;
 
     ran_slice_sched_context(ran_slice_id_t id, const cell_configuration& cell_cfg, const slice_rrm_policy_config& cfg) :
       inst(id, cell_cfg, cfg)
@@ -70,16 +75,23 @@ private:
     }
 
     /// Determines the slice candidate priority.
-    priority_type get_prio(bool is_dl, slot_count_type current_slot_count, bool slice_resched) const;
+    priority_type get_prio(bool            is_dl,
+                           slot_count_type current_slot_count,
+                           slot_point      pdcch_slot,
+                           slot_point      pxsch_slot,
+                           unsigned        nof_slices,
+                           bool            slice_resched) const;
   };
 
   struct slice_candidate_context {
     ran_slice_id_t     id;
     priority_type      prio;
     interval<unsigned> rb_lims;
+    /// Slot at which PUSCH/PDSCH needs to be scheduled for this slice candidate.
+    slot_point slot_tx;
 
-    slice_candidate_context(ran_slice_id_t id_, priority_type prio_, interval<unsigned> rb_lims_) :
-      id(id_), prio(prio_), rb_lims(rb_lims_)
+    slice_candidate_context(ran_slice_id_t id_, priority_type prio_, interval<unsigned> rb_lims_, slot_point slot_tx_) :
+      id(id_), prio(prio_), rb_lims(rb_lims_), slot_tx(slot_tx_)
     {
     }
 
@@ -111,13 +123,27 @@ private:
     }
   };
 
-  ran_slice_instance& get_slice(const rrm_policy_member& rrm);
+  ran_slice_instance& get_slice(const logical_channel_config& lc_cfg);
+
+  // Fetch UE if it is in a state to be added/reconfigured.
+  ue* fetch_ue_to_update(du_ue_index_t ue_idx);
+
+  void add_impl(const ue& u);
 
   template <bool IsDownlink>
   std::optional<std::conditional_t<IsDownlink, dl_ran_slice_candidate, ul_ran_slice_candidate>> get_next_candidate();
 
   const cell_configuration& cell_cfg;
   srslog::basic_logger&     logger;
+
+  // Represents current slot in the scheduler. This is updated on each slot indication.
+  slot_point current_slot;
+
+  ue_repository& ues;
+
+  /// Vector circularly indexed by slot with the list of applicable PUSCH time domain resources per slot.
+  /// NOTE: The list would be empty for UL slots.
+  std::vector<static_vector<unsigned, pusch_constants::MAX_NOF_PUSCH_TD_RES_ALLOCS>> valid_pusch_td_list_per_slot;
 
   std::vector<ran_slice_sched_context> slices;
 

@@ -39,16 +39,18 @@
 /// which will instantiate 6 threads running in cores 2-7 (assuming du_cell is pinned to 0-1), with high priority
 /// and a CPU load of 90%.
 
-#include "lib/du_high/du_high_executor_strategies.h"
-#include "lib/du_high/du_high_impl.h"
+#include "lib/du/du_high/du_high_executor_strategies.h"
+#include "lib/du/du_high/du_high_impl.h"
 #include "lib/mac/mac_ul/ul_bsr.h"
 #include "tests/test_doubles/f1ap/f1ap_test_messages.h"
+#include "tests/test_doubles/pdcp/pdcp_pdu_generator.h"
 #include "tests/test_doubles/scheduler/scheduler_result_test.h"
 #include "tests/unittests/f1ap/du/f1ap_du_test_helpers.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/asn1/f1ap/f1ap_pdu_contents_ue.h"
 #include "srsran/du/du_cell_config_helpers.h"
-#include "srsran/du_high/du_high_configuration.h"
+#include "srsran/du/du_high/du_high_configuration.h"
+#include "srsran/du/du_high/du_qos_config_helpers.h"
 #include "srsran/f1u/du/f1u_gateway.h"
 #include "srsran/support/benchmark_utils.h"
 #include "srsran/support/event_tracing.h"
@@ -226,6 +228,11 @@ static void print_args(const bench_params& params)
 class dummy_metrics_handler : public scheduler_metrics_notifier
 {
 public:
+  dummy_metrics_handler() :
+    logger(srslog::fetch_basic_logger("METRICS")), pending_metrics(logger.info.enabled() ? 128 : 1)
+  {
+  }
+
   void report_metrics(const scheduler_cell_metrics& metrics) override
   {
     unsigned sum_dl_bs = 0;
@@ -233,11 +240,37 @@ public:
       sum_dl_bs += ue.dl_bs;
     }
     tot_dl_bs.store(sum_dl_bs, std::memory_order_relaxed);
+
+    if (logger.info.enabled()) {
+      auto metrics_copy = metrics;
+      pending_metrics.try_push(std::move(metrics_copy));
+    }
   }
+
+  void log()
+  {
+    if (not logger.info.enabled()) {
+      return;
+    }
+    scheduler_cell_metrics metrics;
+    while (pending_metrics.try_pop(metrics)) {
+      fmt::format_to(fmtbuf, "Latency=[{}]", fmt::join(metrics.latency_histogram, ", "));
+      logger.info("cell metrics: {}\n", to_c_str(fmtbuf));
+      fmtbuf.clear();
+    }
+  }
+
+  srslog::basic_logger& logger;
 
   // This metric is used by benchmark to determine whether to push more traffic to DU F1-U. Therefore, it needs to be
   // protected.
   std::atomic<unsigned> tot_dl_bs{0};
+
+  concurrent_queue<scheduler_cell_metrics,
+                   concurrent_queue_policy::lockfree_mpmc,
+                   srsran::concurrent_queue_wait_policy::non_blocking>
+                     pending_metrics;
+  fmt::memory_buffer fmtbuf;
 };
 
 /// \brief Simulator of the CU-CP from the perspective of the DU. This class should reply to the F1AP messages
@@ -319,8 +352,9 @@ private:
             int_to_gnb_du_ue_f1ap_id(init_msg.value.ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
         gnb_cu_ue_f1ap_id_t cu_ue_id =
             int_to_gnb_cu_ue_f1ap_id(init_msg.value.ul_rrc_msg_transfer()->gnb_du_ue_f1ap_id);
-        f1ap_message uectxt_msg = test_helpers::create_ue_context_setup_request(cu_ue_id, du_ue_id, {drb_id_t::drb1});
-        auto&        ue_ctxt_setup = *uectxt_msg.pdu.init_msg().value.ue_context_setup_request();
+        f1ap_message uectxt_msg =
+            test_helpers::create_ue_context_setup_request(cu_ue_id, du_ue_id, 0, {drb_id_t::drb1});
+        auto& ue_ctxt_setup = *uectxt_msg.pdu.init_msg().value.ue_context_setup_request();
         // Do not send RRC container, otherwise we have to send an RLC ACK.
         ue_ctxt_setup.rrc_container_present = false;
         // Note: Use UM because AM requires status PDUs.
@@ -381,7 +415,7 @@ public:
 
   void remove_du_bearer(const up_transport_layer_info& dl_tnl) override {}
 
-  expected<std::string> get_du_bind_address(gnb_du_id_t gnb_du_id) override { return std::string("127.0.0.1"); }
+  expected<std::string> get_du_bind_address(gnb_du_id_t gnb_du_id) const override { return std::string("127.0.0.1"); }
 };
 
 /// \brief Instantiation of the DU-high workers and executors for the benchmark.
@@ -587,7 +621,8 @@ private:
 /// \brief TestBench for the DU-high.
 class du_high_bench
 {
-  static const unsigned DEFAULT_DL_PDU_SIZE = 1500;
+  static constexpr unsigned DEFAULT_DL_PDU_SIZE = 1500;
+  static constexpr unsigned PDCP_MAX_HDR_LEN    = 3;
 
 public:
   du_high_bench(unsigned                              dl_buffer_state_bytes_,
@@ -617,41 +652,42 @@ public:
     report_fatal_error_if_not(bsr_mac_subpdu.append(lbsr_buff_sz), "Failed to allocate PDU");
 
     // Instantiate a DU-high object.
-    cfg.gnb_du_id    = (gnb_du_id_t)1;
-    cfg.gnb_du_name  = fmt::format("srsgnb{}", cfg.gnb_du_id);
-    cfg.du_bind_addr = transport_layer_address::create_from_string(fmt::format("127.0.0.{}", cfg.gnb_du_id));
-    cfg.exec_mapper  = &workers.du_high_exec_mapper;
-    cfg.f1c_client   = &sim_cu_cp;
-    cfg.f1u_gw       = &sim_cu_up;
-    cfg.phy_adapter  = &sim_phy;
-    cfg.timers       = &timers;
-    cfg.cells        = {config_helpers::make_default_du_cell_config(params)};
-    cfg.sched_cfg    = config_helpers::make_default_scheduler_expert_config();
-    cfg.sched_cfg.ue.strategy_cfg  = strategy_cfg;
-    cfg.sched_cfg.ue.pdsch_nof_rbs = {1, max_nof_rbs_per_dl_grant};
-    cfg.mac_cfg                    = mac_expert_config{.configs = {{10000, 10000, 10000}}};
-    cfg.qos                        = config_helpers::make_default_du_qos_config_list(/* warn_on_drop */ true, 1000);
-    cfg.mac_p                      = &mac_pcap;
-    cfg.rlc_p                      = &rlc_pcap;
-    cfg.sched_ue_metrics_notifier  = &metrics_handler;
+    cfg.ran.gnb_du_id                  = (gnb_du_id_t)1;
+    cfg.ran.gnb_du_name                = fmt::format("srsgnb{}", cfg.ran.gnb_du_id);
+    cfg.exec_mapper                    = &workers.du_high_exec_mapper;
+    cfg.f1c_client                     = &sim_cu_cp;
+    cfg.f1u_gw                         = &sim_cu_up;
+    cfg.phy_adapter                    = &sim_phy;
+    cfg.timers                         = &timers;
+    cfg.ran.cells                      = {config_helpers::make_default_du_cell_config(params)};
+    cfg.ran.sched_cfg                  = config_helpers::make_default_scheduler_expert_config();
+    cfg.ran.sched_cfg.ue.strategy_cfg  = strategy_cfg;
+    cfg.ran.sched_cfg.ue.pdsch_nof_rbs = {1, max_nof_rbs_per_dl_grant};
+    cfg.ran.mac_cfg                    = mac_expert_config{.configs = {{10000, 10000, 10000}}};
+    cfg.ran.qos                        = config_helpers::make_default_du_qos_config_list(/* warn_on_drop */ true, 1000);
+    cfg.mac_p                          = &mac_pcap;
+    cfg.rlc_p                          = &rlc_pcap;
+    cfg.sched_ue_metrics_notifier      = &metrics_handler;
 
     // Increase nof. PUCCH resources to accommodate more UEs.
-    cfg.cells[0].pucch_cfg.nof_sr_resources             = 30;
-    cfg.cells[0].pucch_cfg.nof_csi_resources            = 30;
-    cfg.cells[0].pucch_cfg.nof_ue_pucch_f2_res_harq     = 8;
-    cfg.cells[0].pucch_cfg.nof_ue_pucch_f1_res_harq     = 8;
-    cfg.cells[0].pucch_cfg.nof_cell_harq_pucch_res_sets = 4;
-    cfg.cells[0].pucch_cfg.f1_params.nof_cyc_shifts     = srsran::nof_cyclic_shifts::six;
-    cfg.cells[0].pucch_cfg.f1_params.occ_supported      = true;
-    cfg.sched_cfg.ue.max_pucchs_per_slot                = 61;
-    cfg.sched_cfg.ue.max_puschs_per_slot                = 61;
-    cfg.sched_cfg.ue.max_ul_grants_per_slot             = 64;
+    cfg.ran.cells[0].pucch_cfg.nof_sr_resources               = 30;
+    cfg.ran.cells[0].pucch_cfg.nof_csi_resources              = 30;
+    cfg.ran.cells[0].pucch_cfg.nof_ue_pucch_f2_res_harq       = 8;
+    cfg.ran.cells[0].pucch_cfg.nof_ue_pucch_f0_or_f1_res_harq = 8;
+    cfg.ran.cells[0].pucch_cfg.nof_cell_harq_pucch_res_sets   = 4;
+    auto& f1_params                             = cfg.ran.cells[0].pucch_cfg.f0_or_f1_params.emplace<pucch_f1_params>();
+    f1_params.nof_cyc_shifts                    = nof_cyclic_shifts::six;
+    f1_params.occ_supported                     = true;
+    cfg.ran.sched_cfg.ue.max_pucchs_per_slot    = 61;
+    cfg.ran.sched_cfg.ue.max_puschs_per_slot    = 61;
+    cfg.ran.sched_cfg.ue.max_ul_grants_per_slot = 64;
 
     du_hi = std::make_unique<du_high_impl>(cfg);
 
-    // Create PDCP PDU.
-    report_fatal_error_if_not(pdcp_pdu.append(test_rgen::random_vector<uint8_t>(f1u_pdu_size.value())),
-                              "Unable to allocate PDU");
+    // Create PDCP PDU Payload.
+    report_fatal_error_if_not(
+        pdcp_pdu_payload.append(test_rgen::random_vector<uint8_t>(f1u_pdu_size.value() - PDCP_MAX_HDR_LEN)),
+        "Unable to allocate PDU");
     // Create MAC PDU.
     report_fatal_error_if_not(mac_pdu.append(test_rgen::random_vector<uint8_t>(
                                   buff_size_field_to_bytes(lbsr_buff_sz, srsran::bsr_format::LONG_BSR))),
@@ -748,6 +784,9 @@ public:
     // Process PHY metrics.
     sim_phy.process_results();
 
+    // Run metrics logger.
+    metrics_handler.log();
+
     // Advance slot.
     ++next_sl_tx;
   }
@@ -761,8 +800,8 @@ public:
 
     // Wait until it's a full UL slot to send Msg3.
     auto next_ul_slot = [this]() {
-      return not cfg.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.has_value() or
-             not is_tdd_full_ul_slot(cfg.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.value(),
+      return not cfg.ran.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.has_value() or
+             not is_tdd_full_ul_slot(cfg.ran.cells[to_du_cell_index(0)].tdd_ul_dl_cfg_common.value(),
                                      slot_point(next_sl_tx - tx_rx_delay - 1).slot_index());
     };
     report_fatal_error_if_not(run_slot_until(next_ul_slot), "No slot for Msg3 was detected");
@@ -825,7 +864,8 @@ public:
     while (not workers.dl_exec.defer([this]() {
       static std::array<uint32_t, MAX_NOF_DU_UES> pdcp_sn_list{0};
       const unsigned nof_dl_pdus_per_slot = divide_ceil(f1u_dl_pdu_bytes_per_slot, this->f1u_pdu_size.value());
-      const unsigned last_dl_pdu_size     = f1u_dl_pdu_bytes_per_slot % this->f1u_pdu_size.value();
+      const unsigned last_dl_pdu_size =
+          std::max(PDCP_MAX_HDR_LEN, f1u_dl_pdu_bytes_per_slot % this->f1u_pdu_size.value());
 
       // Forward DL buffer occupancy updates to all bearers in a Round-robin fashion.
       for (unsigned i = 0; i != nof_dl_pdus_per_slot; ++i) {
@@ -836,20 +876,26 @@ public:
         pdcp_sn_list[bearer_idx] = (pdcp_sn_list[bearer_idx] + 1) % (1U << 18U);
         // We perform a deep-copy of the byte buffer to better simulate a real deployment, where there is stress over
         // the byte buffer pool.
-        auto pdu_copy = pdcp_pdu.deep_copy();
-        if (not pdu_copy.has_value()) {
-          test_logger.warning("Byte buffer segment pool depleted");
+        byte_buffer pdcp_pdu = test_helpers::create_pdcp_pdu(
+            pdcp_sn_size::size12bits, /* is_srb = */ false, pdcp_sn_list[bearer_idx], PDCP_MAX_HDR_LEN, 0);
+        auto payload_copy = pdcp_pdu_payload.deep_copy();
+        if (not payload_copy.has_value()) {
+          test_logger.warning("Failed to copy payload for PDCP PDU. Byte buffer segment pool depleted");
+          return;
+        }
+        if (not pdcp_pdu.append(std::move(payload_copy.value()))) {
+          test_logger.warning("Failed to append payload to PDCP PDU. Byte buffer segment pool depleted");
           return;
         }
         if (i == nof_dl_pdus_per_slot - 1 and last_dl_pdu_size != 0) {
           // If it is last DL PDU.
-          if (!pdu_copy.value().resize(last_dl_pdu_size)) {
+          if (!pdcp_pdu.resize(last_dl_pdu_size)) {
             test_logger.warning("Unable to resize PDU to {} bytes", last_dl_pdu_size);
             return;
           }
         }
-        f1u_dl_total_bytes.fetch_add(pdu_copy.value().length(), std::memory_order_relaxed);
-        du_notif->on_new_pdu(nru_dl_message{.t_pdu = std::move(pdu_copy.value())});
+        f1u_dl_total_bytes.fetch_add(pdcp_pdu.length(), std::memory_order_relaxed);
+        du_notif->on_new_pdu(nru_dl_message{.t_pdu = std::move(pdcp_pdu)});
       }
     })) {
       // keep trying to push new PDUs.
@@ -1091,7 +1137,7 @@ public:
   /// Queue of MAC CRC indication message to be sent in their expected receive slot.
   std::deque<mac_crc_indication_message> pending_crc;
 
-  byte_buffer pdcp_pdu;
+  byte_buffer pdcp_pdu_payload;
   byte_buffer mac_pdu;
 
   // - 8-bit R/LCID MAC subheader.
@@ -1120,16 +1166,16 @@ public:
 static cell_config_builder_params generate_custom_cell_config_builder_params(duplex_mode dplx_mode)
 {
   cell_config_builder_params params{};
-  params.scs_common = dplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30;
-  params.dl_arfcn   = dplx_mode == duplex_mode::FDD ? 530000 : 520002;
-  params.band       = band_helper::get_band_from_dl_arfcn(params.dl_arfcn);
+  params.scs_common     = dplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30;
+  params.dl_f_ref_arfcn = dplx_mode == duplex_mode::FDD ? 530000 : 520002;
+  params.band           = band_helper::get_band_from_dl_arfcn(params.dl_f_ref_arfcn);
   params.channel_bw_mhz =
-      dplx_mode == duplex_mode::FDD ? srsran::bs_channel_bandwidth_fr1::MHz20 : bs_channel_bandwidth_fr1::MHz100;
+      dplx_mode == duplex_mode::FDD ? srsran::bs_channel_bandwidth::MHz20 : bs_channel_bandwidth::MHz100;
   const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(
       params.channel_bw_mhz, params.scs_common, band_helper::get_freq_range(*params.band));
   static const uint8_t                                   ss0_idx = 0;
   std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-      band_helper::get_ssb_coreset0_freq_location(params.dl_arfcn,
+      band_helper::get_ssb_coreset0_freq_location(params.dl_f_ref_arfcn,
                                                   *params.band,
                                                   nof_crbs,
                                                   params.scs_common,
@@ -1211,10 +1257,10 @@ void benchmark_dl_ul_only_rlc_um(benchmarker&                          bm,
              bench.sim_phy.metrics.slot_count,
              bench.sim_phy.metrics.nof_dl_grants,
              bench.sim_phy.metrics.nof_dl_grants / (double)bench.sim_phy.metrics.slot_dl_count,
-             bench.sim_phy.metrics.dl_mbps(bench.cfg.cells[0].scs_common),
+             bench.sim_phy.metrics.dl_mbps(bench.cfg.ran.cells[0].scs_common),
              bench.sim_phy.metrics.nof_ul_grants,
              bench.sim_phy.metrics.nof_ul_grants / (double)bench.sim_phy.metrics.slot_ul_count,
-             bench.sim_phy.metrics.ul_mbps(bench.cfg.cells[0].scs_common));
+             bench.sim_phy.metrics.ul_mbps(bench.cfg.ran.cells[0].scs_common));
 }
 
 /// \brief Configure main thread priority and affinity to avoid interference from other processes (including stressors).
@@ -1236,7 +1282,7 @@ static void configure_main_thread(span<const unsigned> du_cell_cores)
 
   // Set main test thread to use same cores as du_cell.
   if (not du_cell_cores.empty()) {
-    cpu_set_t cpuset;
+    ::cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     for (unsigned i : du_cell_cores) {
       CPU_SET(i, &cpuset);
@@ -1264,6 +1310,7 @@ int main(int argc, char** argv)
   srslog::fetch_basic_logger("DU-F1-U").set_level(test_log_level);
   srslog::fetch_basic_logger("UE-MNG").set_level(test_log_level);
   srslog::fetch_basic_logger("DU-MNG").set_level(test_log_level);
+  srslog::fetch_basic_logger("METRICS").set_level(srslog::basic_levels::warning);
   srslog::init();
 
   std::string tracing_filename = "";

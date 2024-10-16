@@ -25,7 +25,7 @@
 
 #pragma once
 
-#include "../../../srsvec/simd.h"
+#include "srsran/srsvec/simd.h"
 #include "srsran/srsvec/zero.h"
 
 namespace srsran {
@@ -37,13 +37,13 @@ namespace srsran {
 /// \param[out] eq_symbols     Equalized channel symbols.
 /// \param[out] noise_vars     Noise variances after equalization.
 /// \param[in]  ch_symbols     Channel symbols, i.e., complex samples from the receive ports.
-/// \param[in]  ch_estimates   Estimated channel coefficients.
+/// \param[in]  ch_estimates_  Estimated channel coefficients.
 /// \param[in]  noise_var_est  Estimated noise variance. It is assumed to be the same for all receive ports.
 /// \param[in]  tx_scaling     Transmission gain scaling factor.
 template <unsigned RX_PORTS>
 void equalize_zf_2xn(span<cf_t>                            eq_symbols,
                      span<float>                           noise_vars,
-                     const channel_equalizer::re_list&     ch_symbols,
+                     const re_buffer_reader<cbf16_t>&      ch_symbols,
                      const channel_equalizer::ch_est_list& ch_estimates_,
                      float                                 noise_var_est,
                      float                                 tx_scaling)
@@ -53,7 +53,7 @@ void equalize_zf_2xn(span<cf_t>                            eq_symbols,
   static_assert(nof_ports >= nof_layers, "The number of ports must be greater than or equal to the number of layers.");
 
   unsigned       i_re   = 0;
-  const unsigned nof_re = ch_symbols.get_dimension_size(channel_equalizer::re_list::dims::re);
+  const unsigned nof_re = ch_symbols.get_nof_re();
 
   // Skip processing if the noise variance is NaN, infinity or negative.
   if (!std::isnormal(noise_var_est) || (noise_var_est < 0.0F)) {
@@ -65,20 +65,20 @@ void equalize_zf_2xn(span<cf_t>                            eq_symbols,
   // Views over input channel symbols, organized by receive port.
   std::array<span<const cbf16_t>, nof_ports> symbols_in;
   for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
-    symbols_in[i_port] = ch_symbols.get_view<>({i_port});
+    symbols_in[i_port] = ch_symbols.get_slice(i_port);
   }
 
   // Views over channel estimates, organized by receive port and transmit layer.
   std::array<std::array<span<const cbf16_t>, nof_layers>, nof_ports> ch_estimates;
   for (unsigned i_layer = 0; i_layer != nof_layers; ++i_layer) {
     for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
-      ch_estimates[i_port][i_layer] = ch_estimates_.get_view<>({i_port, i_layer});
+      ch_estimates[i_port][i_layer] = ch_estimates_.get_channel(i_port, i_layer);
     }
   }
 
 #if SRSRAN_SIMD_CF_SIZE
   simd_f_t tx_scaling_simd    = srsran_simd_f_set1(tx_scaling);
-  simd_f_t noise_var_est_simd = srsran_simd_f_set1(noise_var_est);
+  simd_f_t noise_var_est_simd = srsran_simd_f_set1(noise_var_est / tx_scaling);
   simd_f_t zero_simd          = srsran_simd_f_zero();
   simd_f_t infinity_simd      = srsran_simd_f_set1(std::numeric_limits<float>::infinity());
 
@@ -128,13 +128,11 @@ void equalize_zf_2xn(span<cf_t>                            eq_symbols,
     }
 
     // Calculate the denominators.
-    simd_f_t d_pinv  = srsran_simd_f_mul(tx_scaling_simd,
+    simd_f_t d_pinv = srsran_simd_f_mul(tx_scaling_simd,
                                         srsran_simd_f_sub(srsran_simd_f_mul(norm_sq_ch[0], norm_sq_ch[1]), xi_mod_sq));
-    simd_f_t d_nvars = srsran_simd_f_mul(tx_scaling_simd, d_pinv);
 
     // Calculate the reciprocal of the denominators.
-    simd_f_t d_pinv_rcp  = srsran_simd_f_rcp(d_pinv);
-    simd_f_t d_nvars_rcp = srsran_simd_f_rcp(d_nvars);
+    simd_f_t d_pinv_rcp = srsran_simd_f_rcp(d_pinv);
 
     // Apply Zero Forcing algorithm. This is equivalent to multiplying the input signal with the pseudo-inverse of the
     // channel matrix.
@@ -146,8 +144,8 @@ void equalize_zf_2xn(span<cf_t>                            eq_symbols,
     symbols_out_l1           = srsran_simd_cf_mul(symbols_out_l1, d_pinv_rcp);
 
     // Calculate post-equalization noise variances.
-    simd_f_t eq_noise_vars_l0 = srsran_simd_f_mul(srsran_simd_f_mul(norm_sq_ch[1], noise_var_est_simd), d_nvars_rcp);
-    simd_f_t eq_noise_vars_l1 = srsran_simd_f_mul(srsran_simd_f_mul(norm_sq_ch[0], noise_var_est_simd), d_nvars_rcp);
+    simd_f_t eq_noise_vars_l0 = srsran_simd_f_mul(srsran_simd_f_mul(norm_sq_ch[1], noise_var_est_simd), d_pinv_rcp);
+    simd_f_t eq_noise_vars_l1 = srsran_simd_f_mul(srsran_simd_f_mul(norm_sq_ch[0], noise_var_est_simd), d_pinv_rcp);
 
     // Return values in case of abnormal computation parameters. These include negative, zero, NAN or INF noise
     // variances and zero, NAN or INF channel estimation coefficients.

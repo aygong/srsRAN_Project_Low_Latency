@@ -55,11 +55,28 @@ simd_cf_interleaved operator*(const simd_cf_interleaved& re, const simd_cf_t& we
   return _mm256_fmaddsub_ps(re, weight.re, _mm256_mul_ps(_mm256_shuffle_ps(re, re, 0xb1), weight.im));
 }
 
+inline __m128i ps_to_cbf16(simd_cf_interleaved in)
+{
+  const __m256i bias = _mm256_set1_epi32(0x7fff);
+  const __m256i one  = _mm256_set1_epi32(0x1);
+
+  __m256i a_i32 = _mm256_castps_si256(in);
+
+  // Round to nearest even.
+  a_i32 = _mm256_add_epi32(a_i32, _mm256_add_epi32(bias, _mm256_and_si256(_mm256_srli_epi32(a_i32, 16), one)));
+
+  // Shift right 16 bits.
+  a_i32 = _mm256_srai_epi32(a_i32, 16);
+
+  // Pack both parts in 32-bit registers.
+  return _mm_packs_epi32(_mm256_extractf128_si256(a_i32, 0), _mm256_extractf128_si256(a_i32, 1));
+}
+
 } // namespace
 
-void channel_precoder_avx2::apply_precoding_port(span<cf_t>              port_re,
-                                                 const re_buffer_reader& input_re,
-                                                 span<const cf_t>        port_weights) const
+void channel_precoder_avx2::apply_precoding_port(span<cbf16_t>             port_re,
+                                                 const re_buffer_reader<>& input_re,
+                                                 span<const cf_t>          port_weights) const
 {
   unsigned nof_re     = input_re.get_nof_re();
   unsigned nof_layers = input_re.get_nof_slices();
@@ -96,15 +113,16 @@ void channel_precoder_avx2::apply_precoding_port(span<cf_t>              port_re
     }
 
     // Store.
-    _mm256_storeu_ps(reinterpret_cast<float*>(&port_re[i_re]), re_out);
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(&port_re[i_re]), ps_to_cbf16(re_out));
   }
 
   for (; i_re != nof_re; ++i_re) {
-    port_re[i_re] = layer_re_view_list[0][i_re] * port_weights[0];
+    cf_t sum = layer_re_view_list[0][i_re] * port_weights[0];
 
     for (unsigned i_layer = 1; i_layer != nof_layers; ++i_layer) {
-      port_re[i_re] += layer_re_view_list[i_layer][i_re] * port_weights[i_layer];
+      sum += layer_re_view_list[i_layer][i_re] * port_weights[i_layer];
     }
+    port_re[i_re] = sum;
   }
 }
 
@@ -193,7 +211,7 @@ static inline void layer4_map_and_ci8_to_cf(simd_cf_interleaved& out_l0,
   from_ci8_to_cf(out_l0, out_l1, out_l2, out_l3, tmp);
 }
 
-void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&              output,
+void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer<cbf16_t>&     output,
                                                           span<const ci8_t>              input,
                                                           const precoding_weight_matrix& precoding) const
 {
@@ -205,7 +223,7 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
   simd_cf_t weights[precoding_constants::MAX_NOF_PORTS][precoding_constants::MAX_NOF_LAYERS];
 
   // Views to store the precoded symbols.
-  span<cf_t> outputs[precoding_constants::MAX_NOF_PORTS];
+  span<cbf16_t> outputs[precoding_constants::MAX_NOF_PORTS];
 
   for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
     span<const cf_t> port_coeff = precoding.get_port_coefficients(i_port);
@@ -233,10 +251,10 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
         simd_cf_interleaved result3 = infp_3 * weights[i_port][0];
 
         // Store.
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re]), result0);
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re + AVX2_CF_SIZE]), result1);
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re + (2 * AVX2_CF_SIZE)]), result2);
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re + (3 * AVX2_CF_SIZE)]), result3);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re + 0 * AVX2_CF_SIZE]), ps_to_cbf16(result0));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re + 1 * AVX2_CF_SIZE]), ps_to_cbf16(result1));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re + 2 * AVX2_CF_SIZE]), ps_to_cbf16(result2));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re + 3 * AVX2_CF_SIZE]), ps_to_cbf16(result3));
       }
     }
   }
@@ -257,8 +275,8 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
         simd_cf_interleaved result1 = infp1_l0 * weights[i_port][0] + infp1_l1 * weights[i_port][1];
 
         // Store.
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re]), result0);
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re + AVX2_CF_SIZE]), result1);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re]), ps_to_cbf16(result0));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re + AVX2_CF_SIZE]), ps_to_cbf16(result1));
       }
     }
   }
@@ -282,7 +300,7 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
             infp_0 * weights[i_port][0] + infp_1 * weights[i_port][1] + infp_2 * weights[i_port][2];
 
         // Store.
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re]), result);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re]), ps_to_cbf16(result));
       }
     }
   }
@@ -303,7 +321,7 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
                                      infp_2 * weights[i_port][2] + infp_3 * weights[i_port][3];
 
         // Store.
-        _mm256_storeu_ps(reinterpret_cast<float*>(&outputs[i_port][i_re]), result);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&outputs[i_port][i_re]), ps_to_cbf16(result));
       }
     }
   }
@@ -312,7 +330,7 @@ void channel_precoder_avx2::apply_layer_map_and_precoding(re_buffer_writer&     
   for (; i_re != nof_re; ++i_re) {
     for (unsigned i_port = 0; i_port != nof_ports; ++i_port) {
       span<const cf_t> port_weights = precoding.get_port_coefficients(i_port);
-      span<cf_t>       port_re      = output.get_slice(i_port);
+      span<cbf16_t>    port_re      = output.get_slice(i_port);
 
       cf_t sum = to_cf(input[nof_layers * i_re]) * port_weights[0];
       for (unsigned i_layer = 1; i_layer != nof_layers; ++i_layer) {

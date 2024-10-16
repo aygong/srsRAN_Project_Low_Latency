@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "lib/du_manager/ran_resource_management/du_ran_resource_manager.h"
-#include "srsran/du_manager/du_manager_params.h"
+#include "lib/du/du_high/du_manager/ran_resource_management/du_ran_resource_manager.h"
+#include "srsran/du/du_high/du_manager/du_manager_params.h"
 #include "srsran/gtpu/gtpu_teid_pool.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/async/async_test_utils.h"
@@ -81,7 +81,17 @@ public:
   byte_buffer       last_rx_pdu;
   byte_buffer_chain last_tx_sdu = byte_buffer_chain::create().value();
 
-  void handle_pdu(byte_buffer pdu) override { last_rx_pdu = std::move(pdu); }
+  void             handle_pdu(byte_buffer pdu) override { last_rx_pdu = std::move(pdu); }
+  async_task<bool> handle_pdu_and_await_delivery(byte_buffer pdu, std::chrono::milliseconds timeout) override
+  {
+    last_rx_pdu = std::move(pdu);
+    return launch_no_op_task(true);
+  }
+  async_task<bool> handle_pdu_and_await_transmission(byte_buffer pdu, std::chrono::milliseconds timeout) override
+  {
+    last_rx_pdu = std::move(pdu);
+    return launch_no_op_task(true);
+  }
   void handle_sdu(byte_buffer_chain sdu) override { last_tx_sdu = std::move(sdu); }
   void handle_transmit_notification(uint32_t highest_pdcp_sn) override {}
   void handle_delivery_notification(uint32_t highest_pdcp_sn) override {}
@@ -209,9 +219,19 @@ public:
     f1u_bearers.erase(bearer_it);
   }
 
-  expected<std::string> get_du_bind_address(gnb_du_id_t du_index) override { return std::string("127.0.0.1"); }
+  expected<std::string> get_du_bind_address(gnb_du_id_t du_index) const override
+  {
+    if (f1u_ext_addr == "auto") {
+      return std::string("127.0.0.1");
+    }
+    return f1u_ext_addr;
+  }
 
   std::map<up_transport_layer_info, std::map<up_transport_layer_info, f1u_gw_bearer_dummy*>> f1u_bearers;
+
+  void set_f1u_ext_addr(const std::string& addr) { f1u_ext_addr = addr; }
+
+  std::string f1u_ext_addr = "auto";
 };
 
 class mac_test_dummy : public mac_cell_manager,
@@ -286,28 +306,31 @@ public:
     dummy_resource_updater(dummy_ue_resource_configurator_factory& parent_, du_ue_index_t ue_index_);
     ~dummy_resource_updater();
     du_ue_resource_update_response update(du_cell_index_t                       pcell_index,
-                                          const f1ap_ue_context_update_request& upd_req) override;
-    const cell_group_config&       get() override;
+                                          const f1ap_ue_context_update_request& upd_req,
+                                          const du_ue_resource_config*          reestablished_context) override;
+    const du_ue_resource_config&   get() override;
 
     du_ue_index_t                           ue_index;
     dummy_ue_resource_configurator_factory& parent;
   };
 
-  std::optional<du_ue_index_t>               last_ue_index;
-  std::optional<du_cell_index_t>             last_ue_pcell;
-  f1ap_ue_context_update_request             last_ue_ctx_upd;
-  std::map<du_ue_index_t, cell_group_config> ue_resource_pool;
-  cell_group_config                          next_context_update_result;
+  std::optional<du_ue_index_t>                   last_ue_index;
+  std::optional<du_cell_index_t>                 last_ue_pcell;
+  f1ap_ue_context_update_request                 last_ue_ctx_upd;
+  std::map<du_ue_index_t, du_ue_resource_config> ue_resource_pool;
+  du_ue_resource_config                          next_context_update_result;
+  du_ue_resource_update_response                 next_config_resp;
 
   dummy_ue_resource_configurator_factory();
 
-  ue_ran_resource_configurator create_ue_resource_configurator(du_ue_index_t   ue_index,
-                                                               du_cell_index_t pcell_index) override;
+  expected<ue_ran_resource_configurator, std::string>
+  create_ue_resource_configurator(du_ue_index_t ue_index, du_cell_index_t pcell_index) override;
 };
 
 f1ap_ue_context_update_request create_f1ap_ue_context_update_request(du_ue_index_t                   ue_idx,
                                                                      std::initializer_list<srb_id_t> srbs_to_addmod,
-                                                                     std::initializer_list<drb_id_t> drbs_to_addmod);
+                                                                     std::initializer_list<drb_id_t> drbs_to_add,
+                                                                     std::initializer_list<drb_id_t> drbs_to_mod = {});
 
 class du_manager_test_bench
 {

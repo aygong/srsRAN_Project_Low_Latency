@@ -37,7 +37,7 @@ detail::byte_buffer_segment_pool& srsran::detail::get_default_byte_buffer_segmen
 {
   // Initialize byte buffer segment pool, if not yet initialized.
   // Note: In case of unit tests, this function will be called rather than init_byte_buffer_segment_pool(...).
-  constexpr static size_t default_byte_buffer_segment_pool_size = 16384;
+  static constexpr size_t default_byte_buffer_segment_pool_size = 16384;
   static auto&            pool = detail::byte_buffer_segment_pool::get_instance(default_byte_buffer_segment_pool_size,
                                                                      byte_buffer_segment_pool_default_segment_size());
   return pool;
@@ -51,6 +51,18 @@ void srsran::init_byte_buffer_segment_pool(std::size_t nof_segments, std::size_t
                             nof_segments,
                             pool.nof_memory_blocks());
   report_fatal_error_if_not(memory_block_size > 64U, "memory blocks must be larger than the segment control header");
+}
+
+size_t srsran::get_byte_buffer_segment_pool_capacity()
+{
+  auto& pool = detail::byte_buffer_segment_pool::get_instance();
+  return pool.nof_memory_blocks();
+}
+
+size_t srsran::get_byte_buffer_segment_pool_current_size_approx()
+{
+  auto& pool = detail::byte_buffer_segment_pool::get_instance();
+  return pool.get_central_cache_approx_size() + pool.get_local_cache_size();
 }
 
 // ------- byte_buffer class -------

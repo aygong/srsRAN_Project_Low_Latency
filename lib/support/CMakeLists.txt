@@ -18,9 +18,8 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-add_subdirectory(build_info)
+add_subdirectory(versioning)
 add_subdirectory(network)
-add_subdirectory(version)
 
 set(SOURCES
         executors/priority_task_queue.cpp
@@ -29,6 +28,7 @@ set(SOURCES
         executors/task_worker.cpp
         executors/task_worker_pool.cpp
         executors/unique_thread.cpp
+        executors/execution_context_description.cpp
         backtrace.cpp
         bit_encoding.cpp
         byte_buffer.cpp
@@ -40,6 +40,7 @@ set(SOURCES
         sysinfo.cpp
         timers.cpp
         math_utils.cpp
+	dynlink_manager.cpp
         )
 
 add_library(srsran_support STATIC ${SOURCES})

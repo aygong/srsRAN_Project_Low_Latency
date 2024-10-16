@@ -26,10 +26,10 @@
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/asn1/rrc_nr/ue_cap.h"
+#include "srsran/asn1/rrc_nr/ul_dcch_msg_ies.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/cu_cp/cu_cp_ue_messages.h"
 #include "srsran/ran/rnti.h"
-#include "srsran/rrc/rrc.h"
 #include "srsran/rrc/rrc_ue_config.h"
 #include "srsran/security/security.h"
 #include "srsran/support/async/async_task.h"
@@ -54,6 +54,48 @@ public:
 
   /// \brief Cancel currently running transactions.
   virtual void stop() = 0;
+};
+
+enum ue_context_release_cause : uint16_t {
+  radio_network = 0,
+  transport     = 1,
+  protocol      = 2,
+  misc          = 3,
+  choice_ext    = 4,
+  nulltype      = 5
+};
+
+/// This interface represents the data entry point for the RRC UE receiving UL PDUs on the CCCH and DCCH logical
+/// channel. The lower-layers will use this class to pass PDUs into the RRC.
+class rrc_ul_pdu_handler
+{
+public:
+  virtual ~rrc_ul_pdu_handler() = default;
+
+  /// Handle the incoming PDU on the UL-CCCH logical channel.
+  virtual void handle_ul_ccch_pdu(byte_buffer pdu) = 0;
+
+  /// Handle the incoming SRB PDCP PDU on the UL-DCCH logical channel.
+  virtual void handle_ul_dcch_pdu(const srb_id_t srb_id, byte_buffer pdu) = 0;
+};
+
+/// This interface represents the data entry point for the RRC receiving NAS and control messages from the NGAP.
+/// The higher-layers will use this class to pass PDUs into the RRC.
+class rrc_ngap_message_handler
+{
+public:
+  virtual ~rrc_ngap_message_handler() = default;
+
+  /// \brief Handle the received Downlink NAS Transport message.
+  /// \param[in] nas_pdu The received NAS PDU.
+  virtual void handle_dl_nas_transport_message(byte_buffer nas_pdu) = 0;
+
+  /// \brief Get the packed UE Radio Access Cap Info.
+  /// \returns The packed UE Radio Access Cap Info.
+  virtual byte_buffer get_packed_ue_radio_access_cap_info() const = 0;
+
+  /// \brief Get the packed Handover Preparation Message.
+  virtual byte_buffer get_packed_handover_preparation_message() = 0;
 };
 
 /// Interface to notify F1AP about a new SRB PDU.
@@ -90,21 +132,6 @@ struct srb_creation_message {
   srb_pdcp_config pdcp_cfg;
 };
 
-/// Interface to handle the creation of SRBs.
-class rrc_ue_srb_handler
-{
-public:
-  virtual ~rrc_ue_srb_handler() = default;
-
-  /// \brief Instruct the RRC UE to create a new SRB. It creates all
-  /// required intermediate objects (e.g. PDCP) and connects them with one another.
-  /// \param[in] msg The UE index, SRB ID and config.
-  virtual void create_srb(const srb_creation_message& msg) = 0;
-
-  /// \brief Get all SRBs of the UE.
-  virtual static_vector<srb_id_t, MAX_NOF_SRBS> get_srbs() = 0;
-};
-
 /// Interface used by the RRC reconfiguration procedure to
 /// invoke actions carried out by the main RRC UE class (i.e. send DL message, remove UE).
 class rrc_ue_reconfiguration_proc_notifier
@@ -132,14 +159,6 @@ public:
   /// \brief Notify about a DL DCCH message.
   /// \param[in] dl_dcch_msg The DL DCCH message.
   virtual void on_new_dl_dcch(srb_id_t srb_id, const asn1::rrc_nr::dl_dcch_msg_s& dl_dcch_msg) = 0;
-
-  /// \brief Setup AS security in the UE. This includes configuring
-  /// the PDCP entity security on SRB1 with the new AS keys.
-  virtual void on_new_as_security_context() = 0;
-
-  /// \brief Setup AS security in the UE. This includes configuring
-  /// the PDCP entity security on SRB1 with the new AS keys.
-  virtual void on_security_context_sucessful() = 0;
 };
 
 /// Interface used by the RRC reestablishment procedure to
@@ -159,11 +178,11 @@ public:
   virtual void on_new_as_security_context() = 0;
 };
 
-/// Interface to notify about NAS messages.
-class rrc_ue_nas_notifier
+/// Interface to notify about NGAP messages.
+class rrc_ue_ngap_notifier
 {
 public:
-  virtual ~rrc_ue_nas_notifier() = default;
+  virtual ~rrc_ue_ngap_notifier() = default;
 
   /// \brief Notify about the Initial UE Message.
   /// \param[in] msg The initial UE message.
@@ -172,6 +191,11 @@ public:
   /// \brief Notify about an Uplink NAS Transport message.
   /// \param[in] msg The Uplink NAS Transport message.
   virtual void on_ul_nas_transport_message(const cu_cp_ul_nas_transport& msg) = 0;
+
+  /// \brief Notify about the reception of an inter CU handove related RRC Reconfiguration Complete.
+  virtual void on_inter_cu_ho_rrc_recfg_complete_received(const ue_index_t           ue_index,
+                                                          const nr_cell_global_id_t& cgi,
+                                                          const unsigned             tac) = 0;
 };
 
 struct rrc_reconfiguration_response_message {
@@ -179,16 +203,10 @@ struct rrc_reconfiguration_response_message {
   bool       success  = false;
 };
 
-/// Interface to notify about control messages.
-class rrc_ue_control_notifier
-{
-public:
-  virtual ~rrc_ue_control_notifier() = default;
-
-  /// \brief Notify about the reception of an inter CU handove related RRC Reconfiguration Complete.
-  virtual void on_inter_cu_ho_rrc_recfg_complete_received(const ue_index_t           ue_index,
-                                                          const nr_cell_global_id_t& cgi,
-                                                          const unsigned             tac) = 0;
+struct rrc_ue_security_mode_command_context {
+  unsigned            transaction_id;
+  nr_cell_global_id_t sp_cell_id;
+  byte_buffer         rrc_ue_security_mode_command_pdu;
 };
 
 struct rrc_ue_release_context {
@@ -208,6 +226,19 @@ class rrc_ue_control_message_handler
 public:
   virtual ~rrc_ue_control_message_handler() = default;
 
+  /// \brief Get the packed Security Mode Command.
+  /// \returns The Security Mode Command context.
+  virtual rrc_ue_security_mode_command_context get_security_mode_command_context() = 0;
+
+  /// \brief Await a RRC Security Mode Complete.
+  /// \param[in] transaction_id The transaction ID of the RRC Security Mode Complete.
+  /// \returns True if the RRC Security Mode Complete was received, false otherwise.
+  virtual async_task<bool> handle_security_mode_complete_expected(uint8_t transaction_id) = 0;
+
+  /// \brief Get the packed UE Capability RAT Container List.
+  /// \returns The packed UE Capability RAT Container List.
+  virtual byte_buffer get_packed_ue_capability_rat_container_list() const = 0;
+
   /// \brief Handle an RRC Reconfiguration Request.
   /// \param[in] msg The new RRC Reconfiguration Request.
   /// \returns The result of the rrc reconfiguration.
@@ -223,6 +254,11 @@ public:
   /// \param[in] transaction_id The transaction ID of the RRC Reconfiguration Complete.
   /// \returns True if the RRC Reconfiguration Complete was received, false otherwise.
   virtual async_task<bool> handle_handover_reconfiguration_complete_expected(uint8_t transaction_id) = 0;
+
+  /// \brief Store UE capabilities received from the NGAP.
+  /// \param[in] ue_capabilities The UE capabilities.
+  /// \returns True if the UE capabilities were stored successfully, false otherwise.
+  virtual bool store_ue_capabilities(byte_buffer ue_capabilities) = 0;
 
   /// \brief Initiate the UE capability transfer procedure.
   virtual async_task<bool> handle_rrc_ue_capability_transfer_request(const rrc_ue_capability_transfer_request& msg) = 0;
@@ -240,7 +276,7 @@ public:
   /// \brief Get the RRC measurement config for the current serving cell of the UE.
   /// \params[in] current_meas_config The current meas config of the UE (if applicable).
   /// \return The measurement config, if present.
-  virtual std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config) = 0;
+  virtual std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
 
   /// \brief Handle the handover command RRC PDU.
   /// \param[in] cmd The handover command RRC PDU.
@@ -253,26 +289,16 @@ public:
   virtual byte_buffer get_rrc_handover_command(const rrc_reconfiguration_procedure_request& request,
                                                unsigned                                     transaction_id) = 0;
 
+  /// \brief Get the packed RRC Handover Preparation Message.
   virtual byte_buffer get_packed_handover_preparation_message() = 0;
-};
 
-/// Handler to initialize the security context from NGAP.
-class rrc_ue_init_security_context_handler
-{
-public:
-  virtual ~rrc_ue_init_security_context_handler() = default;
+  /// \brief Instruct the RRC UE to create a new SRB. It creates all
+  /// required intermediate objects (e.g. PDCP) and connects them with one another.
+  /// \param[in] msg The UE index, SRB ID and config.
+  virtual void create_srb(const srb_creation_message& msg) = 0;
 
-  /// \brief Handle the received Init Security Context.
-  virtual async_task<bool> handle_init_security_context() = 0;
-};
-
-/// Handler to get the handover preparation context to the NGAP.
-class rrc_ue_handover_preparation_handler
-{
-public:
-  virtual ~rrc_ue_handover_preparation_handler() = default;
-
-  virtual byte_buffer get_packed_handover_preparation_message() = 0;
+  /// \brief Get all SRBs of the UE.
+  virtual static_vector<srb_id_t, MAX_NOF_SRBS> get_srbs() = 0;
 };
 
 class rrc_ue_cu_cp_ue_notifier
@@ -314,12 +340,12 @@ public:
 
 /// Struct containing all information needed from the old RRC UE for Reestablishment.
 struct rrc_ue_reestablishment_context_response {
-  ue_index_t                               ue_index = ue_index_t::invalid;
-  security::security_context               sec_context;
-  std::optional<asn1::rrc_nr::ue_nr_cap_s> capabilities;
-  up_context                               up_ctx;
-  bool                                     old_ue_fully_attached   = false;
-  bool                                     reestablishment_ongoing = false;
+  ue_index_t                                               ue_index = ue_index_t::invalid;
+  security::security_context                               sec_context;
+  std::optional<asn1::rrc_nr::ue_cap_rat_container_list_l> capabilities_list;
+  up_context                                               up_ctx;
+  bool                                                     old_ue_fully_attached   = false;
+  bool                                                     reestablishment_ongoing = false;
 };
 
 /// Interface to notify about UE context updates.
@@ -329,8 +355,9 @@ public:
   virtual ~rrc_ue_context_update_notifier() = default;
 
   /// \brief Notifies that a new RRC UE needs to be setup.
+  /// \param[in] plmn The PLMN of the UE.
   /// \return True if the UE is accepted.
-  virtual bool on_ue_setup_request() = 0;
+  virtual bool on_ue_setup_request(plmn_identity plmn) = 0;
 
   /// \brief Notify about the reception of an RRC Reestablishment Request.
   /// \param[in] old_pci The old PCI contained in the RRC Reestablishment Request.
@@ -398,32 +425,24 @@ public:
 
 /// Combined entry point for the RRC UE handling.
 /// It will contain getters for the interfaces for the various logical channels handled by RRC.
-class rrc_ue_interface : public rrc_ul_ccch_pdu_handler,
-                         public rrc_ul_dcch_pdu_handler,
-                         public rrc_dl_nas_message_handler,
-                         public rrc_ue_srb_handler,
+class rrc_ue_interface : public rrc_ul_pdu_handler,
+                         public rrc_ngap_message_handler,
                          public rrc_ue_control_message_handler,
-                         public rrc_ue_init_security_context_handler,
                          public rrc_ue_setup_proc_notifier,
                          public rrc_ue_security_mode_command_proc_notifier,
                          public rrc_ue_reconfiguration_proc_notifier,
                          public rrc_ue_context_handler,
-                         public rrc_ue_reestablishment_proc_notifier,
-                         public rrc_ue_handover_preparation_handler
+                         public rrc_ue_reestablishment_proc_notifier
 {
 public:
   rrc_ue_interface()          = default;
   virtual ~rrc_ue_interface() = default;
 
-  virtual rrc_ue_controller&                    get_controller()                           = 0;
-  virtual rrc_ul_ccch_pdu_handler&              get_ul_ccch_pdu_handler()                  = 0;
-  virtual rrc_ul_dcch_pdu_handler&              get_ul_dcch_pdu_handler()                  = 0;
-  virtual rrc_dl_nas_message_handler&           get_rrc_dl_nas_message_handler()           = 0;
-  virtual rrc_ue_srb_handler&                   get_rrc_ue_srb_handler()                   = 0;
-  virtual rrc_ue_control_message_handler&       get_rrc_ue_control_message_handler()       = 0;
-  virtual rrc_ue_init_security_context_handler& get_rrc_ue_init_security_context_handler() = 0;
-  virtual rrc_ue_context_handler&               get_rrc_ue_context_handler()               = 0;
-  virtual rrc_ue_handover_preparation_handler&  get_rrc_ue_handover_preparation_handler()  = 0;
+  virtual rrc_ue_controller&              get_controller()                     = 0;
+  virtual rrc_ul_pdu_handler&             get_ul_pdu_handler()                 = 0;
+  virtual rrc_ngap_message_handler&       get_rrc_ngap_message_handler()       = 0;
+  virtual rrc_ue_control_message_handler& get_rrc_ue_control_message_handler() = 0;
+  virtual rrc_ue_context_handler&         get_rrc_ue_context_handler()         = 0;
 };
 
 } // namespace srs_cu_cp

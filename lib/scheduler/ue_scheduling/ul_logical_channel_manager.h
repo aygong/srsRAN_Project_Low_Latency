@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "harq_process.h"
 #include "srsran/mac/bsr_format.h"
 #include "srsran/mac/mac_pdu_format.h"
 #include "srsran/scheduler/config/logical_channel_config.h"
@@ -113,7 +112,7 @@ private:
   static unsigned add_upper_layer_header_bytes(lcg_id_t lcgid, unsigned payload_bytes)
   {
     // Estimate of the number of bytes required for the upper layer header.
-    constexpr static unsigned RLC_HEADER_SIZE_ESTIMATE = 3U;
+    static constexpr unsigned RLC_HEADER_SIZE_ESTIMATE = 3U;
 
     if (payload_bytes == 0 or lcgid == 0) {
       // In case of no payload or LCG-ID == 0, there is no need to account for upper layer header.

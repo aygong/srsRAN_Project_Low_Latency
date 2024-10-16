@@ -22,13 +22,12 @@
 
 #pragma once
 
-#include "lib/du_manager/converters/f1ap_configuration_helpers.h"
+#include "lib/du/du_high/du_manager/converters/f1ap_configuration_helpers.h"
 #include "srsran/adt/slotted_array.h"
 #include "srsran/asn1/f1ap/f1ap_ies.h"
-#include "srsran/f1ap/common/f1ap_common.h"
-#include "srsran/f1ap/common/f1ap_message.h"
 #include "srsran/f1ap/du/f1ap_du.h"
 #include "srsran/f1ap/du/f1ap_du_factory.h"
+#include "srsran/f1ap/f1ap_message.h"
 #include "srsran/f1ap/gateways/f1c_connection_client.h"
 #include "srsran/f1u/du/f1u_rx_sdu_notifier.h"
 #include "srsran/support/async/async_no_op_task.h"
@@ -61,10 +60,11 @@ public:
   f1ap_du*                  f1ap;
 
   // DU manager -> F1AP.
-  f1ap_ue_creation_request                      next_ue_creation_req;
-  std::optional<f1ap_ue_creation_response>      last_ue_creation_response;
-  f1ap_ue_configuration_request                 next_ue_cfg_req;
-  std::optional<f1ap_ue_configuration_response> last_ue_cfg_response;
+  f1ap_ue_creation_request                               next_ue_creation_req;
+  std::optional<f1ap_ue_creation_response>               last_ue_creation_response;
+  f1ap_ue_configuration_request                          next_ue_cfg_req;
+  std::optional<f1ap_ue_configuration_response>          last_ue_cfg_response;
+  std::optional<std::pair<du_ue_index_t, du_ue_index_t>> last_reestablishment_ue_indexes;
 
   // F1AP procedures.
   std::optional<f1ap_ue_context_creation_request> last_ue_context_creation_req;
@@ -121,7 +121,10 @@ public:
 
   async_task<void> request_ue_drb_deactivation(du_ue_index_t ue_index) override { return launch_no_op_task(); }
 
-  void notify_reestablishment_of_old_ue(du_ue_index_t new_ue_index, du_ue_index_t old_ue_index) override {}
+  void notify_reestablishment_of_old_ue(du_ue_index_t new_ue_index, du_ue_index_t old_ue_index) override
+  {
+    last_reestablishment_ue_indexes = std::make_pair(new_ue_index, old_ue_index);
+  }
 
   /// \brief Retrieve task scheduler specific to a given UE.
   f1ap_ue_task_scheduler& get_ue_handler(du_ue_index_t ue_index) override { return ue_sched; }
@@ -144,9 +147,6 @@ f1_setup_request_message generate_f1_setup_request_message();
 
 /// \brief Generate F1AP ASN.1 DRB AM Setup configuration.
 asn1::f1ap::drbs_to_be_setup_item_s generate_drb_am_setup_item(drb_id_t drbid);
-
-/// \brief Generate an F1AP UE Context Setup Request message with specified list of DRBs.
-f1ap_message generate_ue_context_setup_request(const std::initializer_list<drb_id_t>& drbs_to_add);
 
 /// \brief Generate F1AP ASN.1 DRB AM Setup configuration.
 asn1::f1ap::drbs_to_be_setup_mod_item_s generate_drb_am_mod_item(drb_id_t drbid);

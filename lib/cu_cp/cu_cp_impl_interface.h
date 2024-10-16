@@ -76,6 +76,12 @@ public:
   /// \return True if the security context was successfully initialized, false otherwise.
   virtual bool handle_handover_request(ue_index_t ue_index, security::security_context sec_ctxt) = 0;
 
+  /// \brief Handle the reception of a new Initial Context Setup Request.
+  /// \param[in] request The received Initial Context Setup Request.
+  /// \returns The Initial Context Setup Response or the Initial Context Setup Failure.
+  virtual async_task<expected<ngap_init_context_setup_response, ngap_init_context_setup_failure>>
+  handle_new_initial_context_setup_request(const ngap_init_context_setup_request& request) = 0;
+
   /// \brief Handle the reception of a new PDU Session Resource Setup Request.
   /// \param[in] request The received PDU Session Resource Setup Request.
   /// \returns The PDU Session Resource Setup Response.
@@ -123,54 +129,11 @@ public:
   virtual void handle_bearer_context_inactivity_notification(const cu_cp_inactivity_notification& msg) = 0;
 };
 
-/// Methods used by CU-CP to fetch or request removal of an RRC UE from the RRC DU
-class cu_cp_rrc_ue_notifier
-{
-public:
-  virtual ~cu_cp_rrc_ue_notifier() = default;
-
-  /// \brief Remove the context of a UE at the RRC DU.
-  /// \param[in] ue_index The index of the UE to fetch.
-  /// \returns The RRC UE interface if the UE exists, nullptr otherwise.
-  virtual rrc_ue_interface* find_rrc_ue(ue_index_t ue_index) = 0;
-
-  /// \brief Remove the context of a UE at the RRC DU.
-  /// \param[in] ue_index The index of the UE to remove.
-  virtual void remove_ue(ue_index_t ue_index) = 0;
-};
-
-/// Methods used by CU-CP to request RRC DU statistics
-class cu_cp_rrc_du_statistics_notifier
-{
-public:
-  virtual ~cu_cp_rrc_du_statistics_notifier() = default;
-
-  /// \brief Get the number of UEs registered at the RRC DU.
-  /// \return The number of UEs.
-  virtual size_t get_nof_ues() const = 0;
-};
-
 /// Interface used to handle DU specific procedures
 class cu_cp_du_event_handler
 {
 public:
   virtual ~cu_cp_du_event_handler() = default;
-
-  /// \brief Handle about a successful F1AP and RRC creation.
-  /// \param[in] du_index The index of the DU the UE is connected to.
-  /// \param[in] f1ap_handler Handler to the F1AP to initiate the UE context removal.
-  /// \param[in] f1ap_statistic_handler Handler to the F1AP statistic interface.
-  /// \param[in] rrc_handler Handler to the RRC DU to initiate the RRC UE removal.
-  /// \param[in] rrc_statistic_handler Handler to the RRC DU statistic interface.
-  virtual void handle_du_processor_creation(du_index_t                       du_index,
-                                            f1ap_ue_context_removal_handler& f1ap_handler,
-                                            f1ap_statistics_handler&         f1ap_statistic_handler,
-                                            rrc_ue_handler&                  rrc_handler,
-                                            rrc_du_statistics_handler&       rrc_statistic_handler) = 0;
-
-  /// \brief Handle DU removal event.
-  /// \param[in] du_index The index of the DU.
-  virtual void handle_du_processor_removal(du_index_t du_index) = 0;
 
   /// \brief Handle a RRC UE creation notification from the DU processor.
   /// \param[in] ue_index The index of the UE.
@@ -333,6 +296,7 @@ public:
   virtual ~cu_cp_impl_interface() = default;
 
   virtual cu_cp_e1ap_event_handler&              get_cu_cp_e1ap_handler()               = 0;
+  virtual cu_cp_ngap_handler&                    get_cu_cp_ngap_handler()               = 0;
   virtual cu_cp_rrc_ue_interface&                get_cu_cp_rrc_ue_interface()           = 0;
   virtual cu_cp_ue_context_manipulation_handler& get_cu_cp_ue_context_handler()         = 0;
   virtual cu_cp_measurement_handler&             get_cu_cp_measurement_handler()        = 0;

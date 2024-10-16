@@ -23,6 +23,7 @@
 #include "ofh_uplane_message_builder_impl.h"
 #include "../serdes/ofh_cuplane_constants.h"
 #include "../support/network_order_binary_serializer.h"
+#include "srsran/ofh/compression/compression_properties.h"
 #include "srsran/ofh/compression/iq_compressor.h"
 #include "srsran/ran/resource_block.h"
 
@@ -108,7 +109,7 @@ static void build_section1_header(network_order_binary_serializer& serializer, c
 }
 
 void uplane_message_builder_impl::serialize_iq_data(network_order_binary_serializer& serializer,
-                                                    span<const cf_t>                 iq_data,
+                                                    span<const cbf16_t>              iq_data,
                                                     unsigned                         nof_prbs,
                                                     const ru_compression_params&     compr_params)
 {
@@ -116,10 +117,6 @@ void uplane_message_builder_impl::serialize_iq_data(network_order_binary_seriali
                nof_prbs,
                to_string(compr_params.type),
                compr_params.data_width);
-
-  std::array<compressed_prb, MAX_NOF_PRBS> compressed_prbs_buffer;
-  span<compressed_prb>                     compressed_prbs(compressed_prbs_buffer.data(), nof_prbs);
-  compressor.compress(compressed_prbs, iq_data, compr_params);
 
   // Serialize compression header.
   serialize_compression_header(serializer, compr_params);
@@ -134,18 +131,16 @@ void uplane_message_builder_impl::serialize_iq_data(network_order_binary_seriali
     }
   }
 
-  for (const auto& c_prb : compressed_prbs) {
-    // Serialize compression parameter.
-    if (compr_params.type != compression_type::none && compr_params.type != compression_type::modulation) {
-      serializer.write(c_prb.get_compression_param());
-    }
-    // Serialize compressed data.
-    serializer.write(c_prb.get_packed_data());
-  }
+  // Size in bytes of one compressed PRB using the given compression parameters.
+  units::bytes prb_size           = get_compressed_prb_size(compr_params);
+  units::bytes bytes_to_serialize = prb_size * nof_prbs;
+
+  span<uint8_t> compr_prb_view = serializer.get_view_and_advance(bytes_to_serialize.value());
+  compressor.compress(compr_prb_view, iq_data, compr_params);
 }
 
 unsigned uplane_message_builder_impl::build_message(span<uint8_t>                buffer,
-                                                    span<const cf_t>             iq_data,
+                                                    span<const cbf16_t>          iq_data,
                                                     const uplane_message_params& params)
 {
   srsran_assert(params.sect_type == section_type::type_1, "Unsupported section type");

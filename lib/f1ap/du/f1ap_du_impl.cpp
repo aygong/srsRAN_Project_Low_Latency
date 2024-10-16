@@ -21,9 +21,9 @@
  */
 
 #include "f1ap_du_impl.h"
-#include "../common/asn1_helpers.h"
-#include "../common/log_helpers.h"
+#include "asn1_helpers.h"
 #include "f1ap_du_connection_handler.h"
+#include "log_helpers.h"
 #include "procedures/f1ap_du_removal_procedure.h"
 #include "procedures/f1ap_du_setup_procedure.h"
 #include "procedures/f1ap_du_ue_context_release_procedure.h"
@@ -32,7 +32,7 @@
 #include "ue_context/f1ap_du_ue_config_update.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/asn1/f1ap/f1ap.h"
-#include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/f1ap_message.h"
 #include "srsran/f1ap/gateways/f1c_connection_client.h"
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/support/async/event_signal.h"
@@ -83,13 +83,14 @@ f1ap_du_impl::f1ap_du_impl(f1c_connection_client&      f1c_client_handler_,
                            f1ap_du_configurator&       du_mng_,
                            task_executor&              ctrl_exec_,
                            du_high_ue_executor_mapper& ue_exec_mapper_,
-                           f1ap_du_paging_notifier&    paging_notifier_) :
+                           f1ap_du_paging_notifier&    paging_notifier_,
+                           timer_manager&              timers_) :
   logger(srslog::fetch_basic_logger("DU-F1")),
   ctrl_exec(ctrl_exec_),
   du_mng(du_mng_),
   paging_notifier(paging_notifier_),
   connection_handler(f1c_client_handler_, *this, du_mng, ctrl_exec),
-  ues(du_mng, ctrl_exec, ue_exec_mapper_),
+  ues(du_mng, ctrl_exec, ue_exec_mapper_, timers_),
   events(std::make_unique<f1ap_event_manager>(du_mng.get_timer_factory()))
 {
 }
@@ -223,7 +224,7 @@ void f1ap_du_impl::handle_dl_rrc_message_transfer(const asn1::f1ap::dl_rrc_msg_t
   gnb_du_ue_f1ap_id_t gnb_du_ue_f1ap_id = int_to_gnb_du_ue_f1ap_id(msg->gnb_du_ue_f1ap_id);
 
   // [TS38.473, 8.4.2.2.] If a UE-associated logical F1-connection exists, the DL RRC MESSAGE TRANSFER message shall
-  // contain the gNBDU UE F1AP ID IE, which should be used by gNB-DU to lookup the stored UE context.
+  // contain the gNB DU UE F1AP ID IE, which should be used by gNB-DU to lookup the stored UE context.
   f1ap_du_ue* ue = ues.find(gnb_du_ue_f1ap_id);
 
   if (ue == nullptr) {
@@ -233,6 +234,28 @@ void f1ap_du_impl::handle_dl_rrc_message_transfer(const asn1::f1ap::dl_rrc_msg_t
                    gnb_du_ue_f1ap_id);
     // TODO.
     return;
+  }
+
+  if (msg->old_gnb_du_ue_f1ap_id_present) {
+    // [TS38.473, 8.4.2.2] The DL RRC MESSAGE TRANSFER message shall include, if available, the old gNB-DU UE F1AP ID
+    // IE so that the gNB-DU can retrieve the existing UE context in RRC connection reestablishment procedure, as
+    // defined in TS 38.401 [4].
+    // [TS38.473, 8.4.2.2] If the gNB-DU identifies the UE-associated logical F1-connection by the gNB-DU UE F1AP ID IE
+    // in the DL RRC MESSAGE TRANSFER message and the old gNB-DU UE F1AP ID IE is included, it shall release the old
+    // gNB-DU UE F1AP ID and the related configurations associated with the old gNB-DU UE F1AP ID.
+    const gnb_du_ue_f1ap_id_t old_gnb_du_ue_f1ap_id = int_to_gnb_du_ue_f1ap_id(msg->old_gnb_du_ue_f1ap_id);
+    f1ap_du_ue*               old_ue                = ues.find(old_gnb_du_ue_f1ap_id);
+    if (old_ue != nullptr) {
+      // Delete gNB-CU-UE-F1AP-Id so that the UE is not reachable by the CU, and the gNB-CU-UE-F1AP-Id can be reused.
+      old_ue->context.gnb_cu_ue_f1ap_id = gnb_cu_ue_f1ap_id_t::invalid;
+      // Mark the old UE so that no UE context release procedure gets initiated.
+      old_ue->context.marked_for_release = true;
+
+      // Notify DU that the old UE needs to be released.
+      du_mng.notify_reestablishment_of_old_ue(ue->context.ue_index, old_ue->context.ue_index);
+    } else {
+      logger.warning("old gNB-DU UE F1AP ID={} not found", old_gnb_du_ue_f1ap_id);
+    }
   }
 
   // Handle gNB-CU UE F1AP ID.
@@ -247,19 +270,6 @@ void f1ap_du_impl::handle_dl_rrc_message_transfer(const asn1::f1ap::dl_rrc_msg_t
     ue->context.gnb_cu_ue_f1ap_id = int_to_gnb_cu_ue_f1ap_id(msg->new_gnb_cu_ue_f1ap_id);
   }
 
-  if (msg->old_gnb_du_ue_f1ap_id_present) {
-    // > If the gNB-DU identifies the UE-associated logical F1-connection by the gNB-DU UE F1AP ID IE in the
-    // DL RRC MESSAGE TRANSFER message and the old gNB-DU UE F1AP ID IE is included, it shall release the old gNB-DU
-    // UE F1AP ID and the related configurations associated with the old gNB-DU UE F1AP ID.
-    const gnb_du_ue_f1ap_id_t old_gnb_du_ue_f1ap_id = int_to_gnb_du_ue_f1ap_id(msg->old_gnb_du_ue_f1ap_id);
-    f1ap_du_ue*               old_ue                = ues.find(old_gnb_du_ue_f1ap_id);
-    if (old_ue != nullptr) {
-      du_mng.notify_reestablishment_of_old_ue(ue->context.ue_index, old_ue->context.ue_index);
-    } else {
-      logger.warning("old gNB-DU UE F1AP ID={} not found", old_gnb_du_ue_f1ap_id);
-    }
-  }
-
   if (ue->context.rrc_state == f1ap_ue_context::ue_rrc_state::no_config and not msg->old_gnb_du_ue_f1ap_id_present) {
     // If the UE has no dedicated configuration yet, we assume that this DL RRC Message Transfer contains it (e.g.
     // RRC Setup or RRC Reconfiguration). The only exception is when this DL RRC Message Transfer is an RRC
@@ -271,18 +281,15 @@ void f1ap_du_impl::handle_dl_rrc_message_transfer(const asn1::f1ap::dl_rrc_msg_t
   const srb_id_t srb_id     = int_to_srb_id(msg->srb_id);
   f1c_bearer*    srb_bearer = ue->bearers.find_srb(srb_id);
   if (srb_bearer == nullptr) {
-    logger.warning("Discarding DlRrcMessageTransfer cause=SRB-ID={} not found", srb_id);
-    // TODO: Handle error.
+    logger.warning("Discarding DLRRCMessageTransfer cause=SRB-ID={} not found", srb_id);
+    cause_c cause;
+    cause.set_radio_network().value = asn1::f1ap::cause_radio_network_opts::no_radio_res_available;
+    send_error_indication(cause, std::nullopt, gnb_du_ue_f1ap_id, ue->context.gnb_cu_ue_f1ap_id);
     return;
   }
 
   // Forward SDU to lower layers.
-  byte_buffer sdu;
-  if (not sdu.append(msg->rrc_container)) {
-    logger.error("Discarding DlRrcMessageTransfer, could not append RRC container to SDU. srb_id={}", srb_id);
-    return;
-  }
-  srb_bearer->handle_pdu(std::move(sdu));
+  srb_bearer->handle_pdu(msg->rrc_container.copy());
 }
 
 void f1ap_du_impl::handle_ue_context_release_request(const f1ap_ue_context_release_request& request)
@@ -429,8 +436,6 @@ bool f1ap_du_impl::handle_rx_message_gnb_cu_ue_f1ap_id(f1ap_du_ue& ue, gnb_cu_ue
     return true;
   }
 
-  // [TS38.473, Cause IE] The action failed because the gNB-CU UE F1AP ID is either unknown, or (for a first
-  // message received at the gNB-CU) is known and already allocated to an existing context.
   const f1ap_du_ue* ue_cu_id = ues.find(gnb_cu_ue_f1ap_id);
   if (ue.context.gnb_cu_ue_f1ap_id == gnb_cu_ue_f1ap_id_t::invalid and ue_cu_id == nullptr) {
     // First message from the gNB-CU for this UE. Update gNB-CU-UE-F1AP-ID.
@@ -438,22 +443,56 @@ bool f1ap_du_impl::handle_rx_message_gnb_cu_ue_f1ap_id(f1ap_du_ue& ue, gnb_cu_ue
     return true;
   }
   cause_c cause;
-  cause.set_radio_network().value = cause_radio_network_opts::unknown_or_already_allocated_gnb_cu_ue_f1ap_id;
   if (ue_cu_id == nullptr) {
-    logger.warning("Discarding message cause=gNB-CU UE F1AP ID={} is unknown");
+    cause.set_radio_network().value = cause_radio_network_opts::unknown_or_inconsistent_pair_of_ue_f1ap_id;
+    logger.warning("Discarding message. Cause: gNB-CU UE F1AP ID={} does not match existing context",
+                   gnb_cu_ue_f1ap_id);
   } else {
+    // [TS38.473, Cause IE] The action failed because the gNB-CU UE F1AP ID is either unknown, or (for a first
+    // message received at the gNB-CU) is known and already allocated to an existing context.
+    cause.set_radio_network().value = cause_radio_network_opts::unknown_or_already_allocated_gnb_cu_ue_f1ap_id;
     logger.warning("Discarding message cause=gNB-CU UE F1AP ID={} is known and already allocated to an existing "
                    "context with gNB-DU UE F1AP ID={}",
                    gnb_cu_ue_f1ap_id,
                    ue_cu_id->context.gnb_du_ue_f1ap_id);
   }
-  send_error_indication(cause);
+  send_error_indication(cause, std::nullopt, ue.context.gnb_du_ue_f1ap_id, ue.context.gnb_cu_ue_f1ap_id);
   return false;
 }
 
-void f1ap_du_impl::send_error_indication(const asn1::f1ap::cause_c& cause)
+void f1ap_du_impl::send_error_indication(const asn1::f1ap::cause_c&         cause,
+                                         std::optional<uint8_t>             transaction_id,
+                                         std::optional<gnb_du_ue_f1ap_id_t> du_ue_id,
+                                         std::optional<gnb_cu_ue_f1ap_id_t> cu_ue_id)
 {
-  // TODO
+  f1ap_message msg;
+  msg.pdu.set_init_msg().load_info_obj(ASN1_F1AP_ID_ERROR_IND);
+  auto& err_ind = msg.pdu.init_msg().value.error_ind();
+
+  if (transaction_id.has_value()) {
+    err_ind->transaction_id = transaction_id.value();
+  } else {
+    auto transaction        = events->transactions.create_transaction();
+    err_ind->transaction_id = transaction.id();
+  }
+
+  // Set cause.
+  err_ind->cause_present = true;
+  err_ind->cause         = cause;
+
+  // [TS 38.473, 8.2.2.2] In case the Error Indication procedure is triggered by utilising UE associated signalling
+  // the gNB-CU UE F1AP ID IE and gNBDU UE F1AP ID IE shall be included in the ERROR INDICATION message.
+  err_ind->gnb_cu_ue_f1ap_id_present = cu_ue_id.has_value();
+  if (err_ind->gnb_cu_ue_f1ap_id_present) {
+    err_ind->gnb_cu_ue_f1ap_id = gnb_cu_ue_f1ap_id_to_uint(*cu_ue_id);
+  }
+  err_ind->gnb_du_ue_f1ap_id_present = du_ue_id.has_value();
+  if (err_ind->gnb_du_ue_f1ap_id_present) {
+    err_ind->gnb_du_ue_f1ap_id = gnb_du_ue_f1ap_id_to_uint(*du_ue_id);
+  }
+
+  // Send message to CU.
+  tx_pdu_notifier->on_new_message(msg);
 }
 
 void f1ap_du_impl::handle_paging_request(const asn1::f1ap::paging_s& msg)

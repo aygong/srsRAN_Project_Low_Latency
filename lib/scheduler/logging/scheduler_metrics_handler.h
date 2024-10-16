@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "../ue_scheduling/harq_process.h"
 #include "scheduler_metrics_ue_configurator.h"
 #include "srsran/scheduler/scheduler_dl_buffer_state_indication_handler.h"
 #include "srsran/scheduler/scheduler_feedback_handler.h"
@@ -32,8 +31,11 @@
 
 namespace srsran {
 
-///\brief Handler of scheduler slot metrics.
-class scheduler_metrics_handler final : public harq_timeout_handler, public sched_metrics_ue_configurator
+class cell_configuration;
+struct rach_indication_message;
+
+///\brief Handler of scheduler slot metrics for a given cell.
+class cell_metrics_handler final : public sched_metrics_ue_configurator
 {
   using msecs = std::chrono::milliseconds;
   using usecs = std::chrono::microseconds;
@@ -54,11 +56,12 @@ class scheduler_metrics_handler final : public harq_timeout_handler, public sche
       double   sum_pusch_snrs         = 0;
       double   sum_pucch_snrs         = 0;
       double   sum_pusch_rsrp         = 0;
+      double   sum_ul_delay_ms        = 0;
       unsigned nof_pucch_snr_reports  = 0;
       unsigned nof_pusch_snr_reports  = 0;
       unsigned nof_pusch_rsrp_reports = 0;
-      unsigned dl_prbs_used           = 0;
-      unsigned ul_prbs_used           = 0;
+      unsigned tot_dl_prbs_used       = 0;
+      unsigned tot_ul_prbs_used       = 0;
       /// CQI statistics over the metrics report interval.
       sample_statistics<unsigned> cqi;
       /// RI statistics over the metrics report interval.
@@ -70,7 +73,6 @@ class scheduler_metrics_handler final : public harq_timeout_handler, public sche
     ue_metric_context() {}
 
     pci_t                                  pci;
-    unsigned                               nof_prbs;
     du_ue_index_t                          ue_index;
     rnti_t                                 rnti;
     unsigned                               last_bsr = 0;
@@ -85,8 +87,11 @@ class scheduler_metrics_handler final : public harq_timeout_handler, public sche
 
   scheduler_metrics_notifier&     notifier;
   const std::chrono::milliseconds report_period;
+  const cell_configuration&       cell_cfg;
   /// Derived value.
   unsigned report_period_slots = 0;
+
+  slot_point last_slot_tx;
 
   unsigned                                                        error_indication_counter = 0;
   std::chrono::microseconds                                       decision_latency_sum{0};
@@ -95,20 +100,38 @@ class scheduler_metrics_handler final : public harq_timeout_handler, public sche
   slotted_id_table<du_ue_index_t, ue_metric_context, MAX_NOF_DU_UES> ues;
   std::unordered_map<rnti_t, du_ue_index_t>                          rnti_to_ue_index_lookup;
 
+  /// Number of full downlink slots.
+  unsigned nof_dl_slots = 0;
+
+  /// Number of full uplink slots.
+  unsigned nof_ul_slots = 0;
+  // Number of PRACH preambles
+
+  unsigned nof_prach_preambles = 0;
+
   /// Counter of number of slots elapsed since the last report.
   unsigned slot_counter = 0;
 
   scheduler_cell_metrics next_report;
 
 public:
-  /// \brief Creates a scheduler UE metrics handler. In case the metrics_report_period is zero, no metrics are reported.
-  explicit scheduler_metrics_handler(msecs metrics_report_period, scheduler_metrics_notifier& notifier);
+  /// \brief Creates a scheduler UE metrics handler for a given cell. In case the metrics_report_period is zero,
+  /// no metrics are reported.
+  explicit cell_metrics_handler(msecs                       metrics_report_period,
+                                scheduler_metrics_notifier& notifier,
+                                const cell_configuration&   cell_cfg_);
 
   /// \brief Register creation of a UE.
-  void handle_ue_creation(du_ue_index_t ue_index, rnti_t rnti, pci_t pcell_pci, unsigned num_prbs) override;
+  void handle_ue_creation(du_ue_index_t ue_index, rnti_t rnti, pci_t pcell_pci) override;
+
+  /// \brief Register UE reconfiguration.
+  void handle_ue_reconfiguration(du_ue_index_t ue_index) override;
 
   /// \brief Register removal of a UE.
   void handle_ue_deletion(du_ue_index_t ue_index) override;
+
+  /// \brief Register detected PRACH.
+  void handle_rach_indication(const rach_indication_message& msg);
 
   /// \brief Register CRC indication.
   void handle_crc_indication(const ul_crc_pdu_indication& crc_pdu, units::bytes tbs);
@@ -117,7 +140,7 @@ public:
   void handle_dl_harq_ack(du_ue_index_t ue_index, bool ack, units::bytes tbs);
 
   /// \brief Register HARQ timeout.
-  void handle_harq_timeout(du_ue_index_t ue_index, bool is_dl) override;
+  void handle_harq_timeout(du_ue_index_t ue_index, bool is_dl);
 
   /// \brief Handle UCI PDU indication.
   void handle_uci_pdu_indication(const uci_indication::uci_pdu& pdu);
@@ -134,6 +157,8 @@ public:
   /// \brief Handle Error Indication reported to the scheduler for a given cell.
   void handle_error_indication();
 
+  void handle_ul_delay(du_ue_index_t ue_index, double delay_ms);
+
   /// \brief Handle results stored in the scheduler result and push new entry.
   void push_result(slot_point sl_tx, const sched_result& slot_result, std::chrono::microseconds slot_decision_latency);
 
@@ -145,6 +170,26 @@ private:
   void handle_csi_report(ue_metric_context& u, const csi_report_data& csi);
   void report_metrics();
   void handle_slot_result(const sched_result& slot_result, std::chrono::microseconds slot_decision_latency);
+};
+
+/// Handler of metrics for all the UEs and cells of the scheduler.
+class scheduler_metrics_handler
+{
+  using msecs = std::chrono::milliseconds;
+
+public:
+  /// \brief Creates a scheduler metrics handler. In case the metrics_report_period is zero, no metrics are reported.
+  explicit scheduler_metrics_handler(msecs metrics_report_period, scheduler_metrics_notifier& notifier);
+
+  cell_metrics_handler* add_cell(const cell_configuration& cell_cfg);
+
+  cell_metrics_handler& at(du_cell_index_t cell_idx) { return cells[cell_idx]; }
+
+private:
+  scheduler_metrics_notifier&     notifier;
+  const std::chrono::milliseconds report_period;
+
+  slotted_array<cell_metrics_handler, MAX_NOF_DU_CELLS> cells;
 };
 
 } // namespace srsran

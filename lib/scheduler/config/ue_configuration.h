@@ -124,6 +124,11 @@ public:
 
   const serving_cell_config& cfg_dedicated() const { return cell_cfg_ded; }
 
+  /// Returns whether UE dedicated configuration is considered complete or not for scheduling the UE as a non-fallback
+  /// UE.
+  /// \remark UE can be scheduled in fallback scheduler even if UE does not have a complete UE dedicated configuration.
+  bool is_cfg_dedicated_complete() const;
+
   bool has_bwp_id(bwp_id_t bwp_id) const { return bwp_table[bwp_id].dl_common != nullptr; }
 
   /// Get BWP information given a BWP-Id.
@@ -154,6 +159,60 @@ public:
 
   /// Get the number of active DL ports for this UE.
   unsigned get_nof_dl_ports() const { return nof_dl_ports; }
+
+  /// Determines the use of transform precoding for DCI Format 0_1 for C-RNTI.
+  bool use_pusch_transform_precoding_dci_0_1() const
+  {
+    // If the UE is not configured with the higher layer parameter transformPrecoder in pusch-Config, determine the
+    // transform precoder use according to parameter msg3-transformPrecoder.
+    if (!cell_cfg_ded.ul_config or !cell_cfg_ded.ul_config->init_ul_bwp.pusch_cfg or
+        cell_cfg_ded.ul_config->init_ul_bwp.pusch_cfg->trans_precoder == pusch_config::transform_precoder::not_set) {
+      return cell_cfg_common.use_msg3_transform_precoder();
+    }
+
+    // Otherwise, determine the use of transform pecoding according to transformPrecoder in pusch-Config.
+    return cell_cfg_ded.ul_config->init_ul_bwp.pusch_cfg->trans_precoder == pusch_config::transform_precoder::enabled;
+  }
+
+  /// \brief Gets the PUSCH transmit scheme codebook subset.
+  ///
+  /// The codebook subset is selection procedure is described in TS 38.214 Section 6.1.1.1.
+  ///
+  /// \remark An assertion is triggered if the transmission scheme is not present or not set to codebook.
+  tx_scheme_codebook_subset get_pusch_codebook_subset() const
+  {
+    srsran_assert(cell_cfg_ded.ul_config.has_value(), "Missing dedicated UL configuration.");
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.has_value(),
+                  "Missing dedicated PUSCH configuration.");
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.has_value(),
+                  "Missing transmit configuration.");
+    srsran_assert(std::holds_alternative<tx_scheme_codebook>(
+                      cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value()),
+                  "PUSCH Transmission scheme must be set to codebook.");
+    const auto& tx_config =
+        std::get<tx_scheme_codebook>(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value());
+    return tx_config.codebook_subset;
+  }
+
+  /// \brief Gets the PUSCH maximum number of layers.
+  ///
+  /// The maximum number of layers selection procedudre is described in TS 38.214 Section 6.1.1.1.
+  ///
+  /// \remark An assertion is triggered if the transmission scheme is not present or not set to codebook.
+  uint8_t get_pusch_max_rank() const
+  {
+    srsran_assert(cell_cfg_ded.ul_config.has_value(), "Missing dedicated UL configuration.");
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.has_value(),
+                  "Missing dedicated PUSCH configuration.");
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.has_value(),
+                  "Missing transmit configuration.");
+    srsran_assert(std::holds_alternative<tx_scheme_codebook>(
+                      cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value()),
+                  "PUSCH Transmission scheme must be set to codebook.");
+    const auto& tx_config =
+        std::get<tx_scheme_codebook>(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value());
+    return tx_config.max_rank.to_uint();
+  }
 
 private:
   void configure_bwp_common_cfg(bwp_id_t bwpid, const bwp_downlink_common& bwp_dl_common);
@@ -240,6 +299,10 @@ public:
 
   /// Update the UE dedicated configuration given a configuration request coming from outside the scheduler.
   void update(const cell_common_configuration_list& common_cells, const sched_ue_config_request& cfg_req);
+
+  /// Returns whether UE configuration is considered complete or not for scheduling the UE as a non-fallback UE.
+  /// \remark UE can be scheduled in fallback scheduler even if UE does not have a complete configuration.
+  bool is_ue_cfg_complete() const;
 
 private:
   // List of configured logical channels

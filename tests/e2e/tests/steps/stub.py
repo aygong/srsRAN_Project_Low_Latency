@@ -29,6 +29,7 @@ from typing import Dict, Generator, List, Optional, Sequence, Tuple
 
 import grpc
 import pytest
+from _pytest.outcomes import Failed
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.text_format import MessageToString
 from google.protobuf.wrappers_pb2 import StringValue, UInt32Value
@@ -58,9 +59,10 @@ UE_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
 GNB_STARTUP_TIMEOUT: int = 2  # GNB delay (we wait x seconds and check it's still alive). UE later and has a big timeout
 FIVEGC_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
 ATTACH_TIMEOUT: int = 90
+INTER_UE_START_PERIOD: int = 0
 
 
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def start_and_attach(
     ue_array: Sequence[UEStub],
     gnb: GNBStub,
@@ -68,10 +70,11 @@ def start_and_attach(
     ue_startup_timeout: int = UE_STARTUP_TIMEOUT,
     gnb_startup_timeout: int = GNB_STARTUP_TIMEOUT,
     fivegc_startup_timeout: int = FIVEGC_STARTUP_TIMEOUT,
-    gnb_pre_cmd: str = "",
-    gnb_post_cmd: str = "",
+    gnb_pre_cmd: Tuple[str, ...] = tuple(),
+    gnb_post_cmd: Tuple[str, ...] = tuple(),
     attach_timeout: int = ATTACH_TIMEOUT,
     plmn: Optional[PLMN] = None,
+    inter_ue_start_period=INTER_UE_START_PERIOD,
 ) -> Dict[UEStub, UEAttachedInfo]:
     """
     Start stubs & wait until attach
@@ -93,6 +96,7 @@ def start_and_attach(
         fivegc,
         ue_startup_timeout=ue_startup_timeout,
         attach_timeout=attach_timeout,
+        inter_ue_start_period=inter_ue_start_period,
     )
 
 
@@ -106,15 +110,15 @@ def _get_hplmn(imsi: str) -> PLMN:
     return hplmn
 
 
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def start_network(
     ue_array: Sequence[UEStub],
     gnb: GNBStub,
     fivegc: FiveGCStub,
     gnb_startup_timeout: int = GNB_STARTUP_TIMEOUT,
     fivegc_startup_timeout: int = FIVEGC_STARTUP_TIMEOUT,
-    gnb_pre_cmd: str = "",
-    gnb_post_cmd: str = "",
+    gnb_pre_cmd: Tuple[str, ...] = tuple(),
+    gnb_post_cmd: Tuple[str, ...] = tuple(),
     plmn: Optional[PLMN] = None,
 ):
     """
@@ -173,6 +177,7 @@ def ue_start_and_attach(
     fivegc: FiveGCStub,
     ue_startup_timeout: int = UE_STARTUP_TIMEOUT,
     attach_timeout: int = ATTACH_TIMEOUT,
+    inter_ue_start_period: int = INTER_UE_START_PERIOD,
 ) -> Dict[UEStub, UEAttachedInfo]:
     """
     Start an array of UEs and wait until attached to already running gnb and 5gc
@@ -187,6 +192,7 @@ def ue_start_and_attach(
                     start_info=StartInfo(timeout=ue_startup_timeout),
                 )
             )
+            sleep(inter_ue_start_period)
 
     # Attach in parallel
     ue_attach_task_dict: Dict[UEStub, grpc.Future] = {
@@ -222,7 +228,7 @@ def handle_start_error(name: str) -> Generator[None, None, None]:
         else:
             raise err from None
     if raise_failed:
-        pytest.fail(f"{name} failed to start")
+        raise Failed(msg=f"{name} failed to start", pytrace=True) from None
 
 
 def _log_attached_ue(future: grpc.Future, ue_stub: UEStub):
@@ -292,11 +298,9 @@ def _print_ping_result(msg: str, task: grpc.Future):
         result: PingResponse = task.result()
         if not result.status:
             log_fn = logging.error
-    except (grpc.RpcError, grpc.FutureCancelledError, grpc.FutureTimeoutError) as err:
-        log_fn = logging.error
-        result = ErrorReportedByAgent(err)
-    finally:
         log_fn("Ping %s:\n%s", msg, MessageToString(result, indent=2))
+    except (grpc.RpcError, grpc.FutureCancelledError, grpc.FutureTimeoutError) as err:
+        logging.error(ErrorReportedByAgent(err))
 
 
 def iperf_parallel(
@@ -577,6 +581,22 @@ def ue_validate_no_reattaches(ue_stub: UEStub):
         logging.error("UE [%s] had multiples rrc setups:\n%s", id(ue_stub), MessageToString(messages, indent=2))
 
 
+def validate_ue_registered_via_ims(ue_stub_array: Sequence[UEStub], core: FiveGCStub) -> None:
+    """
+    Fails if the UEs are not registered in IMS
+    """
+    expected_subscriber_array = tuple(
+        sorted([ue_stub.GetDefinition(Empty()).subscriber.imsi for ue_stub in ue_stub_array])
+    )
+    logging.info("IMSI of expected UEs in IMS: %s", expected_subscriber_array)
+    registered_subscriber_array = tuple(
+        sorted([subscriber.imsi for subscriber in core.GetImsRegisteredUESubscriberArray(Empty()).value])
+    )
+    logging.info("IMSI of registered UEs in IMS: %s", registered_subscriber_array)
+    if expected_subscriber_array != registered_subscriber_array:
+        pytest.fail("IMS Registered Subscriber array mismatch!")
+
+
 def stop(
     ue_array: Sequence[UEStub],
     gnb: Optional[GNBStub],
@@ -595,29 +615,29 @@ def stop(
     # Stop
     error_msg_array = []
     for index, ue_stub in enumerate(ue_array):
-        error_msg_array.append(
-            _stop_stub(
-                ue_stub,
-                f"UE_{index+1}",
-                retina_data,
-                ue_stop_timeout,
-                log_search,
-                warning_as_errors,
-            )
+        error_message, _ = _stop_stub(
+            ue_stub,
+            f"UE_{index+1}",
+            retina_data,
+            ue_stop_timeout,
+            log_search,
+            warning_as_errors,
         )
+        error_msg_array.append(error_message)
+
     if gnb is not None:
-        error_msg_array.append(_stop_stub(gnb, "GNB", retina_data, gnb_stop_timeout, log_search, warning_as_errors))
+        error_message, _ = _stop_stub(gnb, "GNB", retina_data, gnb_stop_timeout, log_search, warning_as_errors)
+        error_msg_array.append(error_message)
     if fivegc is not None:
-        error_msg_array.append(
-            _stop_stub(
-                fivegc,
-                "5GC",
-                retina_data,
-                fivegc_stop_timeout,
-                log_search,
-                warning_as_errors,
-            )
+        error_message, _ = _stop_stub(
+            fivegc,
+            "5GC",
+            retina_data,
+            fivegc_stop_timeout,
+            log_search,
+            warning_as_errors,
         )
+        error_msg_array.append(error_message)
 
     # Fail if stop errors
     error_msg_array = list(filter(bool, error_msg_array))
@@ -657,16 +677,15 @@ def ue_stop(
     """
     error_msg_array = []
     for index, ue_stub in enumerate(ue_array):
-        error_msg_array.append(
-            _stop_stub(
-                ue_stub,
-                f"UE_{index+1}",
-                retina_data,
-                ue_stop_timeout,
-                log_search,
-                warning_as_errors,
-            )
+        error_message, _ = _stop_stub(
+            ue_stub,
+            f"UE_{index+1}",
+            retina_data,
+            ue_stop_timeout,
+            log_search,
+            warning_as_errors,
         )
+        error_msg_array.append(error_message)
     error_msg_array = list(filter(bool, error_msg_array))
     if error_msg_array:
         pytest.fail(
@@ -682,13 +701,14 @@ def _stop_stub(
     timeout: int = 0,
     log_search: bool = True,
     warning_as_errors: bool = True,
-) -> str:
+) -> Tuple[str, int]:
     """
     Stop a stub in the defined timeout (0=auto).
     It uses retina_data to save artifacts in case of failure
     """
 
     error_msg = ""
+    error_count = 0
 
     with suppress(grpc.RpcError):
         stop_info: StopResponse = stub.Stop(UInt32Value(value=timeout))
@@ -715,7 +735,11 @@ def _stop_stub(
         else:
             logging.info("%s has stopped", name)
 
-    return error_msg
+        error_count += stop_info.error_count
+        if warning_as_errors:
+            error_count += stop_info.warning_count
+
+    return error_msg, error_count
 
 
 def _get_metrics_msg(stub: RanStub, name: str, fail_if_kos: bool = False) -> str:

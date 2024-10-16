@@ -39,7 +39,10 @@ f1u_bearer_impl::f1u_bearer_impl(uint32_t                       ue_index,
   rx_sdu_notifier(rx_sdu_notifier_),
   tx_pdu_notifier(tx_pdu_notifier_),
   ue_executor(ue_executor_),
-  ul_notif_timer(timers.create_timer())
+  ul_notif_timer(timers.create_timer()),
+  desired_buffer_size_for_data_radio_bearer(cfg.rlc_queue_bytes_limit),
+  notif_desired_buffer_size_for_data_radio_bearer(
+      0) // make sure that we send an initial buffer report, even if there is no data
 {
   ul_notif_timer.set(std::chrono::milliseconds(cfg.t_notify), [this](timer_id_t tid) { on_expired_ul_notif_timer(); });
   ul_notif_timer.run();
@@ -89,6 +92,14 @@ void f1u_bearer_impl::handle_pdu_impl(nru_dl_message msg)
     logger.log_debug("Delivering T-PDU. size={}", msg.t_pdu.length());
     rx_sdu_notifier.on_new_sdu(std::move(msg.t_pdu), msg.dl_user_data.retransmission_flag);
   }
+  // handle polling of delivery status report
+  if (msg.dl_user_data.report_polling) {
+    if (send_data_delivery_status()) {
+      logger.log_debug("Report polling flag is set. Sent data delivery status");
+    } else {
+      logger.log_warning("Report polling flag is set. No data to be sent in data delivery status");
+    }
+  }
   // handle discard notifications
   if (msg.dl_user_data.discard_blocks.has_value()) {
     nru_pdcp_sn_discard_blocks& blocks     = msg.dl_user_data.discard_blocks.value();
@@ -104,11 +115,12 @@ void f1u_bearer_impl::handle_pdu_impl(nru_dl_message msg)
   }
 }
 
-void f1u_bearer_impl::handle_transmit_notification(uint32_t highest_pdcp_sn)
+void f1u_bearer_impl::handle_transmit_notification(uint32_t highest_pdcp_sn, uint32_t desired_buf_size)
 {
   // This function may be called from pcell_executor, since it only writes to an atomic variable
-  logger.log_debug("Storing highest transmitted pdcp_sn={}", highest_pdcp_sn);
+  logger.log_debug("Storing highest transmitted pdcp_sn={} and desired_buf_size={}", highest_pdcp_sn, desired_buf_size);
   highest_transmitted_pdcp_sn.store(highest_pdcp_sn, std::memory_order_relaxed);
+  desired_buffer_size_for_data_radio_bearer.store(desired_buf_size, std::memory_order_relaxed);
 }
 
 void f1u_bearer_impl::handle_delivery_notification(uint32_t highest_pdcp_sn)
@@ -132,12 +144,29 @@ void f1u_bearer_impl::handle_delivery_retransmitted_notification(uint32_t highes
   highest_delivered_retransmitted_pdcp_sn.store(highest_pdcp_sn, std::memory_order_relaxed);
 }
 
+bool f1u_bearer_impl::fill_desired_buffer_size_of_data_radio_bearer(nru_dl_data_delivery_status& status)
+{
+  uint32_t cur_desired_buffer_size_for_data_radio_bearer =
+      desired_buffer_size_for_data_radio_bearer.load(std::memory_order_relaxed);
+  logger.log_debug("Adding desired buffer size for DRB. bs={}", cur_desired_buffer_size_for_data_radio_bearer);
+  status.desired_buffer_size_for_drb = cur_desired_buffer_size_for_data_radio_bearer;
+  if (cur_desired_buffer_size_for_data_radio_bearer != notif_desired_buffer_size_for_data_radio_bearer) {
+    notif_desired_buffer_size_for_data_radio_bearer = cur_desired_buffer_size_for_data_radio_bearer;
+    return true;
+  }
+  return false;
+}
+
 bool f1u_bearer_impl::fill_highest_transmitted_pdcp_sn(nru_dl_data_delivery_status& status)
 {
   uint32_t cur_highest_transmitted_pdcp_sn = highest_transmitted_pdcp_sn.load(std::memory_order_relaxed);
-  if (cur_highest_transmitted_pdcp_sn != notif_highest_transmitted_pdcp_sn) {
+  // TS 38.425 Sec. 5.4.2.1
+  // (...)
+  // In case the DL DATA DELIVERY STATUS frame is sent before any NR PDCP PDU is transferred to lower layers, the
+  // information on the highest NR PDCP PDU sequence number successfully delivered in sequence to the UE and the highest
+  // NR PDCP PDU sequence number transmitted to the lower layers may not be provided.
+  if (cur_highest_transmitted_pdcp_sn != unset_pdcp_sn) {
     logger.log_debug("Adding highest transmitted pdcp_sn={}", cur_highest_transmitted_pdcp_sn);
-    notif_highest_transmitted_pdcp_sn  = cur_highest_transmitted_pdcp_sn;
     status.highest_transmitted_pdcp_sn = cur_highest_transmitted_pdcp_sn;
     return true;
   }
@@ -147,9 +176,19 @@ bool f1u_bearer_impl::fill_highest_transmitted_pdcp_sn(nru_dl_data_delivery_stat
 bool f1u_bearer_impl::fill_highest_delivered_pdcp_sn(nru_dl_data_delivery_status& status)
 {
   uint32_t cur_highest_delivered_pdcp_sn = highest_delivered_pdcp_sn.load(std::memory_order_relaxed);
-  if (cur_highest_delivered_pdcp_sn != notif_highest_delivered_pdcp_sn) {
+  // TS 38.425 Sec. 5.4.2.1
+  // (...)
+  // When the corresponding node decides to trigger the Feedback for Downlink Data Delivery procedure it shall report
+  // as specified in section 5.2:
+  // a) in case of RLC AM, the highest NR PDCP PDU sequence number successfully delivered in sequence to the UE among
+  // those NR PDCP PDUs received from the node hosting the NR PDCP entity i.e. excludes those retransmission NR PDCP
+  // PDUs;
+  // (...)
+  // In case the DL DATA DELIVERY STATUS frame is sent before any NR PDCP PDU is transferred to lower layers, the
+  // information on the highest NR PDCP PDU sequence number successfully delivered in sequence to the UE and the highest
+  // NR PDCP PDU sequence number transmitted to the lower layers may not be provided.
+  if (cur_highest_delivered_pdcp_sn != unset_pdcp_sn) {
     logger.log_debug("Adding highest delivered pdcp_sn={}", cur_highest_delivered_pdcp_sn);
-    notif_highest_delivered_pdcp_sn  = cur_highest_delivered_pdcp_sn;
     status.highest_delivered_pdcp_sn = cur_highest_delivered_pdcp_sn;
     return true;
   }
@@ -159,6 +198,7 @@ bool f1u_bearer_impl::fill_highest_delivered_pdcp_sn(nru_dl_data_delivery_status
 bool f1u_bearer_impl::fill_highest_retransmitted_pdcp_sn(nru_dl_data_delivery_status& status)
 {
   uint32_t cur_highest_retransmitted_pdcp_sn = highest_retransmitted_pdcp_sn.load(std::memory_order_relaxed);
+  // Only fill when value has changed since last time
   if (cur_highest_retransmitted_pdcp_sn != notif_highest_retransmitted_pdcp_sn) {
     logger.log_debug("Adding highest retransmitted pdcp_sn={}", cur_highest_retransmitted_pdcp_sn);
     notif_highest_retransmitted_pdcp_sn  = cur_highest_retransmitted_pdcp_sn;
@@ -172,6 +212,7 @@ bool f1u_bearer_impl::fill_highest_delivered_retransmitted_pdcp_sn(nru_dl_data_d
 {
   uint32_t cur_highest_delivered_retransmitted_pdcp_sn =
       highest_delivered_retransmitted_pdcp_sn.load(std::memory_order_relaxed);
+  // Only fill when value has changed since last time
   if (cur_highest_delivered_retransmitted_pdcp_sn != notif_highest_delivered_retransmitted_pdcp_sn) {
     logger.log_debug("Adding highest delivered retransmitted pdcp_sn={}", cur_highest_delivered_retransmitted_pdcp_sn);
     notif_highest_delivered_retransmitted_pdcp_sn  = cur_highest_delivered_retransmitted_pdcp_sn;
@@ -183,15 +224,16 @@ bool f1u_bearer_impl::fill_highest_delivered_retransmitted_pdcp_sn(nru_dl_data_d
 
 void f1u_bearer_impl::fill_data_delivery_status(nru_ul_message& msg)
 {
-  nru_dl_data_delivery_status status         = {};
-  bool                        status_changed = false;
+  nru_dl_data_delivery_status status      = {};
+  bool                        value_added = false;
 
-  status_changed |= fill_highest_transmitted_pdcp_sn(status);
-  status_changed |= fill_highest_delivered_pdcp_sn(status);
-  status_changed |= fill_highest_retransmitted_pdcp_sn(status);
-  status_changed |= fill_highest_delivered_retransmitted_pdcp_sn(status);
+  value_added |= fill_desired_buffer_size_of_data_radio_bearer(status);
+  value_added |= fill_highest_transmitted_pdcp_sn(status);
+  value_added |= fill_highest_delivered_pdcp_sn(status);
+  value_added |= fill_highest_retransmitted_pdcp_sn(status);
+  value_added |= fill_highest_delivered_retransmitted_pdcp_sn(status);
 
-  if (status_changed) {
+  if (value_added) {
     logger.log_debug("Adding data delivery status to NR-U message");
     msg.data_delivery_status = std::move(status);
   }
@@ -200,12 +242,22 @@ void f1u_bearer_impl::fill_data_delivery_status(nru_ul_message& msg)
   ul_notif_timer.run();
 }
 
-void f1u_bearer_impl::on_expired_ul_notif_timer()
+bool f1u_bearer_impl::send_data_delivery_status()
 {
   nru_ul_message msg = {};
   fill_data_delivery_status(msg);
-  if (msg.data_delivery_status.has_value()) {
-    logger.log_debug("Sending data delivery status due to expired UL notification timer");
-    tx_pdu_notifier.on_new_pdu(std::move(msg));
+  if (!msg.data_delivery_status.has_value()) {
+    return false;
+  }
+  tx_pdu_notifier.on_new_pdu(std::move(msg));
+  return true;
+}
+
+void f1u_bearer_impl::on_expired_ul_notif_timer()
+{
+  if (send_data_delivery_status()) {
+    logger.log_debug("UL notification timer expired. Sent data delivery status");
+  } else {
+    logger.log_debug("UL notification timer expired. No data to be sent in data delivery status");
   }
 }

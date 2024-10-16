@@ -22,6 +22,8 @@
 find_package(Doxygen OPTIONAL_COMPONENTS dot)
 
 if (DOXYGEN_FOUND)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeGenerateTeXMacros.txt)
+
   # Configure doxygen
   set(DOXYGEN_PROJECT_NAME "srsRAN Project")
   set(DOXYGEN_PROJECT_NUMBER ${VERSION})
@@ -30,7 +32,7 @@ if (DOXYGEN_FOUND)
   set(DOXYGEN_WARN_LOGFILE ${CMAKE_CURRENT_BINARY_DIR}/doxygen.log)
   set(DOXYGEN_USE_MATHJAX "YES")
   set(DOXYGEN_MATHJAX_EXTENSIONS "TeX/AMSmath")
-  set(DOXYGEN_FORMULA_MACROFILE ${CMAKE_CURRENT_SOURCE_DIR}/math_macros.tex)
+  set(DOXYGEN_FORMULA_MACROFILE ${CMAKE_CURRENT_BINARY_DIR}/math_macros.tex)
   set(DOXYGEN_STRIP_FROM_PATH ${CMAKE_HOME_DIRECTORY})
   set(DOXYGEN_EXTRACT_STATIC "YES")
   set(DOXYGEN_EXTRACT_PRIVATE "YES")
@@ -89,7 +91,7 @@ if (DOXYGEN_FOUND)
                           ${CMAKE_HOME_DIRECTORY}/include/srsran/rlc
                           ${CMAKE_HOME_DIRECTORY}/include/srsran/f1ap/common
                           ${CMAKE_HOME_DIRECTORY}/include/srsran/f1ap/du
-                          ${CMAKE_HOME_DIRECTORY}/include/srsran/du_manager
+                          ${CMAKE_HOME_DIRECTORY}/include/srsran/du/du_manager
                           ${CMAKE_HOME_DIRECTORY}/lib/mac
                           ${CMAKE_HOME_DIRECTORY}/lib/scheduler
                           ${CMAKE_HOME_DIRECTORY}/lib/rlc

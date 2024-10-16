@@ -30,6 +30,7 @@
 #include "ul_prach_pdu.h"
 #include "ul_pucch_pdu.h"
 #include "ul_pusch_pdu.h"
+#include "ul_srs_pdu.h"
 #include "srsran/support/format_utils.h"
 
 using namespace srsran;
@@ -481,7 +482,7 @@ error_type<validator_report> srsran::fapi::validate_srs_indication(const srs_ind
     success &= validate_rnti(to_value(pdu.rnti), message_type_id::srs_indication, report);
     success &= validate_timing_advance_offset(pdu.timing_advance_offset, message_type_id::srs_indication, report);
     success &= validate_timing_advance_offset_ns(pdu.timing_advance_offset_ns, message_type_id::srs_indication, report);
-    success &= validate_srs_usage(static_cast<unsigned>(pdu.srs_usage), report);
+    success &= validate_srs_usage(static_cast<unsigned>(pdu.usage), report);
     success &= validate_report_type(pdu.report_type, report);
   }
 
@@ -735,6 +736,9 @@ error_type<validator_report> srsran::fapi::validate_ul_tti_request(const ul_tti_
         break;
       case ul_pdu_type::PUSCH:
         success &= validate_ul_pusch_pdu(pdu.pusch_pdu, report);
+        break;
+      case ul_pdu_type::SRS:
+        success &= validate_ul_srs_pdu(pdu.srs_pdu, report);
         break;
       default:
         srsran_assert(0, "Invalid pdu_type");

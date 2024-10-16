@@ -21,8 +21,10 @@
  */
 
 #include "du_appconfig_cli11_schema.h"
+#include "apps/services/buffer_pool/buffer_pool_appconfig_cli11_schema.h"
 #include "apps/services/logger/logger_appconfig_cli11_schema.h"
 #include "du_appconfig.h"
+#include "srsran/adt/interval.h"
 #include "srsran/support/cli11_utils.h"
 
 using namespace srsran;
@@ -41,47 +43,29 @@ static expected<Integer, std::string> parse_int(const std::string& value)
 
 static void configure_cli11_metrics_args(CLI::App& app, srs_du::metrics_appconfig& metrics_params)
 {
-  add_option(app, "--enable_json_metrics", metrics_params.enable_json_metrics, "Enable JSON metrics reporting")
-      ->always_capture_default();
-
   app.add_option("--addr", metrics_params.addr, "Metrics address.")->capture_default_str()->check(CLI::ValidIPV4);
   app.add_option("--port", metrics_params.port, "Metrics UDP port.")
       ->capture_default_str()
       ->check(CLI::Range(0, 65535));
-
-  app.add_option(
-         "--autostart_stdout_metrics", metrics_params.autostart_stdout_metrics, "Autostart stdout metrics reporting")
-      ->capture_default_str();
-
-  add_option(app,
-             "--stdout_metrics_period",
-             metrics_params.stdout_metrics_period,
-             "DU statistics report period in milliseconds. This metrics sets the console output period.")
-      ->capture_default_str();
 }
 
 static void configure_cli11_e2_args(CLI::App& app, e2_appconfig& e2_params)
 {
-  add_option(app, "--enable_du_e2", e2_params.enable_du_e2, "Enable DU E2 agent");
-  add_option(app, "--addr", e2_params.ip_addr, "RIC IP address");
+  add_option(app, "--enable_du_e2", e2_params.enable_du_e2, "Enable DU E2 agent")->capture_default_str();
+  add_option(app, "--addr", e2_params.ip_addr, "RIC IP address")->capture_default_str();
   add_option(app, "--port", e2_params.port, "RIC port")->capture_default_str()->check(CLI::Range(20000, 40000));
   add_option(app, "--bind_addr", e2_params.bind_addr, "Local IP address to bind for RIC connection")
+      ->capture_default_str()
       ->check(CLI::ValidIPV4);
-  add_option(app, "--sctp_rto_initial", e2_params.sctp_rto_initial, "SCTP initial RTO value");
-  add_option(app, "--sctp_rto_min", e2_params.sctp_rto_min, "SCTP RTO min");
-  add_option(app, "--sctp_rto_max", e2_params.sctp_rto_max, "SCTP RTO max");
-  add_option(app, "--sctp_init_max_attempts", e2_params.sctp_init_max_attempts, "SCTP init max attempts");
-  add_option(app, "--sctp_max_init_timeo", e2_params.sctp_max_init_timeo, "SCTP max init timeout");
-  add_option(app, "--e2sm_kpm_enabled", e2_params.e2sm_kpm_enabled, "Enable KPM service module");
-  add_option(app, "--e2sm_rc_enabled", e2_params.e2sm_rc_enabled, "Enable RC service module");
-}
-
-static void configure_cli11_buffer_pool_args(CLI::App& app, buffer_pool_appconfig& config)
-{
-  app.add_option("--nof_segments", config.nof_segments, "Number of segments allocated by the buffer pool")
+  add_option(app, "--sctp_rto_initial", e2_params.sctp_rto_initial, "SCTP initial RTO value")->capture_default_str();
+  add_option(app, "--sctp_rto_min", e2_params.sctp_rto_min, "SCTP RTO min")->capture_default_str();
+  add_option(app, "--sctp_rto_max", e2_params.sctp_rto_max, "SCTP RTO max")->capture_default_str();
+  add_option(app, "--sctp_init_max_attempts", e2_params.sctp_init_max_attempts, "SCTP init max attempts")
       ->capture_default_str();
-  app.add_option("--segment_size", config.segment_size, "Size of each buffer pool segment in bytes")
+  add_option(app, "--sctp_max_init_timeo", e2_params.sctp_max_init_timeo, "SCTP max init timeout")
       ->capture_default_str();
+  add_option(app, "--e2sm_kpm_enabled", e2_params.e2sm_kpm_enabled, "Enable KPM service module")->capture_default_str();
+  add_option(app, "--e2sm_rc_enabled", e2_params.e2sm_rc_enabled, "Enable RC service module")->capture_default_str();
 }
 
 static error_type<std::string> is_valid_cpu_index(unsigned cpu_idx)
@@ -251,6 +235,12 @@ static void configure_cli11_f1u_args(CLI::App& app, srs_du::nru_appconfig& f1u_p
   app.add_option(
          "--bind_addr", f1u_params.bind_address, "DU F1-U bind address. If left empty, implicit bind is performed")
       ->capture_default_str();
+  app.add_option("--ext_addr",
+                 f1u_params.ext_addr,
+                 "External IP address that is advertised to receive F1-U packets from the CU-UP");
+  app.add_option(
+         "--pool_threshold", f1u_params.pool_threshold, "Pool occupancy threshold after which packets are dropped")
+      ->capture_default_str();
 }
 
 static void configure_cli11_hal_args(CLI::App& app, std::optional<hal_appconfig>& config)
@@ -264,6 +254,9 @@ void srsran::configure_cli11_with_du_appconfig_schema(CLI::App& app, du_appconfi
 {
   // Loggers section.
   configure_cli11_with_logger_appconfig_schema(app, du_cfg.log_cfg);
+
+  // Buffer pool section.
+  configure_cli11_with_buffer_pool_appconfig_schema(app, du_cfg.buffer_pool_config);
 
   // F1-C section.
   CLI::App* f1ap_subcmd = app.add_subcommand("f1ap", "F1AP interface configuration")->configurable();
@@ -280,10 +273,6 @@ void srsran::configure_cli11_with_du_appconfig_schema(CLI::App& app, du_appconfi
   // E2 section.
   CLI::App* e2_subcmd = add_subcommand(app, "e2", "E2 parameters")->configurable();
   configure_cli11_e2_args(*e2_subcmd, du_cfg.e2_cfg);
-
-  // Buffer pool section.
-  CLI::App* buffer_pool_subcmd = app.add_subcommand("buffer_pool", "Buffer pool configuration")->configurable();
-  configure_cli11_buffer_pool_args(*buffer_pool_subcmd, du_cfg.buffer_pool_config);
 
   // Expert section.
   CLI::App* expert_subcmd = app.add_subcommand("expert_execution", "Expert execution configuration")->configurable();

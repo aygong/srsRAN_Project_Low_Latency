@@ -22,9 +22,11 @@
 
 #pragma once
 
+#include "../cu_cp_impl_interface.h"
 #include "../du_processor/du_processor.h"
 #include "../up_resource_manager/up_resource_manager_impl.h"
 #include "srsran/cu_cp/ue_configuration.h"
+#include "srsran/cu_cp/ue_task_scheduler.h"
 #include "srsran/e1ap/cu_cp/e1ap_cu_cp.h"
 #include "srsran/support/async/async_task.h"
 
@@ -57,7 +59,9 @@ public:
                                      const security_indication_t&                    default_security_indication_,
                                      e1ap_bearer_context_manager&                    e1ap_bearer_ctxt_mng_,
                                      f1ap_ue_context_manager&                        f1ap_ue_ctxt_mng_,
-                                     du_processor_rrc_ue_control_message_notifier&   rrc_ue_notifier_,
+                                     rrc_ue_interface*                               rrc_ue_,
+                                     cu_cp_rrc_ue_interface&                         cu_cp_notifier_,
+                                     ue_task_scheduler&                              ue_task_sched_,
                                      up_resource_manager&                            up_resource_mng_,
                                      srslog::basic_logger&                           logger_);
 
@@ -78,14 +82,15 @@ private:
 
   up_config_update next_config;
 
-  e1ap_bearer_context_manager&                  e1ap_bearer_ctxt_mng; // to trigger bearer context setup at CU-UP
-  f1ap_ue_context_manager&                      f1ap_ue_ctxt_mng;     // to trigger UE context modification at DU
-  du_processor_rrc_ue_control_message_notifier& rrc_ue_notifier;      // to trigger RRC Reconfiguration at UE
-  up_resource_manager&                          up_resource_mng;      // to get RRC DRB config
-  srslog::basic_logger&                         logger;
+  e1ap_bearer_context_manager& e1ap_bearer_ctxt_mng; // to trigger bearer context setup at CU-UP
+  f1ap_ue_context_manager&     f1ap_ue_ctxt_mng;     // to trigger UE context modification at DU
+  rrc_ue_interface*            rrc_ue;               // to trigger RRC Reconfiguration at UE
+  cu_cp_rrc_ue_interface&      cu_cp_notifier;       // to trigger UE release at CU-CP
+  ue_task_scheduler&           ue_task_sched;        // to schedule UE release request
+  up_resource_manager&         up_resource_mng;      // to get RRC DRB config
+  srslog::basic_logger&        logger;
 
   // (sub-)routine requests
-  rrc_ue_capability_transfer_request       ue_capability_transfer_request;
   e1ap_bearer_context_setup_request        bearer_context_setup_request;
   f1ap_ue_context_modification_request     ue_context_mod_request;
   e1ap_bearer_context_modification_request bearer_context_modification_request;
@@ -93,7 +98,6 @@ private:
 
   // (sub-)routine results
   cu_cp_pdu_session_resource_setup_response response_msg;
-  bool                                      ue_capability_transfer_result = false; // to query the UE capabilities
   e1ap_bearer_context_setup_response        bearer_context_setup_response; // to initially setup the DRBs at the CU-UP
   f1ap_ue_context_modification_response     ue_context_modification_response; // to inform DU about the new DRBs
   e1ap_bearer_context_modification_response

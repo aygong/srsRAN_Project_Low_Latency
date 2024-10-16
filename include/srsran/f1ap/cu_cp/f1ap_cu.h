@@ -22,15 +22,15 @@
 
 #pragma once
 
-#include "../common/f1ap_ue_id.h"
 #include "du_setup_notifier.h"
 #include "f1ap_cu_ue_context_update.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/expected.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/cu_cp/cu_cp_ue_messages.h"
-#include "srsran/f1ap/common/f1ap_common.h"
 #include "srsran/f1ap/cu_cp/f1ap_du_context.h"
+#include "srsran/f1ap/f1ap_message_handler.h"
+#include "srsran/f1ap/f1ap_ue_id_types.h"
 #include "srsran/ran/lcid.h"
 #include "srsran/support/async/async_task.h"
 
@@ -162,7 +162,10 @@ public:
   /// section 8.3.2.
   virtual void on_du_initiated_ue_context_release_request(const f1ap_ue_context_release_request& req) = 0;
 
+  /// \brief Indicates that there was some loss of transaction information for some UEs.
+  ///
   /// Called when an F1 removal or F1 Reset is received, or when the DU disconnects.
+  /// \return Asynchronous task that handles the event
   virtual async_task<void> on_transaction_info_loss(const f1_ue_transaction_info_loss_event& ev) = 0;
 };
 

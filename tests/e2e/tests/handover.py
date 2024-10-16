@@ -51,6 +51,34 @@ from .steps.stub import (
 )
 
 
+@mark.zmq
+@mark.smoke
+def test_smoke_sequentially(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue_2: UEStub,
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+):
+    """
+    ZMQ Handover tests
+    """
+    _handover_sequentially(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=ue_2,
+        fivegc=fivegc,
+        gnb=gnb,
+        metrics_summary=None,
+        band=41,
+        common_scs=30,
+        bandwidth=50,
+        noise_spd=0,
+        sleep_between_movement_steps=2,
+        always_download_artifacts=False,
+    )
+
+
 @mark.parametrize(
     "band, common_scs, bandwidth, noise_spd",
     (
@@ -62,7 +90,7 @@ from .steps.stub import (
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=["failed to start", "Attach timeout reached", "StatusCode.ABORTED"])
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def test_zmq_handover_sequentially(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -78,10 +106,40 @@ def test_zmq_handover_sequentially(
     """
     ZMQ Handover tests
     """
-    with _handover_multi_ues(
+    _handover_sequentially(
         retina_manager=retina_manager,
         retina_data=retina_data,
         ue_array=ue_8,
+        fivegc=fivegc,
+        gnb=gnb,
+        metrics_summary=metrics_summary,
+        band=band,
+        common_scs=common_scs,
+        bandwidth=bandwidth,
+        noise_spd=noise_spd,
+        sleep_between_movement_steps=10,
+    )
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+def _handover_sequentially(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue_array: UEStub,
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+    metrics_summary: Optional[MetricsSummary],
+    band: int,
+    common_scs: int,
+    bandwidth: int,
+    noise_spd: int,
+    sleep_between_movement_steps,
+    always_download_artifacts: bool = True,
+):
+    with _handover_multi_ues(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=ue_array,
         gnb=gnb,
         fivegc=fivegc,
         metrics_summary=metrics_summary,
@@ -91,8 +149,9 @@ def test_zmq_handover_sequentially(
         sample_rate=None,  # default from testbed
         global_timing_advance=0,
         time_alignment_calibration=0,
-        always_download_artifacts=True,
+        always_download_artifacts=always_download_artifacts,
         noise_spd=noise_spd,
+        sleep_between_movement_steps=sleep_between_movement_steps,
         warning_as_errors=True,
     ) as (ue_attach_info_dict, movements, traffic_seconds):
 
@@ -105,8 +164,8 @@ def test_zmq_handover_sequentially(
 
             ping_task_array = ping_start(ue_attach_info_dict, fivegc, traffic_seconds)
 
-            for from_position, to_position, movement_steps, sleep_between_movement_steps in movements:
-                _do_ho((ue_stub,), from_position, to_position, movement_steps, sleep_between_movement_steps)
+            for _from_position, _to_position, _movement_steps, _sleep_between_movement_steps in movements:
+                _do_ho((ue_stub,), _from_position, _to_position, _movement_steps, _sleep_between_movement_steps)
 
             ping_wait_until_finish(ping_task_array)
 
@@ -122,7 +181,7 @@ def test_zmq_handover_sequentially(
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=["failed to start", "Attach timeout reached", "StatusCode.ABORTED"])
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def test_zmq_handover_parallel(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -153,6 +212,7 @@ def test_zmq_handover_parallel(
         time_alignment_calibration=0,
         always_download_artifacts=True,
         noise_spd=noise_spd,
+        sleep_between_movement_steps=10,
         warning_as_errors=True,
     ) as (ue_attach_info_dict, movements, traffic_seconds):
 
@@ -168,7 +228,7 @@ def test_zmq_handover_parallel(
         ping_wait_until_finish(ping_task_array)
 
 
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 @contextmanager
 def _handover_multi_ues(
     retina_manager: RetinaTestManager,
@@ -176,7 +236,7 @@ def _handover_multi_ues(
     ue_array: Sequence[UEStub],
     fivegc: FiveGCStub,
     gnb: GNBStub,
-    metrics_summary: MetricsSummary,
+    metrics_summary: Optional[MetricsSummary],
     band: int,
     common_scs: int,
     bandwidth: int,
@@ -222,7 +282,7 @@ def _handover_multi_ues(
         always_download_artifacts=always_download_artifacts,
     )
 
-    start_network(ue_array, gnb, fivegc, gnb_post_cmd="log --mac_level=debug --cu_level=debug")
+    start_network(ue_array, gnb, fivegc, gnb_post_cmd=("log --cu_level=debug", "log --mac_level=debug"))
 
     ue_attach_info_dict = ue_start_and_attach(ue_array, gnb, fivegc)
 
@@ -246,7 +306,7 @@ def _handover_multi_ues(
         for ue_stub in ue_array:
             ue_validate_no_reattaches(ue_stub)
 
-        stop(ue_array, gnb, fivegc, retina_data, warning_as_errors=warning_as_errors)
+        stop(ue_array, gnb, fivegc, retina_data, ue_stop_timeout=16, warning_as_errors=warning_as_errors)
     finally:
         get_kpis(gnb, ue_array=ue_array, metrics_summary=metrics_summary)
 

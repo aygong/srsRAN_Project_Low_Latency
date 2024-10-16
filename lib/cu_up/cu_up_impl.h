@@ -28,6 +28,7 @@
 #include "ue_manager.h"
 #include "srsran/cu_up/cu_up.h"
 #include "srsran/cu_up/cu_up_configuration.h"
+#include "srsran/cu_up/cu_up_manager.h"
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
 #include "srsran/gtpu/gtpu_echo.h"
 #include "srsran/gtpu/gtpu_teid_pool.h"
@@ -46,25 +47,9 @@ public:
   void start() override;
   void stop() override;
 
+  /// helper functions for testing
   std::optional<uint16_t> get_n3_bind_port() override { return ngu_session->get_bind_port(); }
-
-  // cu_up_e1ap_interface
-  void schedule_ue_async_task(ue_index_t ue_index, async_task<void> task) override;
-
-  e1ap_message_handler& get_e1ap_message_handler() override { return *e1ap; }
-
-  e1ap_bearer_context_setup_response
-  handle_bearer_context_setup_request(const e1ap_bearer_context_setup_request& msg) override;
-
-  async_task<e1ap_bearer_context_modification_response>
-  handle_bearer_context_modification_request(const e1ap_bearer_context_modification_request& msg) override;
-
-  void handle_bearer_context_release_command(const e1ap_bearer_context_release_command& msg) override;
-
-  // cu_up_e1ap_connection_notifier
-  void on_e1ap_connection_establish() override;
-  void on_e1ap_connection_drop() override;
-  bool e1ap_is_connected() override { return e1ap_connected; }
+  cu_up_manager*          get_cu_up_manager() { return cu_up_mng.get(); }
 
 private:
   void disconnect();
@@ -91,12 +76,12 @@ private:
   std::unique_ptr<gtpu_echo>           ngu_echo;
   std::unique_ptr<gtpu_teid_pool>      n3_teid_allocator;
   std::unique_ptr<gtpu_teid_pool>      f1u_teid_allocator;
-  std::unique_ptr<ue_manager>          ue_mng;
+  std::unique_ptr<cu_up_manager>       cu_up_mng;
 
   // Adapters
   network_gateway_data_gtpu_demux_adapter gw_data_gtpu_demux_adapter;
   gtpu_network_gateway_adapter            gtpu_gw_adapter;
-  e1ap_cu_up_adapter                      e1ap_cu_up_ev_notifier;
+  e1ap_cu_up_manager_adapter              e1ap_cu_up_mng_adapter;
 
   std::mutex mutex;
   bool       running{false};

@@ -81,7 +81,37 @@ CLI::Option* add_option(CLI::App& app, const std::string& option_name, T& param,
             callback(res);
             return CLI::detail::lexical_conversion<T, T>(res, param);
           },
-          desc)
+          desc,
+          false,
+          [&param]() -> std::string { return CLI::detail::checked_to_string<T, T>(param); })
+      ->run_callback_for_default();
+}
+
+/// Specialization for bools than changes the default function for capture the default string.
+template <>
+inline CLI::Option* add_option(CLI::App& app, const std::string& option_name, bool& param, const std::string& desc)
+{
+  auto* opt = app.get_option_no_throw(option_name);
+  if (!opt) {
+    return app.add_option(option_name, param, desc)->default_function([&param]() -> std::string {
+      return param ? "true" : "false";
+    });
+  }
+
+  // Option was found. Get the callback and create new option.
+  auto callbck = opt->get_callback();
+  app.remove_option(opt);
+
+  return app
+      .add_option(
+          option_name,
+          [&param, callback = std::move(callbck)](const CLI::results_t& res) {
+            callback(res);
+            return CLI::detail::lexical_conversion<bool, bool>(res, param);
+          },
+          desc,
+          false,
+          [&param]() -> std::string { return param ? "true" : "false"; })
       ->run_callback_for_default();
 }
 

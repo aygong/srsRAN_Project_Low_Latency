@@ -38,11 +38,24 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 include(version) # sets version information
 
-if(NOT CMAKE_BUILD_TYPE)
-   set(CMAKE_BUILD_TYPE Release)
-   message(STATUS "Build type not specified: defaulting to Release.")
-endif(NOT CMAKE_BUILD_TYPE)
-set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "")
+# Configure supported build types and default build type
+set(supported_build_types "Release" "RelWithDebInfo" "Debug")
+set(default_build_type "Release")
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Build type not specified, using default: ${default_build_type}")
+  set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE STRING "Select build type" FORCE)
+else()
+  # Check if build type is supported
+  if(NOT "${CMAKE_BUILD_TYPE}" IN_LIST supported_build_types)
+    message(SEND_ERROR "Unsupported build type '${CMAKE_BUILD_TYPE}'. Supported build types: ${supported_build_types}")
+  else()
+    message(STATUS "The build type is ${CMAKE_BUILD_TYPE}")
+  endif()
+endif()
+
+# Add possible values for build type in cmake-gui (drop-down widget, for convenience only)
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS ${supported_build_types})
 
 # Generate CMake to include build information
 configure_file(
@@ -66,7 +79,7 @@ option(ENABLE_DPDK           "Enable DPDK"                              OFF)
 option(ENABLE_LIBNUMA        "Enable LibNUMA"                           OFF)
 option(ENABLE_EXPORT         "Enable PIC and export libraries"          OFF)
 option(ENABLE_TRX_DRIVER     "Enable Amarisoft TRX driver library"      OFF)
-option(AUTO_DETECT_ISA       "Enable automatic ISA detection"           OFF)
+option(ENABLE_PLUGINS        "Compile plugins in the plugin folder"     ON)
 option(BUILD_TESTS           "Compile tests"                            ON)
 option(ENABLE_GPROF          "Enable gprof"                             OFF)
 option(USE_PHY_TESTVECTORS   "Enable testvector PHY tests"              OFF)
@@ -107,16 +120,13 @@ endif ()
 
 # Hardware acceleration for both PUSCH and PDSCH is enabled by default when using DPDK.
 if (ENABLE_DPDK)
-  # Make sure that library export is disabed, as it is not compatible with hardware acceleration.
-  if (NOT ENABLE_EXPORT)
-    SET(ENABLE_PDSCH_HWACC ON CACHE BOOL "Enable PDSCH hardware-acceleration")
-    message(STATUS "Hardware-acceleration enabled for PDSCH.")
-    SET(ENABLE_PUSCH_HWACC ON CACHE BOOL "Enable PUSCH hardware-acceleration")
-    message(STATUS "Hardware-acceleration enabled for PUSCH.")
-  endif ()
+  SET(ENABLE_PDSCH_HWACC ON CACHE BOOL "Enable PDSCH hardware-acceleration")
+  message(STATUS "Hardware-acceleration enabled for PDSCH.")
+  SET(ENABLE_PUSCH_HWACC ON CACHE BOOL "Enable PUSCH hardware-acceleration")
+  message(STATUS "Hardware-acceleration enabled for PUSCH.")
 else (ENABLE_DPDK)
-    unset(ENABLE_PDSCH_HWACC CACHE)
-    unset(ENABLE_PUSCH_HWACC CACHE)
+  unset(ENABLE_PDSCH_HWACC CACHE)
+  unset(ENABLE_PUSCH_HWACC CACHE)
 endif (ENABLE_DPDK)
 
 ########################################################################
@@ -324,42 +334,57 @@ endif (ENABLE_DPDK)
 ########################################################################
 # Instruction Set Architecture setup
 ########################################################################
-if (AUTO_DETECT_ISA)
-    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
-        set(GCC_ARCH armv8-a CACHE STRING "GCC compile for specific architecture.")
-        message(STATUS "Detected aarch64 processor")
-        set(HAVE_NEON True CACHE BOOL "NEON Instruction set is supported")
-    else (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
-        set(GCC_ARCH native CACHE STRING "GCC compile for specific architecture.")
-    endif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
+set(MTUNE "generic" CACHE STRING "Compiler -mtune flag. Default value is 'generic'")
+if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
+    set(MARCH "armv8-a" CACHE STRING "Compiler -march flag. Default value is 'armv8-a' for aarch64.")
+    message(STATUS "Detected aarch64 processor")
+else (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
+    set(MARCH "native" CACHE STRING "Compiler -march flag. Default value is 'native' for x86-64.")
+endif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
 
-    find_package(SSE)
+add_cxx_compiler_flag_if_available("-march=${MARCH}" HAVE_MARCH)
+if (NOT HAVE_MARCH)
+    message(WARNING "The compiler does not support -march=${MARCH}, try setting a different value.")
+endif (NOT HAVE_MARCH)
 
-    # Add default architecture if enabled and available.
-    ADD_CXX_COMPILER_FLAG_IF_AVAILABLE("-march=${GCC_ARCH}" HAVE_MARCH)
+add_cxx_compiler_flag_if_available("-mtune=${MTUNE}" HAVE_MTUNE)
+if (NOT HAVE_MTUNE)
+    message(WARNING "The compiler does not support -mtune=${MTUNE}, try setting a different value.")
+endif (NOT HAVE_MTUNE)
 
-    if (HAVE_AVX2)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
-    endif (HAVE_AVX2)
-    if (HAVE_AVX)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
-    endif (HAVE_AVX)
-    if (HAVE_SSE)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")
-    endif (HAVE_SSE)
-    if (HAVE_FMA)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfma")
-    endif (HAVE_FMA)
-    if (HAVE_AVX512)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512cd -mavx512bw -mavx512dq")
-    endif (HAVE_AVX512)
-else (AUTO_DETECT_ISA)
-    unset(HAVE_SSE CACHE)
-    unset(HAVE_AVX CACHE)
-    unset(HAVE_AVX2 CACHE)
-    unset(HAVE_FMA CACHE)
-    unset(HAVE_AVX512 CACHE)
-endif (AUTO_DETECT_ISA)
+message(STATUS "ARCH value is ${MARCH}")
+message(STATUS "TUNE value is ${MTUNE}")
+
+# Append march and mtune to the compilation flags.
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${MARCH} -mtune=${MTUNE}")
+
+########################################################################
+# DU split setup
+########################################################################
+# Public variable to select the DU split.
+set(DU_SPLIT_TYPE "DYNAMIC" CACHE STRING "DU split type. Default value is 'DYNAMIC'. Allowed values: DYNAMIC, SPLIT_6, SPLIT_7_2, SPLIT_8")
+
+# Internal private booleans to represent the selected DU split type. Values auto-derived from DU_SPLIT_TYPE variable.
+set(DU_SPLIT_DYNAMIC OFF CACHE BOOL "DU dynamic split enabled boolean")
+set(DU_SPLIT_6 OFF CACHE BOOL "DU split 6 enabled boolean")
+set(DU_SPLIT_7_2 OFF CACHE BOOL "DU split 7.2 enabled boolean")
+set(DU_SPLIT_8 OFF CACHE BOOL "DU split 8 enabled boolean")
+
+if (DU_SPLIT_TYPE STREQUAL "DYNAMIC")
+    set(DU_SPLIT_DYNAMIC ON)
+elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_6")
+    set(DU_SPLIT_6 ON)
+elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_7_2")
+    set(DU_SPLIT_7_2 ON)
+elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_8")
+    set(DU_SPLIT_8 ON)
+else ()
+    message(WARNING "DU split value '${DU_SPLIT_TYPE}' is not supported. Defaulting to 'DYNAMIC'")
+    set(DU_SPLIT_TYPE "DYNAMIC")
+    set(DU_SPLIT_DYNAMIC ON)
+endif ()
+
+message(STATUS "Selected DU split is '${DU_SPLIT_TYPE}'")
 
 ########################################################################
 # Compiler launcher setup
@@ -420,6 +445,22 @@ if (BUILD_TESTS)
     add_subdirectory(tests/integrationtests)
     add_subdirectory(tests/benchmarks)
 endif (BUILD_TESTS)
+
+if (ENABLE_PLUGINS)
+   # Discover all subdirectories in the plugin directory (but not recursively)
+   file(GLOB SUBDIRS RELATIVE ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/plugins/*)
+   
+   # Loop through each plugin subdirectory
+   foreach(subdir ${SUBDIRS})
+       # Check if it's a directory and contains a CMakeLists.txt file
+       if(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/${subdir} AND EXISTS ${CMAKE_SOURCE_DIR}/${subdir}/CMakeLists.txt)
+           message(STATUS "Adding plugin: ${subdir}")
+           add_subdirectory(${subdir})
+       endif()
+   endforeach()
+endif ()
+
+
 
 ########################################################################
 # Export (selected) libraries

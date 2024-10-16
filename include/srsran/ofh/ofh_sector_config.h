@@ -56,9 +56,9 @@ struct sector_configuration {
   /// Source MAC address, corresponds to the Distributed Unit MAC address.
   ether::mac_address mac_src_address;
   /// Tag control information field for C-Plane.
-  uint16_t tci_cp;
+  std::optional<uint16_t> tci_cp;
   /// Tag control information field for U-Plane.
-  uint16_t tci_up;
+  std::optional<uint16_t> tci_up;
 
   /// DU transmission window timing parameters.
   tx_window_timing_parameters tx_window_timing_params;
@@ -70,11 +70,11 @@ struct sector_configuration {
   /// Highest subcarrier spacing.
   subcarrier_spacing scs;
   /// Cell channel bandwidth.
-  bs_channel_bandwidth_fr1 bw;
+  bs_channel_bandwidth bw;
   /// \brief RU operating bandwidth.
   ///
   /// Set this option when the operating bandwidth of the RU is larger than the configured bandwidth of the cell.
-  bs_channel_bandwidth_fr1 ru_operating_bw;
+  bs_channel_bandwidth ru_operating_bw;
 
   /// PRACH eAxC.
   static_vector<unsigned, ofh::MAX_NOF_SUPPORTED_EAXC> prach_eaxc;

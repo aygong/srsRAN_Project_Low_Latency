@@ -77,9 +77,7 @@ public:
       notifier = nullptr;
       dl_tnl_info.reset();
     } else {
-      logger.log_info("Cannot dettach DU bearer, DL-FTEID does not match. F-TEID={}, requested F-TEID={}",
-                      dl_tnl_info,
-                      dl_tnl_info_);
+      logger.log_info("Skipped detach of DU bearer from old F-TEID={}. Current F-TEID={}", dl_tnl_info_, dl_tnl_info);
     }
   }
 
@@ -210,10 +208,12 @@ public:
 
   void remove_du_bearer(const up_transport_layer_info& dl_up_tnl_info) override;
 
-  expected<std::string> get_du_bind_address(gnb_du_id_t gnb_du_id) override
+  expected<std::string> get_du_bind_address(gnb_du_id_t gnb_du_id) const override
   {
     return fmt::format("127.0.0.{}", 1 + static_cast<uint32_t>(gnb_du_id));
   }
+
+  expected<std::string> get_cu_bind_address() const override { return {"127.0.2.1"}; }
 
 private:
   srslog::basic_logger& logger_cu;

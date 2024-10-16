@@ -33,10 +33,16 @@ void ue_bearer_manager::add_srb0_f1c_bearer(f1c_rx_sdu_notifier&       f1c_rx_sd
                                             const byte_buffer&         du_cu_rrc_container,
                                             f1ap_event_manager&        ev_mng)
 {
-  f1c_bearers.emplace(
-      0,
-      std::make_unique<f1c_srb0_du_bearer>(
-          ue_ctx, pcell_cgi, du_cu_rrc_container, f1ap_notifier, f1c_rx_sdu_notif, ev_mng, ctrl_exec, ue_exec));
+  f1c_bearers.emplace(0,
+                      std::make_unique<f1c_srb0_du_bearer>(ue_ctx,
+                                                           pcell_cgi,
+                                                           du_cu_rrc_container,
+                                                           f1ap_notifier,
+                                                           f1c_rx_sdu_notif,
+                                                           ev_mng,
+                                                           du_configurator,
+                                                           ctrl_exec,
+                                                           ue_exec));
 }
 
 void ue_bearer_manager::add_f1c_bearer(srb_id_t srb_id, f1c_rx_sdu_notifier& rx_sdu_notif)
@@ -45,5 +51,5 @@ void ue_bearer_manager::add_f1c_bearer(srb_id_t srb_id, f1c_rx_sdu_notifier& rx_
 
   f1c_bearers.emplace(srb_id_to_uint(srb_id),
                       std::make_unique<f1c_other_srb_du_bearer>(
-                          ue_ctx, srb_id, f1ap_notifier, rx_sdu_notif, du_configurator, ctrl_exec, ue_exec));
+                          ue_ctx, srb_id, f1ap_notifier, rx_sdu_notif, du_configurator, ctrl_exec, ue_exec, timers));
 }

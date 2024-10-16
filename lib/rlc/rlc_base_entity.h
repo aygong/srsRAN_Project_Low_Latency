@@ -44,18 +44,13 @@ public:
                   rb_id_t               rb_id_,
                   timer_duration        metrics_period_,
                   rlc_metrics_notifier* rlc_metrics_notifier_,
-                  timer_factory         timers) :
+                  task_executor&        ue_executor_) :
     logger("RLC", {gnb_du_id_, ue_index_, rb_id_, "DL/UL"}),
     ue_index(ue_index_),
     rb_id(rb_id_),
     metrics_period(metrics_period_),
-    metrics_timer(timers.create_timer())
+    metrics_agg(gnb_du_id_, ue_index, rb_id_, metrics_period_, rlc_metrics_notifier_, ue_executor_)
   {
-    rlc_metrics_notif = rlc_metrics_notifier_;
-    if (metrics_period.count() != 0) {
-      metrics_timer.set(metrics_period, [this](timer_id_t /*tid*/) { push_metrics(); });
-      metrics_timer.run();
-    }
   }
   ~rlc_base_entity() override                         = default;
   rlc_base_entity(const rlc_base_entity&)             = delete;
@@ -93,61 +88,14 @@ public:
     return metrics;
   }
 
-  void reset_metrics()
-  {
-    tx->reset_metrics();
-    rx->reset_metrics();
-  }
-
 protected:
   rlc_bearer_logger              logger;
   du_ue_index_t                  ue_index;
   rb_id_t                        rb_id;
-  std::unique_ptr<rlc_tx_entity> tx = {};
-  std::unique_ptr<rlc_rx_entity> rx = {};
+  std::unique_ptr<rlc_tx_entity> tx;
+  std::unique_ptr<rlc_rx_entity> rx;
   timer_duration                 metrics_period;
-
-private:
-  unique_timer          metrics_timer;
-  rlc_metrics_notifier* rlc_metrics_notif;
-
-  void push_metrics()
-  {
-    rlc_metrics m = get_metrics();
-    if (rlc_metrics_notif) {
-      rlc_metrics_notif->report_metrics(m);
-    }
-    if (m.tx.mode == rlc_mode::am) {
-      logger.log_info(
-          "TX metrics period={}ms num_sdus={} sdu_rate={}kbps, dropped_sdus={} discarded_sdus={} "
-          "num_pdus_no_segm={} pdu_rate_no_segm={}kbps num_pdus_with_segm={} pdu_rate_with_segm={}kbps num_retx={} "
-          "retx_rate={}kbps ctrl_pdus={} ctrl_rate={}kbps",
-          metrics_period.count(),
-          m.tx.num_sdus,
-          (double)m.tx.num_sdu_bytes * 8 / (double)metrics_period.count(),
-          m.tx.num_dropped_sdus,
-          m.tx.num_discarded_sdus,
-          m.tx.num_pdus_no_segmentation,
-          (double)m.tx.num_pdu_bytes_no_segmentation * 8 / (double)metrics_period.count(),
-          m.tx.mode_specific.am.num_pdus_with_segmentation,
-          (double)m.tx.mode_specific.am.num_pdu_bytes_with_segmentation * 8 / (double)metrics_period.count(),
-          m.tx.mode_specific.am.num_retx_pdus,
-          (double)m.tx.mode_specific.am.num_retx_pdu_bytes * 8 / (double)metrics_period.count(),
-          m.tx.mode_specific.am.num_ctrl_pdus,
-          (double)m.tx.mode_specific.am.num_ctrl_pdu_bytes * 8 / (double)metrics_period.count());
-      logger.log_info("RX metrics period={}ms num_sdus={} sdu_rate={}kbps num_pdus={} pdu_rate={}kbps "
-                      "ctrl_pdus={}, ctrl_rate={}kbps",
-                      metrics_period.count(),
-                      m.rx.num_sdus,
-                      (double)m.rx.num_sdu_bytes * 8 / (double)metrics_period.count(),
-                      m.rx.num_pdus,
-                      (double)m.rx.num_pdu_bytes * 8 / (double)metrics_period.count(),
-                      m.tx.mode_specific.am.num_ctrl_pdus,
-                      (double)m.rx.mode_specific.am.num_ctrl_pdu_bytes * 8 / (double)metrics_period.count());
-    }
-    reset_metrics();
-    metrics_timer.run();
-  }
+  rlc_metrics_aggregator         metrics_agg;
 };
 
 } // namespace srsran

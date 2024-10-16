@@ -54,6 +54,33 @@ from .steps.stub import (
 _ONLY_RERUN = ["failed to start", "Attach timeout reached", "StatusCode.ABORTED", "socket is already closed"]
 
 
+@mark.zmq
+@mark.smoke
+def test_smoke_sequentially(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue_4: Tuple[UEStub, ...],
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+):
+    """
+    ZMQ Ping + Reestablishment
+    """
+    _reestablishment_sequentially_ping(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=ue_4,
+        fivegc=fivegc,
+        gnb=gnb,
+        metrics_summary=None,
+        band=41,
+        common_scs=30,
+        bandwidth=50,
+        noise_spd=0,
+        always_download_artifacts=False,
+    )
+
+
 @mark.parametrize(
     "band, common_scs, bandwidth, noise_spd",
     (
@@ -65,7 +92,7 @@ _ONLY_RERUN = ["failed to start", "Attach timeout reached", "StatusCode.ABORTED"
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=_ONLY_RERUN)
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def test_zmq_reestablishment_sequentially(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -81,10 +108,7 @@ def test_zmq_reestablishment_sequentially(
     """
     ZMQ Ping + Reestablishment
     """
-    traffic_duration = 15
-    reestablishment_interval = 5
-
-    for reest_ue_attach_info_dict, other_ue_attach_info_dict in _iterator_over_attached_ues(
+    _reestablishment_sequentially_ping(
         retina_manager=retina_manager,
         retina_data=retina_data,
         ue_array=ue_8,
@@ -94,10 +118,44 @@ def test_zmq_reestablishment_sequentially(
         band=band,
         common_scs=common_scs,
         bandwidth=bandwidth,
+        noise_spd=noise_spd,
+    )
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+def _reestablishment_sequentially_ping(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue_array: Tuple[UEStub, ...],
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+    metrics_summary: Optional[MetricsSummary],
+    band: int,
+    common_scs: int,
+    bandwidth: int,
+    noise_spd: int,
+    always_download_artifacts: bool = True,
+):
+    """
+    ZMQ Ping + Reestablishment
+    """
+    traffic_duration = 15
+    reestablishment_interval = 5
+
+    for reest_ue_attach_info_dict, other_ue_attach_info_dict in _iterator_over_attached_ues(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=ue_array,
+        fivegc=fivegc,
+        gnb=gnb,
+        metrics_summary=metrics_summary,
+        band=band,
+        common_scs=common_scs,
+        bandwidth=bandwidth,
         sample_rate=None,
         global_timing_advance=0,
         time_alignment_calibration=0,
-        always_download_artifacts=True,
+        always_download_artifacts=always_download_artifacts,
         noise_spd=noise_spd,
         log_ip_level="debug",
         warning_as_errors=True,
@@ -133,7 +191,7 @@ def test_zmq_reestablishment_sequentially(
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=_ONLY_RERUN)
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def test_zmq_reestablishment_sequentially_full_rate(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -202,7 +260,7 @@ def test_zmq_reestablishment_sequentially_full_rate(
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=_ONLY_RERUN)
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def test_zmq_reestablishment_parallel(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -268,7 +326,7 @@ def test_zmq_reestablishment_parallel(
 )
 @mark.zmq
 @mark.flaky(reruns=2, only_rerun=_ONLY_RERUN)
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def test_zmq_reestablishment_parallel_full_rate(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
@@ -329,14 +387,14 @@ def test_zmq_reestablishment_parallel_full_rate(
         )
 
 
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def _iterator_over_attached_ues(
     retina_manager: RetinaTestManager,
     retina_data: RetinaTestData,
     ue_array: Sequence[UEStub],
     fivegc: FiveGCStub,
     gnb: GNBStub,
-    metrics_summary: MetricsSummary,
+    metrics_summary: Optional[MetricsSummary],
     band: int,
     common_scs: int,
     bandwidth: int,
@@ -385,7 +443,7 @@ def _iterator_over_attached_ues(
         yield {}, ue_attach_info_dict
 
 
-# pylint: disable=too-many-arguments,too-many-locals
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 @contextmanager
 def _test_reestablishments(
     retina_manager: RetinaTestManager,
@@ -393,7 +451,7 @@ def _test_reestablishments(
     ue_array: Sequence[UEStub],
     fivegc: FiveGCStub,
     gnb: GNBStub,
-    metrics_summary: MetricsSummary,
+    metrics_summary: Optional[MetricsSummary],
     band: int,
     common_scs: int,
     bandwidth: int,
@@ -427,7 +485,7 @@ def _test_reestablishments(
         always_download_artifacts=always_download_artifacts,
     )
 
-    start_network(ue_array, gnb, fivegc, gnb_post_cmd="log --mac_level=debug --cu_level=debug")
+    start_network(ue_array, gnb, fivegc, gnb_post_cmd=("log --cu_level=debug", "log --mac_level=debug"))
 
     ue_attach_info_dict = ue_start_and_attach(ue_array, gnb, fivegc)
 

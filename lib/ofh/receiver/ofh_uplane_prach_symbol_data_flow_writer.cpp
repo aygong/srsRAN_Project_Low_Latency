@@ -22,6 +22,7 @@
 
 #include "ofh_uplane_prach_symbol_data_flow_writer.h"
 #include "srsran/ofh/serdes/ofh_uplane_message_decoder_properties.h"
+#include "srsran/srsvec/conversion.h"
 
 using namespace srsran;
 using namespace ofh;
@@ -101,7 +102,7 @@ void uplane_prach_symbol_data_flow_writer::write_to_prach_buffer(unsigned       
     unsigned iq_size_re = std::min(section_nof_re, prach_nof_res);
 
     // Grab the data.
-    span<const cf_t> prach_in_data = span<const cf_t>(section.iq_samples).subspan(iq_start_re, iq_size_re);
+    span<const cbf16_t> prach_in_data = span<const cbf16_t>(section.iq_samples).subspan(iq_start_re, iq_size_re);
 
     // Copy the data in the buffer.
     prach_context_repo->write_iq(slot, port, results.params.symbol_id, start_re, prach_in_data);

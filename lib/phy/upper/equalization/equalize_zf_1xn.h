@@ -25,16 +25,17 @@
 
 #pragma once
 
-#include "../../../srsvec/simd.h"
+#include "srsran/phy/constants.h"
 #include "srsran/srsvec/fill.h"
+#include "srsran/srsvec/simd.h"
 #include "srsran/srsvec/zero.h"
 
 namespace srsran {
 
 /// \brief Implementation of a Zero Forcing equalizer for a SIMO 1 X \c RX_PORTS channel.
 /// \tparam RX_PORTS          Number of receive antenna ports.
-/// \param[out] eq_symbols    Resultant equalized symbols.
-/// \param[out] noise_vars    Noise variances after equalization.
+/// \param[out] symbols_out   Resultant equalized symbols.
+/// \param[out] nvars_out     Noise variances after equalization.
 /// \param[in]  ch_symbols    Channel symbols, i.e., complex samples from the receive ports.
 /// \param[in]  ch_estimates  Channel estimation coefficients.
 /// \param[in]  noise_var_est Estimated noise variance for each port.
@@ -42,25 +43,26 @@ namespace srsran {
 template <unsigned RX_PORTS>
 void equalize_zf_1xn(span<cf_t>                            symbols_out,
                      span<float>                           nvars_out,
-                     const channel_equalizer::re_list&     ch_symbols,
+                     const re_buffer_reader<cbf16_t>&      ch_symbols,
                      const channel_equalizer::ch_est_list& ch_estimates,
                      span<const float>                     noise_var_est,
                      float                                 tx_scaling)
 {
   // Number of RE to process.
-  unsigned nof_re = ch_symbols.get_dimension_size(channel_equalizer::re_list::dims::re);
+  unsigned nof_re = ch_symbols.get_nof_re();
 
   unsigned i_re = 0;
 
-#if defined(__AVX2__) || defined(__ARM_NEON)
   // Views over the input data.
   std::array<span<const cbf16_t>, MAX_PORTS> port_symbols;
   std::array<span<const cbf16_t>, MAX_PORTS> port_ests;
 
   for (unsigned i_port = 0; i_port != RX_PORTS; ++i_port) {
-    port_symbols[i_port] = ch_symbols.get_view({i_port});
-    port_ests[i_port]    = ch_estimates.get_view({i_port, 0});
+    port_symbols[i_port] = ch_symbols.get_slice(i_port);
+    port_ests[i_port]    = ch_estimates.get_channel(i_port, 0);
   }
+
+#if defined(__AVX2__) || defined(__ARM_NEON)
 
   // Create registers with zero and infinity values.
   simd_cf_t cf_zero  = srsran_simd_cf_zero();
@@ -84,12 +86,8 @@ void equalize_zf_1xn(span<cf_t>                            symbols_out,
       // Load noise variance in a SIMD register.
       simd_f_t port_noise_var_est = srsran_simd_f_set1(noise_var_est[i_port]);
 
-      // Detect abnormal computation parameters. This detects whether the channel estimate and the port noise variance
-      // estimation are negative, NaN or infinite.
-      simd_sel_t isnormal_mask = srsran_simd_f_max(ch_est_norm, zero);
-      isnormal_mask            = srsran_simd_sel_and(isnormal_mask, srsran_simd_f_max(infinity, ch_est_norm));
-      isnormal_mask            = srsran_simd_sel_and(isnormal_mask, srsran_simd_f_max(port_noise_var_est, zero));
-      isnormal_mask            = srsran_simd_sel_and(isnormal_mask, srsran_simd_f_max(infinity, port_noise_var_est));
+      // Detect an abnormal computation parameter. This detects whether the channel estimate is NaN or infinite.
+      simd_sel_t isnormal_mask = srsran_simd_f_max(infinity, ch_est_norm);
 
       // Compute the channel square norm, by accumulating the channel square absolute values.
       ch_mod_sq = srsran_simd_f_add_sel(ch_mod_sq, ch_est_norm, isnormal_mask);
@@ -116,12 +114,6 @@ void equalize_zf_1xn(span<cf_t>                            symbols_out,
     // Calculate noise variances.
     simd_f_t vars_out = srsran_simd_f_mul(nvar_acc, srsran_simd_f_mul(d_pinv_rcp, d_pinv_rcp));
 
-    // Detect whenever the post-equalization noise variances are zero, negative or NaN.
-    isnormal_mask = srsran_simd_sel_and(isnormal_mask, srsran_simd_f_max(vars_out, zero));
-
-    // Detect whenever the post-equalization noise variances are set to infinity.
-    isnormal_mask = srsran_simd_sel_and(isnormal_mask, srsran_simd_f_max(infinity, vars_out));
-
     // If abnormal calculation parameters are detected, the noise variances are set to infinity.
     srsran_simd_f_storeu(nvars_out.data() + i_re, srsran_simd_f_select(infinity, vars_out, isnormal_mask));
 
@@ -140,8 +132,8 @@ void equalize_zf_1xn(span<cf_t>                            symbols_out,
 
     for (unsigned i_port = 0; i_port != RX_PORTS; ++i_port) {
       // Get the input RE and channel estimate coefficient.
-      cf_t re_in  = to_cf(ch_symbols[{i_re, i_port}]);
-      cf_t ch_est = to_cf(ch_estimates[{i_re, i_port}]);
+      cf_t re_in  = to_cf(port_symbols[i_port][i_re]);
+      cf_t ch_est = to_cf(port_ests[i_port][i_re]);
 
       // Compute the channel square norm.
       float ch_est_norm = std::norm(ch_est);

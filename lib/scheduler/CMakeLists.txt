@@ -35,6 +35,7 @@ set(SOURCES
         pucch_scheduling/pucch_resource_manager.cpp
         uci_scheduling/uci_scheduler_impl.cpp
         uci_scheduling/uci_allocator_impl.cpp
+        srs/srs_scheduler_impl.cpp
         support/pdcch/pdcch_type0_helpers.cpp
         support/pdsch/pdsch_default_time_allocation.cpp
         support/pdsch/pdsch_dmrs_symbol_mask.cpp
@@ -52,6 +53,7 @@ set(SOURCES
         support/csi_report_helpers.cpp
         slicing/slice_scheduler.cpp
         slicing/ran_slice_instance.cpp
+        slicing/slice_ue_repository.cpp
         cell_scheduler.cpp
         scheduler_factory.cpp
         scheduler_impl.cpp

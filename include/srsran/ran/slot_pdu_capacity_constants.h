@@ -77,10 +77,10 @@ static constexpr size_t MAX_PUSCH_PDUS_PER_SLOT = 16U;
 static constexpr size_t MAX_UL_PDCCH_PDUS_PER_SLOT = 16U;
 
 /// [Implementation defined] Maximum number of PUCCH PDUs per slot.
-static constexpr size_t MAX_PUCCH_PDUS_PER_SLOT = 64U;
+static constexpr size_t MAX_PUCCH_PDUS_PER_SLOT = 128U;
 
 /// [Implementation defined] Maximum number of SRS PDUs per slot.
-static constexpr size_t MAX_SRS_PDUS_PER_SLOT = 16U;
+static constexpr size_t MAX_SRS_PDUS_PER_SLOT = 32U;
 
 /// [Implementation defined] Maximum number of codeblocks per PDU.
 static constexpr size_t MAX_CBS_PER_PDU = 64;
@@ -96,6 +96,9 @@ static constexpr size_t MAX_UL_PDUS_PER_SLOT =
 
 /// [Implementation defined] Maximum number of UCI PDUS per UCI indication.
 static constexpr size_t MAX_UCI_PDUS_PER_UCI_IND = MAX_PUCCH_PDUS_PER_SLOT;
+
+/// [Implementation defined] Maximum number of SRS PDUS per SRS indication.
+static constexpr size_t MAX_SRS_PDUS_PER_SRS_IND = MAX_SRS_PDUS_PER_SLOT;
 
 /// [Implementation defined] Maximum number of HARQ VALUES per HARQ PDU.
 static constexpr size_t MAX_HARQ_VALUES_PER_HARQ_PDU = 8;

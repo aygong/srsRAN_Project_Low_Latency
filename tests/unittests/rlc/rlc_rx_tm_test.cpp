@@ -23,13 +23,14 @@
 #include "lib/rlc/rlc_rx_tm_entity.h"
 #include "tests/test_doubles/pdcp/pdcp_pdu_generator.h"
 #include "srsran/rlc/rlc_srb_config_factory.h"
+#include "srsran/support/executors/manual_task_worker.h"
 #include <gtest/gtest.h>
 #include <queue>
 
 using namespace srsran;
 
 /// Mocking class of the surrounding layers invoked by the RLC TM Rx entity.
-class rlc_rx_tm_test_frame : public rlc_rx_upper_layer_data_notifier
+class rlc_rx_tm_test_frame : public rlc_rx_upper_layer_data_notifier, public rlc_metrics_notifier
 {
 public:
   std::queue<byte_buffer_chain> sdu_queue;
@@ -41,6 +42,8 @@ public:
     sdu_queue.push(std::move(sdu));
     sdu_counter++;
   }
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 /// Fixture class for RLC TM Rx tests
@@ -62,14 +65,19 @@ protected:
     // Create test frame
     tester = std::make_unique<rlc_rx_tm_test_frame>();
 
+    metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+        gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{1000}, tester.get(), ue_executor);
+
     // Create RLC AM TX entity
     rlc = std::make_unique<rlc_rx_tm_entity>(gnb_du_id_t::min,
                                              du_ue_index_t::MIN_DU_UE_INDEX,
                                              srb_id_t::srb0,
                                              make_default_srb0_rlc_config().tm.rx,
                                              *tester,
-                                             true,
-                                             pcap);
+                                             *metrics_agg,
+                                             pcap,
+                                             ue_executor,
+                                             timers);
   }
 
   void TearDown() override
@@ -78,10 +86,13 @@ protected:
     srslog::flush();
   }
 
-  srslog::basic_logger&                 logger = srslog::fetch_basic_logger("TEST", false);
-  std::unique_ptr<rlc_rx_tm_test_frame> tester;
-  null_rlc_pcap                         pcap;
-  std::unique_ptr<rlc_rx_tm_entity>     rlc;
+  srslog::basic_logger&                   logger = srslog::fetch_basic_logger("TEST", false);
+  timer_manager                           timers;
+  std::unique_ptr<rlc_rx_tm_test_frame>   tester;
+  null_rlc_pcap                           pcap;
+  std::unique_ptr<rlc_rx_tm_entity>       rlc;
+  std::unique_ptr<rlc_metrics_aggregator> metrics_agg;
+  manual_task_worker                      ue_executor{128};
 };
 
 TEST_F(rlc_rx_am_test, create_new_entity)
@@ -95,15 +106,17 @@ TEST_F(rlc_rx_am_test, test_rx)
   uint32_t       count    = 0;
 
   // write first PDU into lower end
-  byte_buffer       pdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
-  byte_buffer_slice pdu     = {pdu_buf.deep_copy().value()};
+  byte_buffer pdu_buf =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
+  byte_buffer_slice pdu = {pdu_buf.deep_copy().value()};
   rlc->handle_pdu(std::move(pdu));
 
   count++;
 
   // write second PDU into lower end
-  byte_buffer pdu_buf2 = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
-  pdu                  = {pdu_buf2.deep_copy().value()};
+  byte_buffer pdu_buf2 =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
+  pdu = {pdu_buf2.deep_copy().value()};
   rlc->handle_pdu(std::move(pdu));
 
   // read first SDU from tester

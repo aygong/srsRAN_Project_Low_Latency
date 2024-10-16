@@ -30,16 +30,16 @@ rlc_rx_um_entity::rlc_rx_um_entity(gnb_du_id_t                       gnb_du_id,
                                    rb_id_t                           rb_id,
                                    const rlc_rx_um_config&           config,
                                    rlc_rx_upper_layer_data_notifier& upper_dn_,
-                                   timer_factory                     timers,
+                                   rlc_metrics_aggregator&           metrics_agg_,
+                                   rlc_pcap&                         pcap_,
                                    task_executor&                    ue_executor,
-                                   bool                              metrics_enable,
-                                   rlc_pcap&                         pcap_) :
-  rlc_rx_entity(gnb_du_id, ue_index, rb_id, upper_dn_, metrics_enable, pcap_),
+                                   timer_manager&                    timers) :
+  rlc_rx_entity(gnb_du_id, ue_index, rb_id, upper_dn_, metrics_agg_, pcap_, ue_executor, timers),
   cfg(config),
   mod(cardinality(to_number(cfg.sn_field_length))),
   um_window_size(window_size(to_number(cfg.sn_field_length))),
   rx_window(create_rx_window(cfg.sn_field_length)),
-  reassembly_timer(timers.create_timer()),
+  reassembly_timer(ue_timer_factory.create_timer()),
   pcap_context(ue_index, rb_id, config)
 {
   metrics.metrics_set_mode(rlc_mode::um_bidir);
@@ -59,7 +59,7 @@ rlc_rx_um_entity::rlc_rx_um_entity(gnb_du_id_t                       gnb_du_id,
 void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
 {
   metrics.metrics_add_pdus(1, buf.length());
-
+  auto start = std::chrono::steady_clock::now();
   pcap.push_pdu(pcap_context, buf);
 
   rlc_um_pdu_header header = {};
@@ -93,6 +93,8 @@ void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
     // deliver to upper layer
     logger.log_info("RX SDU. sdu_len={}", sdu.value().length());
     metrics.metrics_add_sdus(1, sdu.value().length());
+    auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start);
+    metrics.metrics_add_sdu_latency(latency.count() / 1000);
     upper_dn.on_new_sdu(std::move(sdu.value()));
     // Nothing else to do here ...
     return;
@@ -127,6 +129,9 @@ void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
       // Do not pass empty SDU to upper layers and continue as normal to maintain state
     } else {
       logger.log_info("RX SDU. sn={} sdu_len={}", header.sn, sdu.value().length());
+      auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
+                                                                          sdu_info.time_of_arrival);
+      metrics.metrics_add_sdu_latency(latency.count() / 1000);
       metrics.metrics_add_sdus(1, sdu.value().length());
       upper_dn.on_new_sdu(std::move(sdu.value()));
     }
@@ -286,8 +291,11 @@ bool rlc_rx_um_entity::handle_segment_data_sdu(const rlc_um_pdu_header& header, 
   logger.log_debug("RX SDU segment. payload_len={} {}", payload.length(), header);
 
   // Add new SN to RX window if no segments have been received yet
-  rlc_rx_um_sdu_info& rx_sdu = rx_window->has_sn(header.sn) ? (*rx_window)[header.sn] : rx_window->add_sn(header.sn);
-
+  rlc_rx_um_sdu_info& rx_sdu = rx_window->has_sn(header.sn) ? (*rx_window)[header.sn] : ([&]() -> rlc_rx_um_sdu_info& {
+    rlc_rx_um_sdu_info& sdu = rx_window->add_sn(header.sn);
+    sdu.time_of_arrival     = std::chrono::steady_clock::now();
+    return sdu;
+  })();
   // Create SDU segment, to be stored later
   rlc_rx_um_sdu_segment segment = {};
   segment.si                    = header.si;

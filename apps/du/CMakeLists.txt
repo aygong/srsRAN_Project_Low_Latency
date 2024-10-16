@@ -23,7 +23,7 @@ add_executable(srsdu
     du_appconfig_cli11_schema.cpp
     du_appconfig_validators.cpp
     du_appconfig_translators.cpp
-    ../gnb/adapters/e2_gateway_remote_connector.cpp # TODO: Delete
+    du_appconfig_yaml_writer.cpp
 )
 
 install(TARGETS srsdu
@@ -38,9 +38,8 @@ target_link_libraries(srsdu
         e2ap_asn1
         srsran_pcap
         srsran_support
-        srsran_version
-        srsran_build_info
-        srsran_flexible_du_dynamic
+        srsran_versioning
+        srsran_flexible_du
         srsran_f1c_gateway
         srsran_cu_up # TODO: Delete
 )

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/adt/expected.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/phy/support/re_pattern.h"
 #include "srsran/phy/upper/channel_coding/ldpc/ldpc.h"
@@ -33,6 +34,7 @@
 #include "srsran/ran/slot_point.h"
 #include "srsran/ran/uci/uci_constants.h"
 #include "srsran/ran/uci/uci_part2_size_description.h"
+#include <variant>
 
 namespace srsran {
 
@@ -81,6 +83,37 @@ public:
     float beta_offset_csi_part2;
   };
 
+  /// Collects the DM-RS parameters.
+  struct dmrs_configuration {
+    /// Indicates the DM-RS type.
+    dmrs_type dmrs;
+    /// \brief Parameter \f$N^{n_{SCID}}_{ID}\f$ TS38.211 Section 6.4.1.1.1.
+    ///
+    /// It is equal to:
+    /// - a value in {0,1, ... ,65535} given by the higher-layer parameters \e scramblingID0 and \e scramblingID1,
+    /// - \f$N^{cell}_{ID}\f$ otherwise.
+    unsigned scrambling_id;
+    /// \brief Parameter \f$n_{SCID}\f$ from TS 38.211 section 6.4.1.1.1.
+    ///
+    /// It is equal to:
+    /// - \c true or \c false according to the DM-RS sequence initialization field, in the DCI associated with the PUSCH
+    /// transmission if DCI format 0_1 is used,
+    /// - \c false otherwise.
+    bool n_scid;
+    /// Number of DM-RS CDM groups without data.
+    unsigned nof_cdm_groups_without_data;
+  };
+
+  /// Collects the DM-RS parameters when transform precoding is enabled.
+  struct dmrs_transform_precoding_configuration {
+    /// \brief Parameter \f$n^{RS}_{ID}\f$ TS38.211 Section 6.4.1.1.2.
+    ///
+    /// It is equal to:
+    /// - a value in {0,1, ... ,1007} given by the higher-layer parameter \e nPUSCH-Identity, or
+    /// - \f$N^{cell}_{ID}\f$.
+    unsigned n_rs_id;
+  };
+
   /// \brief Describes the PUSCH processing parameters.
   ///
   /// For a valid PUSCH transmission the codeword, the UCI information or both must be present.
@@ -115,23 +148,8 @@ public:
     static_vector<uint8_t, MAX_PORTS> rx_ports;
     /// Indicates which symbol in the slot transmit DMRS.
     symbol_slot_mask dmrs_symbol_mask;
-    /// Indicates the DMRS type.
-    dmrs_type dmrs;
-    /// \brief Parameter \f$N^{n_{SCID}}_{ID}\f$ TS 38.211 section 6.4.1.1.1.
-    ///
-    /// It is equal to:
-    /// - {0,1, … ,65535} given by the higher-layer parameters scramblingID0 and scramblingID1,
-    /// - \f$N^{cell}_{ID}\f$ otherwise.
-    unsigned scrambling_id;
-    /// \brief Parameter \f$n_{SCID}\f$ from TS 38.211 section 6.4.1.1.1.
-    ///
-    /// It is equal to:
-    /// - \c true or \c false according DM-RS sequence initialization field, in the DCI associated with the PUSCH
-    /// transmission if DCI format 0_1 is used,
-    /// - \c false otherwise.
-    bool n_scid;
-    /// Number of DMRS CDM groups without data.
-    unsigned nof_cdm_groups_without_data;
+    /// DM-RS configuration.
+    std::variant<dmrs_configuration, dmrs_transform_precoding_configuration> dmrs;
     /// Frequency domain allocation.
     rb_allocation freq_alloc;
     /// Time domain allocation start symbol index (0...12).
@@ -178,8 +196,8 @@ public:
   virtual ~pusch_pdu_validator() = default;
 
   /// \brief Validates PUSCH processor configuration parameters.
-  /// \return True if the parameters contained in \c pdu are supported, false otherwise.
-  virtual bool is_valid(const pusch_processor::pdu_t& pdu) const = 0;
+  /// \return A success if the parameters contained in \c pdu are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pusch_processor::pdu_t& pdu) const = 0;
 };
 
 } // namespace srsran

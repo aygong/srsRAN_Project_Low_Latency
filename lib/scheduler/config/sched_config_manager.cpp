@@ -21,6 +21,7 @@
  */
 
 #include "sched_config_manager.h"
+#include "../logging/scheduler_metrics_handler.h"
 #include "../logging/scheduler_metrics_ue_configurator.h"
 #include "srsran/scheduler/config/scheduler_cell_config_validator.h"
 #include "srsran/scheduler/config/scheduler_ue_config_validator.h"
@@ -39,14 +40,16 @@ ue_config_update_event::ue_config_update_event(du_ue_index_t                    
 ue_config_update_event::~ue_config_update_event()
 {
   if (parent != nullptr) {
-    // Event completed with success or failure.
-    parent->handle_ue_config_complete(ue_index, std::move(next_ded_cfg));
+    // Event completed with failure.
+    parent->handle_ue_config_complete(ue_index, nullptr);
   }
 }
 
-void ue_config_update_event::abort()
+void ue_config_update_event::notify_completion()
 {
-  next_ded_cfg = nullptr;
+  // Event completed with success.
+  parent->handle_ue_config_complete(ue_index, std::move(next_ded_cfg));
+  parent.reset();
 }
 
 ue_config_delete_event::ue_config_delete_event(du_ue_index_t ue_index_, sched_config_manager& parent_) :
@@ -67,11 +70,11 @@ void ue_config_delete_event::reset()
   }
 }
 
-sched_config_manager::sched_config_manager(const scheduler_config&        sched_cfg,
-                                           sched_metrics_ue_configurator& metrics_handler_) :
+sched_config_manager::sched_config_manager(const scheduler_config&    sched_cfg,
+                                           scheduler_metrics_handler& metrics_handler_) :
   expert_params(sched_cfg.expert_params),
-  config_notifier(sched_cfg.config_notifier),
   metrics_handler(metrics_handler_),
+  config_notifier(sched_cfg.config_notifier),
   logger(srslog::fetch_basic_logger("SCHED"))
 {
   std::fill(ue_to_cell_group_index.begin(), ue_to_cell_group_index.end(), INVALID_DU_CELL_GROUP_INDEX);
@@ -88,10 +91,10 @@ const cell_configuration* sched_config_manager::add_cell(const sched_cell_config
 
   added_cells.emplace(msg.cell_index, std::make_unique<cell_configuration>(expert_params, msg));
 
-  // Update DU cell index to group lookup.
-  du_cell_to_cell_group_index.emplace(msg.cell_index, msg.cell_group_index);
+  cell_metrics_handler* cell_metrics = metrics_handler.add_cell(*added_cells[msg.cell_index]);
+  srsran_assert(cell_metrics != nullptr, "Unable to create metrics handler");
 
-  return &*added_cells[msg.cell_index];
+  return added_cells[msg.cell_index].get();
 }
 
 ue_config_update_event sched_config_manager::add_ue(const sched_ue_creation_request_message& cfg_req)
@@ -202,10 +205,13 @@ void sched_config_manager::handle_ue_config_complete(du_ue_index_t ue_index, std
   if (next_cfg != nullptr) {
     // Creation/Reconfig succeeded.
 
+    cell_metrics_handler& cell_metrics = metrics_handler.at(next_cfg->pcell_common_cfg().cell_index);
     if (ue_cfg_list[ue_index] == nullptr) {
       // UE creation case.
-      metrics_handler.handle_ue_creation(
-          ue_index, next_cfg->crnti, next_cfg->pcell_common_cfg().pci, next_cfg->pcell_common_cfg().nof_dl_prbs);
+      cell_metrics.handle_ue_creation(ue_index, next_cfg->crnti, next_cfg->pcell_common_cfg().pci);
+    } else {
+      // Reconfiguration case.
+      cell_metrics.handle_ue_reconfiguration(ue_index);
     }
 
     // Stores new UE config and deletes old config.
@@ -227,11 +233,14 @@ void sched_config_manager::handle_ue_config_complete(du_ue_index_t ue_index, std
 
 void sched_config_manager::handle_ue_delete_complete(du_ue_index_t ue_index)
 {
+  du_cell_index_t pcell_idx = ue_cfg_list[ue_index]->pcell_common_cfg().cell_index;
+
   // Deletes UE config.
   ue_cfg_list[ue_index].reset();
 
   // Remove UE from metrics.
-  metrics_handler.handle_ue_deletion(ue_index);
+  cell_metrics_handler& cell_metrics = metrics_handler.at(pcell_idx);
+  cell_metrics.handle_ue_deletion(ue_index);
 
   // Mark the UE as released.
   ue_to_cell_group_index[ue_index].store(INVALID_DU_CELL_GROUP_INDEX, std::memory_order_release);

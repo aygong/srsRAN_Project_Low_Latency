@@ -23,6 +23,7 @@
 #pragma once
 
 #include "apps/gnb/gnb_appconfig.h"
+#include "apps/services/buffer_pool/buffer_pool_appconfig.h"
 #include "apps/services/logger/logger_appconfig.h"
 #include <string>
 
@@ -32,7 +33,9 @@ namespace srs_cu {
 /// NR-U configuration
 struct cu_nru_appconfig {
   std::string bind_addr       = "127.0.10.1"; // Bind address used by the F1-U interface
+  std::string ext_addr        = "auto";       // External address advertised by the F1-U interface
   int         udp_rx_max_msgs = 256; // Max number of UDP packets received by a single syscall on the F1-U interface.
+  float       pool_occupancy_threshold = 0.9; // Buffer pool occupancy threshold after which packets are dropped.
 };
 
 /// F1AP configuration
@@ -63,6 +66,8 @@ struct cu_appconfig {
   /// Buffer pool configuration.
   buffer_pool_appconfig buffer_pool_config;
 
+  /// E2 configuration.
+  e2_appconfig e2_cfg;
   /// TODO fill in the rest of the configuration
 };
 

@@ -34,29 +34,33 @@ using namespace srsran;
 namespace {
 
 /// Maximum number of layers the PUSCH processor supports.
-static constexpr unsigned max_supported_nof_layers = 2;
-
-const pusch_processor::pdu_t base_pdu = {std::nullopt,
-                                         {0, 9},
-                                         8323,
-                                         25,
-                                         0,
-                                         cyclic_prefix::NORMAL,
-                                         {modulation_scheme::PI_2_BPSK, 0.1},
-                                         {{0, ldpc_base_graph_type::BG2, true}},
-                                         {0, 1, uci_part2_size_description(1), 1, 20, 6.25, 6.25},
-                                         935,
-                                         1,
-                                         {0, 1, 2, 3},
-                                         {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0},
-                                         dmrs_type::TYPE1,
-                                         35840,
-                                         1,
-                                         2,
-                                         rb_allocation::make_type1(15, 1),
-                                         0,
-                                         14,
-                                         units::bytes(ldpc::MAX_CODEBLOCK_SIZE / 8)};
+constexpr unsigned max_supported_nof_layers = 2;
+/// Default DM-RS symbol mask within the slot.
+const symbol_slot_mask dmrs_symbol_mask =
+    {false, false, true, false, false, false, false, false, false, false, false, true, false, false};
+/// Default valid PUSCH processor configuration.
+const pusch_processor::pdu_t base_pdu = {.context          = std::nullopt,
+                                         .slot             = {0, 9},
+                                         .rnti             = 8323,
+                                         .bwp_size_rb      = 25,
+                                         .bwp_start_rb     = 0,
+                                         .cp               = cyclic_prefix::NORMAL,
+                                         .mcs_descr        = {modulation_scheme::PI_2_BPSK, 0.1},
+                                         .codeword         = {{0, ldpc_base_graph_type::BG2, true}},
+                                         .uci              = {0, 1, uci_part2_size_description(1), 1, 20, 6.25, 6.25},
+                                         .n_id             = 935,
+                                         .nof_tx_layers    = 1,
+                                         .rx_ports         = {0, 1, 2, 3},
+                                         .dmrs_symbol_mask = dmrs_symbol_mask,
+                                         .dmrs       = pusch_processor::dmrs_configuration{.dmrs          = dmrs_type::TYPE1,
+                                                                                           .scrambling_id = 0,
+                                                                                           .n_scid        = false,
+                                                                                           .nof_cdm_groups_without_data = 2},
+                                         .freq_alloc = rb_allocation::make_type1(15, 1),
+                                         .start_symbol_index = 0,
+                                         .nof_symbols        = 14,
+                                         .tbs_lbrm           = units::bytes(ldpc::MAX_CODEBLOCK_SIZE / 8),
+                                         .dc_position        = std::nullopt};
 
 struct test_case_t {
   std::function<pusch_processor::pdu_t()> get_pdu;
@@ -93,7 +97,7 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        pdu.bwp_size_rb            = 1;
        return pdu;
      },
-     R"(Invalid BWP configuration 0:1 for a VRB mask of size 16\.)"},
+     R"(Invalid BWP configuration, i\.e\., \[0, 1\) for the given RB allocation, i\.e\., \[15, 16\)\.)"},
     {[] {
        pusch_processor::pdu_t pdu                                      = base_pdu;
        pdu.uci.nof_csi_part1                                           = 0;
@@ -106,13 +110,14 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        pdu.dmrs_symbol_mask       = {true};
        return pdu;
      },
-     R"(The DM-RS symbol mask size \(i\.e\., 1\) must be the same as the number of symbols allocated to the transmission within the slot \(i\.e\., 14\)\.)"},
+     R"(The DM-RS symbol mask size \(i\.e\., 1\) must be equal to the slot size \(i\.e\., 14\)\.)"},
+
     {[] {
        pusch_processor::pdu_t pdu = base_pdu;
        pdu.dmrs_symbol_mask       = symbol_slot_mask(get_nsymb_per_slot(pdu.cp));
        return pdu;
      },
-     R"(The number of OFDM symbols carrying DM-RS RE must be greater than zero\.)"},
+     R"(The number of OFDM symbols carrying DM-RS must be greater than zero\.)"},
     {[] {
        pusch_processor::pdu_t pdu = base_pdu;
        pdu.dmrs_symbol_mask       = symbol_slot_mask(get_nsymb_per_slot(pdu.cp));
@@ -138,16 +143,16 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        pdu.nof_symbols            = 15;
        return pdu;
      },
-     R"(The DM-RS symbol mask size \(i\.e\., 14\) must be the same as the number of symbols allocated to the transmission within the slot \(i\.e\., 15\)\.)"},
+     R"(The symbol allocation \(i\.e\., \[0, 15\)\) exceeds the slot size \(i\.e\., 14\)\.)"},
     {[] {
-       pusch_processor::pdu_t pdu = base_pdu;
-       pdu.dmrs                   = dmrs_type::TYPE2;
+       pusch_processor::pdu_t pdu                                   = base_pdu;
+       std::get<pusch_processor::dmrs_configuration>(pdu.dmrs).dmrs = dmrs_type::TYPE2;
        return pdu;
      },
      R"(Only DM-RS Type 1 is currently supported\.)"},
     {[] {
-       pusch_processor::pdu_t pdu      = base_pdu;
-       pdu.nof_cdm_groups_without_data = 1;
+       pusch_processor::pdu_t pdu                                                          = base_pdu;
+       std::get<pusch_processor::dmrs_configuration>(pdu.dmrs).nof_cdm_groups_without_data = 1;
        return pdu;
      },
      R"(Only two CDM groups without data are currently supported\.)"},
@@ -163,6 +168,40 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        return pdu;
      },
      R"(DC position \(i\.e\., 3300\) is out of range \[0\.\.3300\)\.)"},
+    {[] {
+       pusch_processor::pdu_t pdu = base_pdu;
+       pdu.dmrs                   = pusch_processor::dmrs_transform_precoding_configuration{.n_rs_id = 0};
+       pdu.nof_tx_layers          = 2;
+       return pdu;
+     },
+     R"(Transform precoding is only possible with one layer\.)"},
+    {[] {
+       pusch_processor::pdu_t pdu = base_pdu;
+       pdu.dmrs                   = pusch_processor::dmrs_transform_precoding_configuration{.n_rs_id = 0};
+       pdu.freq_alloc             = rb_allocation::make_custom({0, 2});
+       return pdu;
+     },
+     R"(Transform precoding is only possible with contiguous allocations\.)"},
+    {[] {
+       pusch_processor::pdu_t pdu = base_pdu;
+       pdu.dmrs                   = pusch_processor::dmrs_transform_precoding_configuration{.n_rs_id = 0};
+       pdu.freq_alloc             = rb_allocation::make_type1(0, 7);
+       pdu.nof_tx_layers          = 1;
+       return pdu;
+     },
+     R"(Transform precoding is only possible with a valid number of PRB\.)"},
+    {[] {
+       pusch_processor::pdu_t pdu = base_pdu;
+       pdu.uci.nof_harq_ack       = 12;
+       return pdu;
+     },
+     R"(UCI field sizes in bits \(12, 1\), exceed the maximum bit size, i\.e\., 11\.)"},
+    {[] {
+       pusch_processor::pdu_t pdu = base_pdu;
+       pdu.uci.nof_csi_part1      = 12;
+       return pdu;
+     },
+     R"(UCI field sizes in bits \(0, 12\), exceed the maximum bit size, i\.e\., 11\.)"},
 };
 
 class PuschProcessorFixture : public ::testing::TestWithParam<test_case_t>
@@ -180,6 +219,11 @@ protected:
     // Create pseudo-random sequence generator.
     std::shared_ptr<pseudo_random_generator_factory> prg_factory = create_pseudo_random_generator_sw_factory();
     ASSERT_NE(prg_factory, nullptr);
+
+    // Create low-PAPR sequence generator.
+    std::shared_ptr<low_papr_sequence_generator_factory> low_papr_sequence_gen_factory =
+        create_low_papr_sequence_generator_sw_factory();
+    ASSERT_NE(low_papr_sequence_gen_factory, nullptr);
 
     // Create demodulator mapper factory.
     std::shared_ptr<channel_modulation_factory> chan_modulation_factory = create_channel_modulation_sw_factory();
@@ -222,16 +266,20 @@ protected:
 
     // Create DM-RS for PUSCH channel estimator.
     std::shared_ptr<dmrs_pusch_estimator_factory> dmrs_pusch_chan_estimator_factory =
-        create_dmrs_pusch_estimator_factory_sw(prg_factory, port_chan_estimator_factory);
+        create_dmrs_pusch_estimator_factory_sw(prg_factory, low_papr_sequence_gen_factory, port_chan_estimator_factory);
     ASSERT_NE(dmrs_pusch_chan_estimator_factory, nullptr);
 
     // Create channel equalizer factory.
     std::shared_ptr<channel_equalizer_factory> eq_factory = create_channel_equalizer_generic_factory();
     ASSERT_NE(eq_factory, nullptr);
 
+    std::shared_ptr<transform_precoder_factory> precoding_factory =
+        create_dft_transform_precoder_factory(dft_factory, MAX_RB);
+    ASSERT_NE(precoding_factory, nullptr);
+
     // Create PUSCH demodulator factory.
-    std::shared_ptr<pusch_demodulator_factory> pusch_demod_factory =
-        create_pusch_demodulator_factory_sw(eq_factory, chan_modulation_factory, prg_factory);
+    std::shared_ptr<pusch_demodulator_factory> pusch_demod_factory = create_pusch_demodulator_factory_sw(
+        eq_factory, precoding_factory, chan_modulation_factory, prg_factory, MAX_RB, false, false);
     ASSERT_NE(pusch_demod_factory, nullptr);
 
     // Create PUSCH demultiplexer factory.

@@ -31,15 +31,8 @@ using namespace srsran;
 using namespace srs_cu_cp;
 using namespace asn1::rrc_nr;
 
-rrc_du_impl::rrc_du_impl(const rrc_cfg_t&                    cfg_,
-                         rrc_ue_nas_notifier&                nas_notif_,
-                         rrc_ue_control_notifier&            ngap_ctrl_notif_,
-                         rrc_du_measurement_config_notifier& meas_config_notifier_) :
-  cfg(cfg_),
-  nas_notifier(nas_notif_),
-  ngap_ctrl_notifier(ngap_ctrl_notif_),
-  meas_config_notifier(meas_config_notifier_),
-  logger(srslog::fetch_basic_logger("RRC", false))
+rrc_du_impl::rrc_du_impl(const rrc_cfg_t& cfg_, rrc_du_measurement_config_notifier& meas_config_notifier_) :
+  cfg(cfg_), meas_config_notifier(meas_config_notifier_), logger(srslog::fetch_basic_logger("RRC", false))
 {
   for (const auto& qos : cfg.drb_config) {
     logger.debug("5QI DRB config: {} {}", qos.first, qos.second.pdcp);
@@ -84,10 +77,10 @@ bool rrc_du_impl::handle_served_cell_list(const std::vector<cu_cp_du_served_cell
 
     // fill cell meas config
     serving_cell_meas_config meas_cfg;
-    meas_cfg.nci    = served_cell.served_cell_info.nr_cgi.nci;
-    meas_cfg.gnb_id = cfg.gnb_id;
-    meas_cfg.pci    = served_cell.served_cell_info.nr_pci;
-    meas_cfg.band   = cell_info.band;
+    meas_cfg.nci               = served_cell.served_cell_info.nr_cgi.nci;
+    meas_cfg.gnb_id_bit_length = cfg.gnb_id.bit_length;
+    meas_cfg.pci               = served_cell.served_cell_info.nr_pci;
+    meas_cfg.band              = cell_info.band;
     // TODO: which meas timing to use here?
     meas_cfg.ssb_mtc   = cell_info.meas_timings.begin()->freq_and_timing.value().ssb_meas_timing_cfg;
     meas_cfg.ssb_arfcn = cell_info.meas_timings.begin()->freq_and_timing.value().carrier_freq;
@@ -149,8 +142,7 @@ rrc_ue_interface* rrc_du_impl::add_ue(const rrc_ue_creation_message& msg)
 
   auto res = ue_db.emplace(ue_index,
                            std::make_unique<rrc_ue_impl>(*msg.f1ap_pdu_notifier,
-                                                         nas_notifier,
-                                                         ngap_ctrl_notifier,
+                                                         *msg.ngap_notifier,
                                                          *msg.rrc_ue_cu_cp_notifier,
                                                          *msg.measurement_notifier,
                                                          *msg.cu_cp_ue_notifier,

@@ -20,8 +20,8 @@
  *
  */
 
-#include "lib/du_manager/du_ue/du_bearer.h"
-#include "lib/du_manager/du_ue/du_ue_bearer_manager.h"
+#include "lib/du/du_high/du_manager/du_ue/du_bearer.h"
+#include "lib/du/du_high/du_manager/du_ue/du_ue_bearer_manager.h"
 #include "tests/unittests/du_manager/du_manager_test_helpers.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/support/test_utils.h"
@@ -80,15 +80,11 @@ protected:
                                         drb_id,
                                         lcid,
                                         rlc_config{},
-                                        mac_lc_config{},
                                         f1u_config{},
                                         ul_tnls,
                                         teid_pool,
                                         du_mng->params,
-                                        rlf_notifier,
-                                        qos_characteristics{},
-                                        std::nullopt,
-                                        dummy_slice_info});
+                                        rlf_notifier});
   }
 };
 

@@ -21,7 +21,6 @@
  */
 
 #include "rrc_ue_impl.h"
-#include "procedures/rrc_security_mode_command_procedure.h"
 #include "rrc_ue_helpers.h"
 #include "srsran/asn1/rrc_nr/dl_dcch_msg.h"
 #include "srsran/asn1/rrc_nr/ho_prep_info.h"
@@ -32,9 +31,8 @@ using namespace srs_cu_cp;
 using namespace asn1::rrc_nr;
 
 rrc_ue_impl::rrc_ue_impl(rrc_pdu_f1ap_notifier&                 f1ap_pdu_notifier_,
-                         rrc_ue_nas_notifier&                   nas_notif_,
-                         rrc_ue_control_notifier&               ngap_ctrl_notif_,
-                         rrc_ue_context_update_notifier&        cu_cp_notif_,
+                         rrc_ue_ngap_notifier&                  ngap_notifier_,
+                         rrc_ue_context_update_notifier&        cu_cp_notifier_,
                          rrc_ue_measurement_notifier&           measurement_notifier_,
                          rrc_ue_cu_cp_ue_notifier&              cu_cp_ue_notifier_,
                          const ue_index_t                       ue_index_,
@@ -45,9 +43,8 @@ rrc_ue_impl::rrc_ue_impl(rrc_pdu_f1ap_notifier&                 f1ap_pdu_notifie
                          std::optional<rrc_ue_transfer_context> rrc_context) :
   context(ue_index_, c_rnti_, cell_, cfg_, rrc_context),
   f1ap_pdu_notifier(f1ap_pdu_notifier_),
-  nas_notifier(nas_notif_),
-  ngap_ctrl_notifier(ngap_ctrl_notif_),
-  cu_cp_notifier(cu_cp_notif_),
+  ngap_notifier(ngap_notifier_),
+  cu_cp_notifier(cu_cp_notifier_),
   measurement_notifier(measurement_notifier_),
   cu_cp_ue_notifier(cu_cp_ue_notifier_),
   du_to_cu_container(du_to_cu_container_),
@@ -55,7 +52,7 @@ rrc_ue_impl::rrc_ue_impl(rrc_pdu_f1ap_notifier&                 f1ap_pdu_notifie
   event_mng(std::make_unique<rrc_ue_event_manager>(cu_cp_ue_notifier.get_timer_factory()))
 {
   srsran_assert(context.cell.bands.empty() == false, "Band must be present in RRC cell configuration.");
-  srsran_assert(context.cfg.rrc_procedure_timeout_ms > 0, "RRC procedure timeout cannot be zero.");
+  srsran_assert(context.cfg.rrc_procedure_timeout_ms.count() > 0, "RRC procedure timeout cannot be zero.");
 
   // Update security context and keys
   if (rrc_context.has_value()) {
@@ -138,26 +135,6 @@ void rrc_ue_impl::on_new_as_security_context()
           security::integrity_enabled::on, security::ciphering_enabled::off, cu_cp_ue_notifier.get_rrc_128_as_config());
 
   cu_cp_ue_notifier.enable_security();
-}
-
-void rrc_ue_impl::on_security_context_sucessful()
-{
-  srsran_sanity_check(context.srbs.find(srb_id_t::srb1) != context.srbs.end(),
-                      "Attempted to configure security, but there is no interface to PDCP");
-
-  context.srbs.at(srb_id_t::srb1)
-      .enable_rx_security(
-          security::integrity_enabled::on, security::ciphering_enabled::on, cu_cp_ue_notifier.get_rrc_128_as_config());
-  context.srbs.at(srb_id_t::srb1)
-      .enable_tx_security(
-          security::integrity_enabled::on, security::ciphering_enabled::on, cu_cp_ue_notifier.get_rrc_128_as_config());
-}
-
-async_task<bool> rrc_ue_impl::handle_init_security_context()
-{
-  //  Launch RRC security mode procedure
-  return launch_async<rrc_security_mode_command_procedure>(
-      context, cu_cp_ue_notifier.get_security_algos(), *this, *event_mng, logger);
 }
 
 byte_buffer rrc_ue_impl::get_packed_handover_preparation_message()

@@ -22,11 +22,12 @@
 
 #pragma once
 
+#include "../cell/cell_harq_manager.h"
 #include "../cell/resource_grid.h"
 #include "../pdcch_scheduling/pdcch_resource_allocator.h"
 #include "../support/prbs_calculator.h"
-#include "../support/slot_event_list.h"
-#include "../ue_scheduling/harq_process.h"
+#include "srsran/adt/concurrent_queue.h"
+#include "srsran/adt/mpmc_queue.h"
 #include "srsran/ran/prach/prach_configuration.h"
 #include "srsran/scheduler/config/scheduler_expert_config.h"
 #include "srsran/srslog/srslog.h"
@@ -35,6 +36,7 @@
 namespace srsran {
 
 class scheduler_event_logger;
+class cell_metrics_handler;
 
 /// Get MSG3 Delay.
 /// \param[in] pusch_td_res_alloc PUSCH-TimeDomainResourceAllocation.
@@ -53,14 +55,12 @@ uint16_t get_ra_rnti(unsigned slot_index, unsigned symbol_index, unsigned freque
 /// Scheduler for PRACH occasions, RAR PDSCHs and Msg3 PUSCH grants.
 class ra_scheduler
 {
-  /// Implementation-defined limit for maximum number of concurrent Msg3s.
-  static constexpr size_t MAX_NOF_MSG3 = 1024;
-
 public:
   explicit ra_scheduler(const scheduler_ra_expert_config& sched_cfg_,
                         const cell_configuration&         cfg_,
                         pdcch_resource_allocator&         pdcch_sched_,
-                        scheduler_event_logger&           ev_logger_);
+                        scheduler_event_logger&           ev_logger_,
+                        cell_metrics_handler&             metrics_handler_);
 
   /// Enqueue RACH indication
   /// \remark See TS 38.321, 5.1.3 - RAP transmission.
@@ -73,6 +73,8 @@ public:
   void run_slot(cell_resource_allocator& res_alloc);
 
 private:
+  class msg3_harq_timeout_notifier;
+
   struct pending_rar_t {
     rnti_t                                                  ra_rnti = rnti_t::INVALID_RNTI;
     slot_point                                              prach_slot_rx;
@@ -83,16 +85,24 @@ private:
   struct pending_msg3_t {
     /// Detected PRACH Preamble associated to this Msg3.
     rach_indication_message::preamble preamble{};
-    harq_logger msg3_harq_logger{srslog::fetch_basic_logger("SCHED"), rnti_t::INVALID_RNTI, to_du_cell_index(0), false};
     /// UL Harq used to schedule Msg3.
     /// Note: [TS 38.321, 5.4.2.1] "For UL transmission with UL grant in RA Response, HARQ process identifier 0 is
     /// used".
-    ul_harq_process harq{to_harq_id(0), msg3_harq_logger};
+    unique_ue_harq_entity msg3_harq_ent;
+
+    bool busy() const { return not msg3_harq_ent.empty(); }
   };
   struct msg3_alloc_candidate {
     unsigned     pusch_td_res_index;
     crb_interval crbs;
   };
+
+  using rach_indication_queue = concurrent_queue<rach_indication_message,
+                                                 concurrent_queue_policy::lockfree_mpmc,
+                                                 concurrent_queue_wait_policy::non_blocking>;
+  using crc_indication_queue  = concurrent_queue<ul_crc_indication,
+                                                concurrent_queue_policy::lockfree_mpmc,
+                                                concurrent_queue_wait_policy::non_blocking>;
 
   const bwp_configuration&   get_dl_bwp_cfg() const { return cell_cfg.dl_cfg_common.init_dl_bwp.generic_params; }
   const pdsch_config_common& get_pdsch_cfg() const { return cell_cfg.dl_cfg_common.init_dl_bwp.pdsch_common; }
@@ -154,6 +164,7 @@ private:
   const cell_configuration&         cell_cfg;
   pdcch_resource_allocator&         pdcch_sch;
   scheduler_event_logger&           ev_logger;
+  cell_metrics_handler&             metrics_hdlr;
 
   // derived from args
   srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
@@ -182,10 +193,11 @@ private:
   sch_mcs_description                 msg3_mcs_config;
 
   // variables
-  slot_event_list<rach_indication_message> pending_rachs;
-  slot_event_list<ul_crc_indication>       pending_crcs;
-  std::deque<pending_rar_t>                pending_rars;
-  std::vector<pending_msg3_t>              pending_msg3s;
+  cell_harq_manager           msg3_harqs;
+  rach_indication_queue       pending_rachs;
+  crc_indication_queue        pending_crcs;
+  std::deque<pending_rar_t>   pending_rars;
+  std::vector<pending_msg3_t> pending_msg3s;
 };
 
 } // namespace srsran

@@ -21,6 +21,7 @@
  */
 
 #include "du_low_config_translator.h"
+#include "apps/services/worker_manager_config.h"
 #include "du_low_config.h"
 #include "srsran/du/du_cell_config.h"
 #include "srsran/phy/upper/upper_phy_factories.h"
@@ -29,17 +30,17 @@
 
 using namespace srsran;
 
-static void generate_du_low_config(du_low_config&             out_config,
-                                   const du_low_unit_config&  du_low,
-                                   span<const du_cell_config> du_cells,
-                                   span<const unsigned>       max_puschs_per_slot,
-                                   unsigned                   du_id)
+static void generate_du_low_config(srs_du::du_low_config&             out_config,
+                                   const du_low_unit_config&          du_low,
+                                   span<const srs_du::du_cell_config> du_cells,
+                                   span<const unsigned>               max_puschs_per_slot,
+                                   unsigned                           du_id)
 {
   out_config.cells.reserve(du_cells.size());
 
   for (unsigned i = 0, e = du_cells.size(); i != e; ++i) {
-    const du_cell_config& cell           = du_cells[i];
-    upper_phy_config&     upper_phy_cell = out_config.cells.emplace_back().upper_phy_cfg;
+    const srs_du::du_cell_config& cell           = du_cells[i];
+    upper_phy_config&             upper_phy_cell = out_config.cells.emplace_back().upper_phy_cfg;
 
     // Get band, frequency range and duplex mode from the band.
     nr_band               band       = cell.dl_carrier.band;
@@ -133,7 +134,6 @@ static void generate_du_low_config(du_low_config&             out_config,
     upper_phy_cell.ldpc_decoder_iterations    = du_low.expert_phy_cfg.pusch_decoder_max_iterations;
     upper_phy_cell.ldpc_decoder_early_stop    = du_low.expert_phy_cfg.pusch_decoder_early_stop;
     upper_phy_cell.nof_dl_rg                  = dl_pipeline_depth + 2;
-    upper_phy_cell.dl_rg_expire_timeout_slots = dl_pipeline_depth;
     upper_phy_cell.nof_dl_processors          = dl_pipeline_depth;
     upper_phy_cell.nof_ul_rg                  = ul_pipeline_depth;
     upper_phy_cell.max_ul_thread_concurrency  = du_low.expert_execution_cfg.threads.nof_ul_threads + 1;
@@ -168,13 +168,34 @@ static void generate_du_low_config(du_low_config&             out_config,
   }
 }
 
-void srsran::generate_du_low_wrapper_config(du_low_wrapper_config&              out_config,
-                                            const du_low_unit_config&           du_low_unit_cfg,
-                                            std::vector<cell_prach_ports_entry> prach_ports,
-                                            span<const du_cell_config>          du_cells,
-                                            span<const unsigned>                max_puschs_per_slot,
-                                            unsigned                            du_id)
+void srsran::generate_du_low_wrapper_config(srs_du::du_low_wrapper_config&     out_config,
+                                            const du_low_unit_config&          du_low_unit_cfg,
+                                            span<const srs_du::du_cell_config> du_cells,
+                                            span<const unsigned>               max_puschs_per_slot,
+                                            unsigned                           du_id)
 {
   generate_du_low_config(out_config.du_low_cfg, du_low_unit_cfg, du_cells, max_puschs_per_slot, du_id);
-  out_config.prach_ports = std::move(prach_ports);
+}
+
+void srsran::fill_du_low_worker_manager_config(worker_manager_config&    config,
+                                               const du_low_unit_config& unit_cfg,
+                                               unsigned                  is_blocking_mode_active,
+                                               unsigned                  nof_cells)
+{
+  auto& du_low_cfg = config.du_low_cfg.emplace();
+
+  du_low_cfg.is_blocking_mode_active = is_blocking_mode_active;
+  du_low_cfg.nof_cells               = nof_cells;
+
+  du_low_cfg.nof_dl_threads            = unit_cfg.expert_execution_cfg.threads.nof_dl_threads;
+  du_low_cfg.nof_ul_threads            = unit_cfg.expert_execution_cfg.threads.nof_ul_threads;
+  du_low_cfg.nof_pusch_decoder_threads = unit_cfg.expert_execution_cfg.threads.nof_pusch_decoder_threads;
+
+  srsran_assert(config.config_affinities.size() == unit_cfg.expert_execution_cfg.cell_affinities.size(),
+                "Invalid number of cell affinities");
+
+  for (unsigned i = 0, e = nof_cells; i != e; ++i) {
+    config.config_affinities[i].push_back(unit_cfg.expert_execution_cfg.cell_affinities[i].l1_dl_cpu_cfg);
+    config.config_affinities[i].push_back(unit_cfg.expert_execution_cfg.cell_affinities[i].l1_ul_cpu_cfg);
+  }
 }

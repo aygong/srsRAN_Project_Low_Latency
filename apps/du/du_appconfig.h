@@ -23,9 +23,9 @@
 #pragma once
 
 #include "../gnb/gnb_appconfig.h" // TODO: Remove
+#include "apps/services/buffer_pool/buffer_pool_appconfig.h"
 #include "apps/services/logger/logger_appconfig.h"
 #include "apps/services/os_sched_affinity_manager.h"
-#include "srsran/adt/byte_buffer.h"
 #include "srsran/support/executors/unique_thread.h"
 #include <optional>
 
@@ -41,19 +41,16 @@ struct f1ap_appconfig {
 };
 
 struct nru_appconfig {
-  unsigned pdu_queue_size = 2048;
-  /// IP address to bind the F1-U interface to.
-  std::string bind_address = "127.0.10.2";
+  unsigned    pdu_queue_size = 2048;
+  std::string bind_address   = "127.0.10.2";
+  std::string ext_addr       = "auto"; // External address advertised by the F1-U interface
+  float       pool_threshold = 0.9;
 };
 
 /// Metrics report configuration.
 struct metrics_appconfig {
-  /// JSON metrics reporting.
-  bool        enable_json_metrics      = false;
-  std::string addr                     = "127.0.0.1";
-  uint16_t    port                     = 55555;
-  bool        autostart_stdout_metrics = false;
-  unsigned    stdout_metrics_period    = 1000; // Statistics report period in milliseconds
+  std::string addr = "127.0.0.1";
+  uint16_t    port = 55555;
 };
 
 } // namespace srs_du

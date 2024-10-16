@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/optional.h"
 #include "srsran/adt/slotted_array.h"
@@ -53,6 +54,8 @@ const uint16_t MAX_NOF_DU_CELLS = 16;
 const uint16_t MAX_NOF_CU_UPS = 65535;
 /// Maximum number of UEs supported by CU-CP (implementation-defined).
 const uint64_t MAX_NOF_CU_UES = 4294967295; // 2^32 - 1
+/// Maximum number of AMFs supported by CU-CP (implementation-defined).
+const uint16_t MAX_NOF_AMFS = 65535;
 
 /// \brief ue_index internally used to identify the UE CU-CP-wide.
 /// \remark The ue_index is derived from the maximum number of DUs and the maximum number of UEs per DU.
@@ -115,6 +118,21 @@ constexpr inline std::underlying_type_t<du_cell_index_t> du_cell_index_to_uint(d
   return static_cast<std::underlying_type_t<du_cell_index_t>>(du_cell_index);
 }
 
+/// Maximum number of AMFs supported by CU-CP (implementation-defined).
+enum class amf_index_t : uint16_t { min = 0, max = MAX_NOF_AMFS - 1, invalid = MAX_NOF_AMFS };
+
+/// Convert integer to AMF index type.
+constexpr inline amf_index_t uint_to_amf_index(std::underlying_type_t<amf_index_t> index)
+{
+  return static_cast<amf_index_t>(index);
+}
+
+/// Convert AMF index type to integer.
+constexpr inline std::underlying_type_t<amf_index_t> amf_index_to_uint(amf_index_t amf_index)
+{
+  return static_cast<std::underlying_type_t<amf_index_t>>(amf_index);
+}
+
 /// QoS Configuration, i.e. 5QI and the associated PDCP
 /// and SDAP configuration for DRBs
 struct cu_cp_qos_config {
@@ -143,9 +161,42 @@ struct cu_cp_amf_identifier_t {
 };
 
 struct cu_cp_five_g_s_tmsi {
-  uint16_t amf_set_id;
-  uint8_t  amf_pointer;
-  uint32_t five_g_tmsi;
+  cu_cp_five_g_s_tmsi() = default;
+
+  cu_cp_five_g_s_tmsi(const bounded_bitset<48>& five_g_s_tmsi_) : five_g_s_tmsi(five_g_s_tmsi_)
+  {
+    srsran_assert(five_g_s_tmsi_.size() == 48, "Invalid size for 5G-S-TMSI ({})", five_g_s_tmsi_.size());
+  }
+
+  cu_cp_five_g_s_tmsi(uint64_t amf_set_id, uint64_t amf_pointer, uint64_t five_g_tmsi)
+  {
+    five_g_s_tmsi.emplace();
+    five_g_s_tmsi->resize(48);
+    five_g_s_tmsi->from_uint64((amf_set_id << 38U) + (amf_pointer << 32U) + five_g_tmsi);
+  }
+
+  uint16_t get_amf_set_id() const
+  {
+    srsran_assert(five_g_s_tmsi.has_value(), "five_g_s_tmsi is not set");
+    return five_g_s_tmsi.value().to_uint64() >> 38U;
+  };
+
+  uint8_t get_amf_pointer() const
+  {
+    srsran_assert(five_g_s_tmsi.has_value(), "five_g_s_tmsi is not set");
+    return (five_g_s_tmsi.value().to_uint64() & 0x3f00000000) >> 32U;
+  };
+
+  uint32_t get_five_g_tmsi() const
+  {
+    srsran_assert(five_g_s_tmsi.has_value(), "five_g_s_tmsi is not set");
+    return (five_g_s_tmsi.value().to_uint64() & 0xffffffff);
+  };
+
+  uint64_t to_number() const { return five_g_s_tmsi->to_uint64(); }
+
+private:
+  std::optional<bounded_bitset<48>> five_g_s_tmsi;
 };
 
 struct cu_cp_initial_ue_message {
@@ -207,13 +258,13 @@ struct cu_cp_nr_mode_info {
 };
 
 struct cu_cp_served_cell_info {
-  nr_cell_global_id_t      nr_cgi;
-  pci_t                    nr_pci;
-  std::optional<uint32_t>  five_gs_tac;
-  std::optional<uint32_t>  cfg_eps_tac;
-  std::vector<std::string> served_plmns;
-  cu_cp_nr_mode_info       nr_mode_info;
-  byte_buffer              meas_timing_cfg;
+  nr_cell_global_id_t        nr_cgi;
+  pci_t                      nr_pci;
+  std::optional<uint32_t>    five_gs_tac;
+  std::optional<uint32_t>    cfg_eps_tac;
+  std::vector<plmn_identity> served_plmns;
+  cu_cp_nr_mode_info         nr_mode_info;
+  byte_buffer                meas_timing_cfg;
 
   cu_cp_served_cell_info() = default;
   cu_cp_served_cell_info(const cu_cp_served_cell_info& other) :
@@ -262,34 +313,10 @@ struct cu_cp_du_served_cells_item {
   std::optional<cu_cp_gnb_du_sys_info> gnb_du_sys_info; // not optional for NG-RAN
 };
 
-struct cu_cp_alloc_and_retention_prio {
-  uint8_t     prio_level_arp;
-  std::string pre_emption_cap;
-  std::string pre_emption_vulnerability;
-};
-
-struct cu_cp_gbr_qos_info {
-  uint64_t                   max_flow_bit_rate_dl;
-  uint64_t                   max_flow_bit_rate_ul;
-  uint64_t                   guaranteed_flow_bit_rate_dl;
-  uint64_t                   guaranteed_flow_bit_rate_ul;
-  std::optional<std::string> notif_ctrl;
-  std::optional<uint16_t>    max_packet_loss_rate_dl;
-  std::optional<uint16_t>    max_packet_loss_rate_ul;
-};
-
-struct cu_cp_qos_flow_level_qos_params {
-  qos_characteristics_t             qos_characteristics;
-  cu_cp_alloc_and_retention_prio    alloc_and_retention_prio;
-  std::optional<cu_cp_gbr_qos_info> gbr_qos_info;
-  std::optional<bool>               add_qos_flow_info;
-  std::optional<bool>               reflective_qos_attribute;
-};
-
 struct qos_flow_setup_request_item {
-  qos_flow_id_t                   qos_flow_id = qos_flow_id_t::invalid;
-  cu_cp_qos_flow_level_qos_params qos_flow_level_qos_params;
-  std::optional<uint8_t>          erab_id;
+  qos_flow_id_t                 qos_flow_id = qos_flow_id_t::invalid;
+  qos_flow_level_qos_parameters qos_flow_level_qos_params;
+  std::optional<uint8_t>        erab_id;
 };
 
 struct cu_cp_pdu_session_res_setup_item {
@@ -309,6 +336,7 @@ struct cu_cp_pdu_session_resource_setup_request {
   slotted_id_vector<pdu_session_id_t, cu_cp_pdu_session_res_setup_item> pdu_session_res_setup_items;
   uint64_t                                                              ue_aggregate_maximum_bit_rate_dl;
   plmn_identity                                                         serving_plmn = plmn_identity::test_value();
+  byte_buffer                                                           nas_pdu; ///< optional NAS PDU
 };
 
 enum class cu_cp_qos_flow_map_ind { ul = 0, dl };
@@ -585,14 +613,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::srs_cu_cp::ue_index_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
   auto format(const srsran::srs_cu_cp::ue_index_t& idx, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
   {
     if (idx == srsran::srs_cu_cp::ue_index_t::invalid) {
       return format_to(ctx.out(), "invalid");
@@ -605,14 +632,13 @@ struct formatter<srsran::srs_cu_cp::ue_index_t> {
 template <>
 struct formatter<srsran::srs_cu_cp::du_index_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
   auto format(const srsran::srs_cu_cp::du_index_t& idx, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
   {
     if (idx == srsran::srs_cu_cp::du_index_t::invalid) {
       return format_to(ctx.out(), "invalid");
@@ -625,14 +651,13 @@ struct formatter<srsran::srs_cu_cp::du_index_t> {
 template <>
 struct formatter<srsran::srs_cu_cp::cu_up_index_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
   auto format(const srsran::srs_cu_cp::cu_up_index_t& idx, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
   {
     if (idx == srsran::srs_cu_cp::cu_up_index_t::invalid) {
       return format_to(ctx.out(), "invalid");
@@ -645,14 +670,13 @@ struct formatter<srsran::srs_cu_cp::cu_up_index_t> {
 template <>
 struct formatter<srsran::srs_cu_cp::du_cell_index_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
   auto format(const srsran::srs_cu_cp::du_cell_index_t& idx, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
   {
     if (idx == srsran::srs_cu_cp::du_cell_index_t::invalid) {
       return format_to(ctx.out(), "invalid");

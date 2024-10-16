@@ -22,18 +22,55 @@
 
 #pragma once
 
-#include "srsran/adt/bitmap_utils.h"
 #include "srsran/adt/optional.h"
 #include "srsran/adt/span.h"
 #include "srsran/fapi/messages.h"
 #include "srsran/ran/dmrs.h"
 #include "srsran/ran/pdcch/coreset.h"
 #include "srsran/ran/pdcch/dci_packing.h"
+#include "srsran/ran/ptrs/ptrs.h"
+#include "srsran/ran/srs/srs_configuration.h"
 #include "srsran/support/math_utils.h"
 #include <algorithm>
 
 namespace srsran {
 namespace fapi {
+
+namespace detail {
+
+/// \brief Sets the value of a bit in the bitmap. When enable is true, it sets the bit, otherwise it clears the bit.
+/// \param[in] bitmap Bitmap to modify.
+/// \param[in] bit Bit to change.
+/// \param[in] enable Value to set. If true, sets the bit(1), otherwise clears it(0).
+/// \note Use this function with integer data types, otherwise it produces undefined behaviour.
+template <typename Integer>
+void set_bitmap_bit(Integer& bitmap, unsigned bit, bool enable)
+{
+  static_assert(std::is_integral<Integer>::value, "Integral required");
+  srsran_assert(sizeof(bitmap) * 8 > bit, "Requested bit ({}), exceeds the bitmap size({})", bit, sizeof(bitmap) * 8);
+
+  if (enable) {
+    bitmap |= (1U << bit);
+  } else {
+    bitmap &= ~(1U << bit);
+  }
+}
+
+/// \brief Checks the value of a bit in the bitmap and returns a true if the bit is set, otherwise false.
+/// \param[in] bitmap Bitmap to check.
+/// \param[in] bit Bit to check.
+/// \return True when the bit equals 1, otherwise false.
+/// \note Use this function with integer data types, otherwise it produces undefined behaviour.
+template <typename Integer>
+bool check_bitmap_bit(Integer bitmap, unsigned bit)
+{
+  static_assert(std::is_integral<Integer>::value, "Integral required");
+  srsran_assert(sizeof(bitmap) * 8 > bit, "Requested bit ({}), exceeds the bitmap size({})", bit, sizeof(bitmap) * 8);
+
+  return (bitmap & (1U << bit));
+}
+
+} // namespace detail
 
 // :TODO: Review the builders documentation so it matches the UCI builder.
 
@@ -528,9 +565,9 @@ public:
   {
     pdu.pdu_bitmap.set(dl_pdsch_pdu::PDU_BITMAP_CBG_RETX_CTRL_BIT);
 
-    set_bitmap_bit<uint8_t>(
+    detail::set_bitmap_bit<uint8_t>(
         pdu.is_last_cb_present, dl_pdsch_pdu::LAST_CB_BITMAP_FIRST_TB_BIT, last_cb_present_first_tb);
-    set_bitmap_bit<uint8_t>(
+    detail::set_bitmap_bit<uint8_t>(
         pdu.is_last_cb_present, dl_pdsch_pdu::LAST_CB_BITMAP_SECOND_TB_BIT, last_cb_present_second_tb);
 
     pdu.is_inline_tb_crc = tb_crc;
@@ -568,12 +605,12 @@ public:
     pdu.pdsch_maintenance_v3.tb_size_lbrm_bytes = tb_size_lbrm_bytes;
 
     // Fill the bitmap.
-    set_bitmap_bit<uint8_t>(pdu.pdsch_maintenance_v3.tb_crc_required,
-                            dl_pdsch_maintenance_parameters_v3::TB_BITMAP_FIRST_TB_BIT,
-                            tb_crc_first_tb_required);
-    set_bitmap_bit<uint8_t>(pdu.pdsch_maintenance_v3.tb_crc_required,
-                            dl_pdsch_maintenance_parameters_v3::TB_BITMAP_SECOND_TB_BIT,
-                            tb_crc_second_tb_required);
+    detail::set_bitmap_bit<uint8_t>(pdu.pdsch_maintenance_v3.tb_crc_required,
+                                    dl_pdsch_maintenance_parameters_v3::TB_BITMAP_FIRST_TB_BIT,
+                                    tb_crc_first_tb_required);
+    detail::set_bitmap_bit<uint8_t>(pdu.pdsch_maintenance_v3.tb_crc_required,
+                                    dl_pdsch_maintenance_parameters_v3::TB_BITMAP_SECOND_TB_BIT,
+                                    tb_crc_second_tb_required);
 
     return *this;
   }
@@ -1637,7 +1674,7 @@ public:
   /// \note These parameters are specified in SCF-222 v4.0 Section 3.4.10 Table 3-132.
   srs_indication_pdu_builder& set_codebook_report_matrix(const srs_channel_matrix& matrix)
   {
-    pdu.srs_usage   = srs_usage_mode::codebook;
+    pdu.usage       = srs_usage::codebook;
     pdu.report_type = 1;
     pdu.matrix      = matrix;
 
@@ -2452,8 +2489,8 @@ public:
   /// Adds optional PUSCH PTRS information to the PUSCH PDU and returns a reference to the builder.
   /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.2 in table optional PUSCH PTRS information.
   ul_pusch_pdu_builder& add_optional_pusch_ptrs(span<const ul_pusch_ptrs::ptrs_port_info> port_info,
-                                                uint8_t                                   ptrs_time_density,
-                                                uint8_t                                   ptrs_freq_density,
+                                                ptrs_time_density                         ptrs_time_density,
+                                                ptrs_frequency_density                    ptrs_freq_density,
                                                 ul_ptrs_power_type                        ul_ptrs_power)
   {
     pdu.pdu_bitmap.set(ul_pusch_pdu::PUSCH_PTRS_BIT);
@@ -2462,8 +2499,8 @@ public:
 
     ptrs.port_info.assign(port_info.begin(), port_info.end());
     ptrs.ul_ptrs_power     = ul_ptrs_power;
-    ptrs.ptrs_time_density = ptrs_time_density / 2U;
-    ptrs.ptrs_freq_density = ptrs_freq_density / 4U;
+    ptrs.ptrs_time_density = static_cast<uint8_t>(ptrs_time_density) / 2U;
+    ptrs.ptrs_freq_density = static_cast<uint8_t>(ptrs_freq_density) / 4U;
 
     return *this;
   }
@@ -2492,6 +2529,97 @@ public:
   ul_pusch_pdu_builder& set_context_vendor_specific(rnti_t rnti, harq_id_t harq_id)
   {
     pdu.context = pusch_context(rnti, harq_id);
+    return *this;
+  }
+};
+
+/// Uplink SRS PDU builder that helps to fill in the parameters specified in SCF-222 v4.0 section 3.4.3.3.
+class ul_srs_pdu_builder
+{
+  ul_srs_pdu& pdu;
+
+public:
+  explicit ul_srs_pdu_builder(ul_srs_pdu& pdu_) : pdu(pdu_) {}
+
+  /// Sets the SRS PDU basic parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder& set_basic_parameters(rnti_t rnti, uint32_t handle)
+  {
+    pdu.rnti   = rnti;
+    pdu.handle = handle;
+
+    return *this;
+  }
+
+  /// Sets the SRS PDU BWP parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder&
+  set_bwp_parameters(uint16_t bwp_size, uint16_t bwp_start, subcarrier_spacing scs, cyclic_prefix cp)
+  {
+    pdu.bwp_size  = bwp_size;
+    pdu.bwp_start = bwp_start;
+    pdu.scs       = scs;
+    pdu.cp        = cp;
+
+    return *this;
+  }
+
+  /// Sets the SRS PDU timing parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder& set_timing_params(unsigned time_start_position, srs_periodicity t_srs, unsigned t_offset)
+  {
+    pdu.time_start_position = time_start_position;
+    pdu.t_srs               = t_srs;
+    pdu.t_offset            = t_offset;
+
+    return *this;
+  }
+
+  /// Sets the SRS PDU comb parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder& set_comb_params(tx_comb_size comb_size, unsigned comb_offset)
+  {
+    pdu.comb_size   = comb_size;
+    pdu.comb_offset = comb_offset;
+
+    return *this;
+  }
+
+  /// Sets the SRS PDU frequency parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder& set_frequency_params(unsigned                      frequency_position,
+                                           unsigned                      frequency_shift,
+                                           unsigned                      frequency_hopping,
+                                           srs_group_or_sequence_hopping group_or_sequence_hopping)
+  {
+    pdu.frequency_position        = frequency_position;
+    pdu.frequency_shift           = frequency_shift;
+    pdu.frequency_hopping         = frequency_hopping;
+    pdu.group_or_sequence_hopping = group_or_sequence_hopping;
+
+    return *this;
+  }
+
+  /// Sets the SRS PDU parameters and returns a reference to the builder.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder& set_srs_params(unsigned          nof_antenna_ports,
+                                     unsigned          nof_symbols,
+                                     srs_nof_symbols   nof_repetitions,
+                                     unsigned          config_index,
+                                     unsigned          sequence_id,
+                                     unsigned          bandwidth_index,
+                                     unsigned          cyclic_shift,
+                                     srs_resource_type resource_type)
+  {
+    pdu.num_ant_ports   = nof_antenna_ports;
+    pdu.num_symbols     = nof_symbols;
+    pdu.num_repetitions = nof_repetitions;
+    pdu.config_index    = config_index;
+    pdu.sequence_id     = sequence_id;
+    pdu.bandwidth_index = bandwidth_index;
+    pdu.cyclic_shift    = cyclic_shift;
+    pdu.resource_type   = resource_type;
+
     return *this;
   }
 };
@@ -2599,6 +2727,20 @@ public:
   {
     ul_pusch_pdu_builder builder = add_pusch_pdu();
     builder.set_basic_parameters(rnti, handle);
+
+    return builder;
+  }
+
+  /// Adds a SRS PDU to the message and returns a builder that helps to fill the parameters.
+  /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table SRS PDU.
+  ul_srs_pdu_builder add_srs_pdu()
+  {
+    auto& pdu    = msg.pdus.emplace_back();
+    pdu.pdu_type = ul_pdu_type::SRS;
+
+    ++msg.num_pdus_of_each_type[static_cast<unsigned>(pdu_type::SRS)];
+
+    ul_srs_pdu_builder builder(pdu.srs_pdu);
 
     return builder;
   }

@@ -64,10 +64,13 @@ bool contains_drb(const up_pdu_session_context_update& new_session_context, drb_
 drb_id_t srsran::srs_cu_cp::allocate_drb_id(const up_pdu_session_context_update& new_session_context,
                                             const up_context&                    context,
                                             const up_config_update&              config_update,
+                                            uint8_t                              max_nof_drbs_per_ue,
                                             const srslog::basic_logger&          logger)
 {
-  if (context.drb_map.size() >= MAX_NOF_DRBS) {
-    logger.warning("No more DRBs available");
+  if (context.drb_map.size() >= max_nof_drbs_per_ue) {
+    logger.warning("DRB creation failed. Cause: Maximum number of DRBs per UE already created ({}). To increase the "
+                   "number of allowed DRBs per UE change the \"--max_nof_drbs_per_ue\" in the CU-CP configuration\n",
+                   max_nof_drbs_per_ue);
     return drb_id_t::invalid;
   }
 
@@ -77,8 +80,11 @@ drb_id_t srsran::srs_cu_cp::allocate_drb_id(const up_pdu_session_context_update&
          contains_drb(new_session_context, new_drb_id)) {
     /// try next
     new_drb_id = uint_to_drb_id(drb_id_to_uint(new_drb_id) + 1);
-    if (new_drb_id == drb_id_t::invalid) {
-      logger.warning("No more DRBs available");
+
+    if (drb_id_to_uint(new_drb_id) > max_nof_drbs_per_ue) {
+      logger.warning("DRB creation failed. Cause: Maximum number of DRBs per UE already created ({}). To increase the "
+                     "number of allowed DRBs per UE change the \"--max_nof_drbs_per_ue\" in the CU-CP configuration\n",
+                     max_nof_drbs_per_ue);
       return drb_id_t::invalid;
     }
   }
@@ -221,7 +227,14 @@ drb_id_t allocate_qos_flow(up_pdu_session_context_update&     new_session_contex
 
   // Note: We map QoS flows to DRBs in a 1:1 manner meaning that each flow gets it's own DRB.
   // potential optimization to support more QoS flows is to map non-GPB flows onto existing DRBs.
-  drb_id_t drb_id = allocate_drb_id(new_session_context, full_context, config_update, logger);
+  if (full_context.drb_map.size() >= cfg.max_nof_drbs_per_ue) {
+    logger.warning("DRB creation failed. Cause: Maximum number of DRBs per UE already created ({}). To increase the "
+                   "number of allowed DRBs per UE change the \"--max_nof_drbs_per_ue\" in the CU-CP configuration\n",
+                   cfg.max_nof_drbs_per_ue);
+    return drb_id_t::invalid;
+  }
+
+  drb_id_t drb_id = allocate_drb_id(new_session_context, full_context, config_update, cfg.max_nof_drbs_per_ue, logger);
   if (drb_id == drb_id_t::invalid) {
     logger.warning("No more DRBs available");
     return drb_id;
@@ -233,12 +246,13 @@ drb_id_t allocate_qos_flow(up_pdu_session_context_update&     new_session_contex
   drb_ctx.default_drb    = full_context.drb_map.empty() ? true : false; // make first DRB the default
 
   // Fill QoS (TODO: derive QoS params correctly)
-  auto& qos_params = drb_ctx.qos_params;
-  qos_params.qos_characteristics.non_dyn_5qi.emplace();
-  qos_params.qos_characteristics.non_dyn_5qi.value().five_qi    = five_qi;
-  qos_params.alloc_and_retention_prio.prio_level_arp            = 8;
-  qos_params.alloc_and_retention_prio.pre_emption_cap           = "shall-not-trigger-pre-emption";
-  qos_params.alloc_and_retention_prio.pre_emption_vulnerability = "not-pre-emptable";
+  auto& qos_params                                       = drb_ctx.qos_params;
+  qos_params.qos_desc                                    = non_dyn_5qi_descriptor{};
+  auto& non_dyn_5qi                                      = qos_params.qos_desc.get_nondyn_5qi();
+  non_dyn_5qi.five_qi                                    = five_qi;
+  qos_params.alloc_retention_prio.prio_level_arp         = 8;
+  qos_params.alloc_retention_prio.may_trigger_preemption = false;
+  qos_params.alloc_retention_prio.is_preemptable         = false;
 
   // Add flow
   up_qos_flow_context flow_ctx;
@@ -280,7 +294,7 @@ up_config_update srsran::srs_cu_cp::calculate_update(
       logger.debug("Allocated {} to {} with {}",
                    flow_item.qos_flow_id,
                    drb_id,
-                   new_ctxt.drb_to_add.at(drb_id).qos_params.qos_characteristics.get_five_qi());
+                   new_ctxt.drb_to_add.at(drb_id).qos_params.qos_desc.get_5qi());
     }
     config.pdu_sessions_to_setup_list.emplace(new_ctxt.id, new_ctxt);
   }
@@ -296,17 +310,9 @@ five_qi_t srsran::srs_cu_cp::get_five_qi(const cu_cp_qos_flow_add_or_mod_item& q
   five_qi_t   five_qi    = five_qi_t::invalid;
   const auto& qos_params = qos_flow.qos_flow_level_qos_params;
 
-  if (qos_params.qos_characteristics.dyn_5qi.has_value()) {
-    if (qos_params.qos_characteristics.dyn_5qi.value().five_qi.has_value()) {
-      five_qi = qos_params.qos_characteristics.dyn_5qi.value().five_qi.value();
-    } else {
-      logger.warning("Dynamic 5QI without 5QI not supported");
-      return five_qi_t::invalid;
-    }
-  } else if (qos_params.qos_characteristics.non_dyn_5qi.has_value()) {
-    five_qi = qos_params.qos_characteristics.non_dyn_5qi.value().five_qi;
-  } else {
-    logger.warning("Invalid QoS characteristics. Either dynamic or non-dynamic 5QI must be set");
+  five_qi = qos_params.qos_desc.get_5qi();
+  if (five_qi == five_qi_t::invalid) {
+    logger.warning("Dynamic 5QI without 5QI not supported");
     return five_qi_t::invalid;
   }
 

@@ -28,7 +28,7 @@
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/optional.h"
 #include "srsran/asn1/f1ap/f1ap_ies.h"
-#include "srsran/f1ap/common/f1ap_ue_id.h"
+#include "srsran/f1ap/f1ap_ue_id_types.h"
 #include "srsran/ran/gnb_du_id.h"
 #include "srsran/ran/lcid.h"
 #include "srsran/ran/nr_cell_identity.h"
@@ -62,6 +62,7 @@ f1ap_message generate_f1_removal_response(const f1ap_message& f1_removal_request
 /// \brief Generates dummy F1AP UE CONTEXT SETUP REQUEST message.
 f1ap_message create_ue_context_setup_request(gnb_cu_ue_f1ap_id_t                cu_ue_id,
                                              std::optional<gnb_du_ue_f1ap_id_t> du_ue_id,
+                                             uint32_t                           rrc_container_pdcp_sn,
                                              const std::vector<drb_id_t>&       drbs_to_setup);
 
 /// \brief Generates F1AP Initial UL RRC TRANSFER message.
@@ -92,9 +93,24 @@ f1ap_message create_ul_rrc_message_transfer(gnb_du_ue_f1ap_id_t du_ue_id,
 /// \brief Generates dummy F1AP UE CONTEXT RELEASE REQUEST message.
 f1ap_message generate_ue_context_release_request(gnb_cu_ue_f1ap_id_t cu_ue_id, gnb_du_ue_f1ap_id_t du_ue_id);
 
-/// \brief Generates dummy F1AP UE CONTEXT RELEASE COMPLETE message.
+/// \brief Generates dummy F1AP UE CONTEXT RELEASE COMMAND message, sent by the CU to the DU.
+f1ap_message
+generate_ue_context_release_command(gnb_cu_ue_f1ap_id_t cu_ue_id,
+                                    gnb_du_ue_f1ap_id_t du_ue_id,
+                                    srb_id_t            srb_id        = srb_id_t::srb1,
+                                    byte_buffer         rrc_container = byte_buffer::create({0x1, 0x2, 0x3}).value());
+
+/// \brief Generates dummy F1AP UE CONTEXT RELEASE COMPLETE message, sent by the DU to the CU.
 f1ap_message generate_ue_context_release_complete(const f1ap_message& ue_ctxt_release_cmd);
 f1ap_message generate_ue_context_release_complete(gnb_cu_ue_f1ap_id_t cu_ue_id, gnb_du_ue_f1ap_id_t du_ue_id);
+
+/// \brief Generates dummy F1AP UE CONTEXT MODIFICATION REQUEST message.
+f1ap_message generate_ue_context_modification_request(gnb_du_ue_f1ap_id_t                    du_ue_id,
+                                                      gnb_cu_ue_f1ap_id_t                    cu_ue_id,
+                                                      const std::initializer_list<drb_id_t>& drbs_to_setup = {},
+                                                      const std::initializer_list<drb_id_t>& drbs_to_mod   = {},
+                                                      const std::initializer_list<drb_id_t>& drbs_to_rem   = {},
+                                                      byte_buffer                            rrc_container = {});
 
 /// \brief Generates dummy F1AP UE CONTEXT MODIFICATION RESPONSE message.
 f1ap_message

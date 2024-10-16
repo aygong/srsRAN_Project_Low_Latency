@@ -22,24 +22,26 @@
 
 #include "rrc_setup_procedure.h"
 #include "../rrc_asn1_helpers.h"
+#include "ue/rrc_asn1_converters.h"
 #include "srsran/asn1/rrc_nr/dl_ccch_msg.h"
+#include <variant>
 
 using namespace srsran;
 using namespace srsran::srs_cu_cp;
 using namespace asn1::rrc_nr;
 
-rrc_setup_procedure::rrc_setup_procedure(rrc_ue_context_t&           context_,
-                                         const byte_buffer&          du_to_cu_container_,
-                                         rrc_ue_setup_proc_notifier& rrc_ue_notifier_,
-                                         rrc_ue_srb_handler&         srb_notifier_,
-                                         rrc_ue_nas_notifier&        nas_notifier_,
-                                         rrc_ue_event_manager&       event_mng_,
-                                         rrc_ue_logger&              logger_) :
+rrc_setup_procedure::rrc_setup_procedure(rrc_ue_context_t&               context_,
+                                         const byte_buffer&              du_to_cu_container_,
+                                         rrc_ue_setup_proc_notifier&     rrc_ue_notifier_,
+                                         rrc_ue_control_message_handler& srb_notifier_,
+                                         rrc_ue_ngap_notifier&           ngap_notifier_,
+                                         rrc_ue_event_manager&           event_mng_,
+                                         rrc_ue_logger&                  logger_) :
   context(context_),
   du_to_cu_container(du_to_cu_container_),
   rrc_ue(rrc_ue_notifier_),
   srb_notifier(srb_notifier_),
-  nas_notifier(nas_notifier_),
+  ngap_notifier(ngap_notifier_),
   event_mng(event_mng_),
   logger(logger_)
 {
@@ -64,7 +66,7 @@ void rrc_setup_procedure::operator()(coro_context<async_task<void>>& ctx)
 
   if (!transaction.has_response()) {
     if (transaction.failure_cause() == protocol_transaction_failure::timeout) {
-      logger.log_warning("\"{}\" timed out after {}ms", name(), context.cfg.rrc_procedure_timeout_ms);
+      logger.log_warning("\"{}\" timed out after {}ms", name(), context.cfg.rrc_procedure_timeout_ms.count());
       rrc_ue.on_ue_release_required(cause_protocol_t::unspecified);
     } else {
       logger.log_warning("\"{}\" cancelled", name());
@@ -104,31 +106,43 @@ void rrc_setup_procedure::send_rrc_setup()
   rrc_ue.on_new_dl_ccch(dl_ccch_msg);
 }
 
-void rrc_setup_procedure::send_initial_ue_msg(const asn1::rrc_nr::rrc_setup_complete_s& rrc_setup_complete)
+void rrc_setup_procedure::send_initial_ue_msg(const asn1::rrc_nr::rrc_setup_complete_s& rrc_setup_complete_msg)
 {
   cu_cp_initial_ue_message init_ue_msg = {};
 
+  const auto& rrc_setup_complete = rrc_setup_complete_msg.crit_exts.rrc_setup_complete();
+
   init_ue_msg.ue_index                       = context.ue_index;
-  init_ue_msg.nas_pdu                        = rrc_setup_complete.crit_exts.rrc_setup_complete().ded_nas_msg.copy();
+  init_ue_msg.nas_pdu                        = rrc_setup_complete.ded_nas_msg.copy();
   init_ue_msg.establishment_cause            = static_cast<establishment_cause_t>(context.connection_cause.value);
   init_ue_msg.user_location_info.nr_cgi      = context.cell.cgi;
   init_ue_msg.user_location_info.tai.plmn_id = context.cell.cgi.plmn_id;
   init_ue_msg.user_location_info.tai.tac     = context.cell.tac;
 
-  cu_cp_five_g_s_tmsi five_g_s_tmsi;
-  if (context.five_g_tmsi.has_value()) {
-    five_g_s_tmsi.five_g_tmsi = context.five_g_tmsi.value();
-    // amf_pointer and amf_set_id will be set by NGAP
-    init_ue_msg.five_g_s_tmsi = five_g_s_tmsi;
+  if (rrc_setup_complete.ng_5_g_s_tmsi_value_present) {
+    if (rrc_setup_complete.ng_5_g_s_tmsi_value.type() ==
+        asn1::rrc_nr::rrc_setup_complete_ies_s::ng_5_g_s_tmsi_value_c_::types_opts::options::ng_5_g_s_tmsi) {
+      context.five_g_s_tmsi = asn1_to_five_g_s_tmsi(rrc_setup_complete.ng_5_g_s_tmsi_value.ng_5_g_s_tmsi());
+    } else {
+      if (!std::holds_alternative<asn1::fixed_bitstring<39>>(context.setup_ue_id)) {
+        logger.log_warning("5G-S-TMSI part 1 is missing");
+      } else {
+        context.five_g_s_tmsi = asn1_to_five_g_s_tmsi(std::get<asn1::fixed_bitstring<39>>(context.setup_ue_id),
+                                                      rrc_setup_complete.ng_5_g_s_tmsi_value.ng_5_g_s_tmsi_part2());
+      }
+    }
   }
 
-  if (rrc_setup_complete.crit_exts.rrc_setup_complete().registered_amf_present) {
-    cu_cp_amf_identifier_t amf_id =
-        asn1_to_amf_identifier(rrc_setup_complete.crit_exts.rrc_setup_complete().registered_amf.amf_id);
+  if (context.five_g_s_tmsi.has_value()) {
+    init_ue_msg.five_g_s_tmsi = context.five_g_s_tmsi.value();
+  }
+
+  if (rrc_setup_complete.registered_amf_present) {
+    cu_cp_amf_identifier_t amf_id = asn1_to_amf_identifier(rrc_setup_complete.registered_amf.amf_id);
 
     init_ue_msg.amf_set_id = amf_id.amf_set_id;
     // TODO: Handle PLMN ID
   }
 
-  nas_notifier.on_initial_ue_message(init_ue_msg);
+  ngap_notifier.on_initial_ue_message(init_ue_msg);
 }

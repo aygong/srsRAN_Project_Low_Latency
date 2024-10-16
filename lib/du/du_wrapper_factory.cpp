@@ -22,17 +22,18 @@
 
 #include "srsran/du/du_wrapper_factory.h"
 #include "du_wrapper_impl.h"
-#include "srsran/du/du_high_wrapper_factory.h"
-#include "srsran/du_low/du_low_wrapper_factory.h"
+#include "srsran/du/du_high/du_high_wrapper_factory.h"
+#include "srsran/du/du_low/du_low_wrapper_factory.h"
 
 using namespace srsran;
+using namespace srs_du;
 
-std::unique_ptr<du_wrapper> srsran::make_du_wrapper(const du_wrapper_config& du_cfg)
+std::unique_ptr<du_wrapper> srsran::srs_du::make_du_wrapper(const du_wrapper_config& du_cfg)
 {
   du_wrapper_impl_dependencies dependencies;
 
   // Create DU low.
-  dependencies.du_lo = make_du_low_wrapper(du_cfg.du_low_cfg, du_cfg.du_high_cfg.du_hi.cells);
+  dependencies.du_lo = make_du_low_wrapper(du_cfg.du_low_cfg, du_cfg.du_high_cfg.du_hi.ran.cells);
 
   // Create DU high wrapper.
   du_high_wrapper_dependencies high_wrapper_dependencies;
@@ -43,7 +44,7 @@ std::unique_ptr<du_wrapper> srsran::make_du_wrapper(const du_wrapper_config& du_
 
   dependencies.du_hi = make_du_high_wrapper(du_cfg.du_high_cfg, std::move(high_wrapper_dependencies));
 
-  for (unsigned i = 0, e = du_cfg.du_low_cfg.prach_ports.size(); i != e; ++i) {
+  for (unsigned i = 0, e = du_cfg.du_low_cfg.du_low_cfg.cells.size(); i != e; ++i) {
     dependencies.du_lo->set_slot_time_message_notifier(i, dependencies.du_hi->get_slot_time_message_notifier(i));
     dependencies.du_lo->set_slot_error_message_notifier(i, dependencies.du_hi->get_slot_error_message_notifier(i));
     dependencies.du_lo->set_slot_data_message_notifier(i, dependencies.du_hi->get_slot_data_message_notifier(i));

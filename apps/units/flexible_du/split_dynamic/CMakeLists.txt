@@ -24,11 +24,18 @@ set(SOURCES
         dynamic_du_impl.cpp
         dynamic_du_translators.cpp
         dynamic_du_unit_cli11_schema.cpp
-        dynamic_du_unit_config_validator.cpp)
+        dynamic_du_unit_config_validator.cpp
+        dynamic_du_unit_config_yaml_writer.cpp)
 
-add_library(srsran_flexible_du_dynamic STATIC ${SOURCES})
-target_include_directories(srsran_flexible_du_dynamic PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(srsran_flexible_du_dynamic
+add_library(srsran_flexible_du STATIC ${SOURCES})
+target_include_directories(srsran_flexible_du PRIVATE ${CMAKE_SOURCE_DIR})
+
+# Hardware acceleration for both PUSCH and PDSCH is enabled by default when using DPDK.
+if (DPDK_FOUND)
+   set_source_files_properties(dynamic_du_factory.cpp PROPERTIES COMPILE_DEFINITIONS "DPDK_FOUND; HWACC_PDSCH_ENABLED; HWACC_PUSCH_ENABLED")
+endif (DPDK_FOUND)
+
+target_link_libraries(srsran_flexible_du
         srsran_du_wrapper
         srsran_ru_dummy
         srsran_pcap

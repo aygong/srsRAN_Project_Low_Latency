@@ -21,7 +21,6 @@
  */
 
 #include "sch_pdu_builder.h"
-#include "../ue_scheduling/ue_channel_state_manager.h"
 #include "dmrs_helpers.h"
 #include "pdsch/pdsch_default_time_allocation.h"
 #include "srsran/adt/optional.h"
@@ -29,8 +28,6 @@
 #include "srsran/ran/csi_report/csi_report_on_pucch_helpers.h"
 #include "srsran/ran/csi_report/csi_report_on_pusch_helpers.h"
 #include "srsran/ran/csi_report/csi_report_pusch_size.h"
-#include "srsran/ran/resource_allocation/resource_allocation_frequency.h"
-#include "srsran/ran/sch/tbs_calculator.h"
 #include "srsran/scheduler/config/serving_cell_config.h"
 
 using namespace srsran;
@@ -163,10 +160,11 @@ pusch_config_params srsran::get_pusch_config_f0_0_tc_rnti(const cell_configurati
 
   pusch.symbols = pusch_td_cfg.symbols;
 
-  pusch.mcs_table          = mcs_table;
-  pusch.nof_layers         = nof_layers;
-  pusch.tp_pi2bpsk_present = tp_pi2bpsk_present;
-  pusch.tb_scaling_field   = tb_scaling_field;
+  pusch.mcs_table              = mcs_table;
+  pusch.nof_layers             = nof_layers;
+  pusch.tp_pi2bpsk_present     = tp_pi2bpsk_present;
+  pusch.use_transform_precoder = cell_cfg.use_msg3_transform_precoder();
+  pusch.tb_scaling_field       = tb_scaling_field;
 
   pusch.nof_oh_prb        = nof_oh_prb;
   pusch.nof_harq_ack_bits = nof_harq_ack_bits;
@@ -195,10 +193,11 @@ pusch_config_params srsran::get_pusch_config_f0_0_c_rnti(const cell_configuratio
 
   pusch.symbols = pusch_td_cfg.symbols;
 
-  pusch.mcs_table          = mcs_table;
-  pusch.nof_layers         = nof_layers;
-  pusch.tp_pi2bpsk_present = tp_pi2bpsk_present;
-  pusch.tb_scaling_field   = tb_scaling_field;
+  pusch.mcs_table              = mcs_table;
+  pusch.nof_layers             = nof_layers;
+  pusch.tp_pi2bpsk_present     = tp_pi2bpsk_present;
+  pusch.use_transform_precoder = cell_cfg.use_msg3_transform_precoder();
+  pusch.tb_scaling_field       = tb_scaling_field;
 
   // According to TS 38.214, Section 6.1.4.2, nof_oh_prb is set equal to xOverhead, when set; else nof_oh_prb = 0.
   // NOTE: x_overhead::not_set is mapped to 0.
@@ -259,10 +258,11 @@ pusch_config_params srsran::get_pusch_config_f0_1_c_rnti(const ue_cell_configura
 
   pusch.symbols = pusch_td_cfg.symbols;
 
-  pusch.mcs_table          = mcs_table;
-  pusch.nof_layers         = nof_layers;
-  pusch.tp_pi2bpsk_present = tp_pi2bpsk_present;
-  pusch.tb_scaling_field   = tb_scaling_field;
+  pusch.mcs_table              = mcs_table;
+  pusch.nof_layers             = nof_layers;
+  pusch.tp_pi2bpsk_present     = tp_pi2bpsk_present;
+  pusch.use_transform_precoder = ue_cell_cfg.use_pusch_transform_precoding_dci_0_1();
+  pusch.tb_scaling_field       = tb_scaling_field;
 
   // According to TS 38.214, Section 6.1.4.2, nof_oh_prb is set equal to xOverhead, when set; else nof_oh_prb = 0.
   // NOTE: x_overhead::not_set is mapped to 0.
@@ -558,7 +558,7 @@ void srsran::build_pdsch_f1_1_c_rnti(pdsch_information&              pdsch,
                                      search_space_id                 ss_id,
                                      const dci_1_1_configuration&    dci_cfg,
                                      const crb_interval&             crbs,
-                                     const dl_harq_process&          h_dl,
+                                     bool                            is_new_data,
                                      const ue_channel_state_manager& cs_mgr)
 {
   const cell_configuration&    cell_cfg       = ue_cell_cfg.cell_cfg_common;
@@ -588,7 +588,7 @@ void srsran::build_pdsch_f1_1_c_rnti(pdsch_information&              pdsch,
   // TODO: Add second Codeword when supported.
   // One Codeword.
   pdsch_codeword& cw = pdsch.codewords.emplace_back();
-  cw.new_data        = h_dl.tb(0).nof_retxs == 0;
+  cw.new_data        = is_new_data;
   cw.rv_index        = dci_cfg.tb1_redundancy_version;
   cw.mcs_index       = dci_cfg.tb1_modulation_coding_scheme;
   cw.mcs_table       = pdsch_cfg.mcs_table;
@@ -617,7 +617,8 @@ void srsran::build_pusch_f0_0_tc_rnti(pusch_information&                   pusch
                                       const dci_0_0_tc_rnti_configuration& dci_cfg,
                                       const crb_interval&                  crbs,
                                       bool                                 is_new_data)
-{ // TODO.
+{
+  // TODO.
   pusch.intra_slot_freq_hopping = false;
   pusch.pusch_second_hop_prb    = 0;
   pusch.tx_direct_current_location =
@@ -633,19 +634,20 @@ void srsran::build_pusch_f0_0_tc_rnti(pusch_information&                   pusch
   pusch.rbs               = vrb_interval{prbs.start(), prbs.stop()};
   pusch.symbols           = pusch_cfg.symbols;
 
+  // Determine transform precoding.
+  pusch.transform_precoding = cell_cfg.use_msg3_transform_precoder();
+
   // MCS.
   pusch.mcs_table = pusch_cfg.mcs_table;
   pusch.mcs_index = dci_cfg.modulation_coding_scheme;
-  pusch.mcs_descr = pusch_mcs_get_config(pusch.mcs_table, pusch.mcs_index, false);
+  pusch.mcs_descr = pusch_mcs_get_config(pusch.mcs_table, pusch.mcs_index, pusch.transform_precoding, false);
 
-  // TS 38.214, 6.1.3. - "transform precoding either 'enabled' or 'disabled' according to the higher layer configured
-  // parameter msg3-transformPrecoder".
-  pusch.transform_precoding = cell_cfg.ul_cfg_common.init_ul_bwp.rach_cfg_common->msg3_transform_precoder;
   // As per TS 38.211, Section 6.3.1.1, n_ID is set to Physical Cell ID for TC-RNTI.
-  pusch.n_id          = cell_cfg.pci;
-  pusch.nof_layers    = pusch_cfg.nof_layers;
-  pusch.dmrs          = pusch_cfg.dmrs;
-  pusch.pusch_dmrs_id = 0;
+  pusch.n_id       = cell_cfg.pci;
+  pusch.nof_layers = pusch_cfg.nof_layers;
+  pusch.dmrs       = pusch_cfg.dmrs;
+  // TS 38.211, Section 6.4.1.1.1.2, n^RS_ID is set to to Physical Cell ID for TC-RNTI.
+  pusch.pusch_dmrs_id = cell_cfg.pci;
   pusch.rv_index      = dci_cfg.redundancy_version;
   // TS 38.321, 5.4.2.1 - "For UL transmission with UL grant in RA Response, HARQ process identifier 0 is used".
   pusch.harq_id  = 0;
@@ -682,15 +684,19 @@ void srsran::build_pusch_f0_0_c_rnti(pusch_information&                  pusch,
   pusch.rbs               = vrb_interval{prbs.start(), prbs.stop()};
   pusch.symbols           = pusch_cfg.symbols;
 
+  // The use of the transform precoder for PUSCH scheduled via DCI Format 0_0 is determined by the parameter
+  // msg3-transformPrecoder.
+  pusch.transform_precoding = cell_cfg.use_msg3_transform_precoder();
+
   // MCS.
   pusch.mcs_table = pusch_cfg.mcs_table;
   pusch.mcs_index = dci_cfg.modulation_coding_scheme;
-  pusch.mcs_descr = pusch_mcs_get_config(pusch.mcs_table, pusch.mcs_index, pusch_cfg.tp_pi2bpsk_present);
+  pusch.mcs_descr =
+      pusch_mcs_get_config(pusch.mcs_table, pusch.mcs_index, pusch.transform_precoding, pusch_cfg.tp_pi2bpsk_present);
 
-  pusch.transform_precoding = cell_cfg.ul_cfg_common.init_ul_bwp.rach_cfg_common->msg3_transform_precoder;
-  pusch.n_id                = cell_cfg.pci;
-  pusch.dmrs                = pusch_cfg.dmrs;
-  pusch.pusch_dmrs_id       = cell_cfg.pci;
+  pusch.n_id          = cell_cfg.pci;
+  pusch.dmrs          = pusch_cfg.dmrs;
+  pusch.pusch_dmrs_id = cell_cfg.pci;
 
   // TBS.
   pusch.nof_layers    = pusch_cfg.nof_layers;
@@ -711,7 +717,7 @@ void srsran::build_pusch_f0_1_c_rnti(pusch_information&           pusch,
                                      search_space_id              ss_id,
                                      const dci_0_1_configuration& dci_cfg,
                                      const crb_interval&          crbs,
-                                     const ul_harq_process&       h_ul)
+                                     bool                         is_new_data)
 {
   const cell_configuration&                cell_cfg      = ue_cell_cfg.cell_cfg_common;
   const search_space_info&                 ss_info       = ue_cell_cfg.search_space(ss_id);
@@ -740,17 +746,22 @@ void srsran::build_pusch_f0_1_c_rnti(pusch_information&           pusch,
   // MCS.
   pusch.mcs_table = pusch_cfg.mcs_table;
   pusch.mcs_index = dci_cfg.modulation_coding_scheme;
-  pusch.mcs_descr = pusch_mcs_get_config(pusch.mcs_table, pusch.mcs_index, pusch_cfg.tp_pi2bpsk_present);
+  pusch.mcs_descr = pusch_mcs_get_config(pusch.mcs_table,
+                                         pusch.mcs_index,
+                                         ue_cell_cfg.use_pusch_transform_precoding_dci_0_1(),
+                                         pusch_cfg.tp_pi2bpsk_present);
 
-  pusch.n_id = cell_cfg.pci;
+  pusch.n_id          = cell_cfg.pci;
+  pusch.pusch_dmrs_id = cell_cfg.pci;
+  if (opt_rach_cfg.has_value()) {
+    pusch.transform_precoding = opt_rach_cfg.value().msg3_transform_precoder;
+  }
 
   // Dedicated config overrides previously set value.
   if (pusch_cfg_ded.has_value()) {
     pusch.transform_precoding = false;
     if (pusch_cfg_ded.value().trans_precoder != pusch_config::transform_precoder::not_set) {
       pusch.transform_precoding = pusch_cfg_ded.value().trans_precoder == pusch_config::transform_precoder::enabled;
-    } else if (opt_rach_cfg.has_value()) {
-      pusch.transform_precoding = opt_rach_cfg.value().msg3_transform_precoder;
     }
 
     if (pusch_cfg_ded.value().data_scrambling_id_pusch.has_value()) {
@@ -758,8 +769,7 @@ void srsran::build_pusch_f0_1_c_rnti(pusch_information&           pusch,
     }
   }
 
-  pusch.dmrs          = pusch_cfg.dmrs;
-  pusch.pusch_dmrs_id = pusch_cfg.dmrs.dmrs_scrambling_id;
+  pusch.dmrs = pusch_cfg.dmrs;
 
   // TBS.
   pusch.nof_layers    = pusch_cfg.nof_layers;
@@ -770,5 +780,5 @@ void srsran::build_pusch_f0_1_c_rnti(pusch_information&           pusch,
   // HARQ.
   pusch.rv_index = dci_cfg.redundancy_version;
   pusch.harq_id  = dci_cfg.harq_process_number;
-  pusch.new_data = h_ul.tb().nof_retxs == 0;
+  pusch.new_data = is_new_data;
 }

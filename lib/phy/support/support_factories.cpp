@@ -25,8 +25,7 @@
 #include "prach_buffer_impl.h"
 #include "prach_buffer_pool_impl.h"
 #include "resource_grid_impl.h"
-#include "resource_grid_pool_asynchronous_impl.h"
-#include "resource_grid_pool_generic_impl.h"
+#include "resource_grid_pool_impl.h"
 #include "srsran/phy/generic_functions/precoding/precoding_factories.h"
 #include "srsran/ran/prach/prach_constants.h"
 
@@ -64,15 +63,14 @@ private:
 std::unique_ptr<resource_grid_pool>
 srsran::create_generic_resource_grid_pool(std::vector<std::unique_ptr<resource_grid>> grids)
 {
-  return std::make_unique<resource_grid_pool_generic_impl>(std::move(grids));
+  return std::make_unique<resource_grid_pool_impl>(nullptr, std::move(grids));
 }
 
 std::unique_ptr<resource_grid_pool>
-srsran::create_asynchronous_resource_grid_pool(unsigned                                    expire_timeout_slots,
-                                               task_executor&                              async_executor,
+srsran::create_asynchronous_resource_grid_pool(task_executor&                              async_executor,
                                                std::vector<std::unique_ptr<resource_grid>> grids)
 {
-  return std::make_unique<resource_grid_pool_asynchronous_impl>(expire_timeout_slots, async_executor, std::move(grids));
+  return std::make_unique<resource_grid_pool_impl>(&async_executor, std::move(grids));
 }
 
 std::unique_ptr<prach_buffer_pool>
@@ -145,8 +143,8 @@ class channel_precoder_dummy : public channel_precoder
 {
 public:
   // See interface for documentation.
-  void apply_precoding(re_buffer_writer&              output,
-                       const re_buffer_reader&        input,
+  void apply_precoding(re_buffer_writer<cbf16_t>&     output,
+                       const re_buffer_reader<>&      input,
                        const precoding_weight_matrix& precoding) const override
   {
     unsigned nof_ports  = precoding.get_nof_ports();
@@ -180,7 +178,7 @@ public:
   }
 
   // See interface for documentation.
-  void apply_layer_map_and_precoding(re_buffer_writer&              output,
+  void apply_layer_map_and_precoding(re_buffer_writer<cbf16_t>&     output,
                                      span<const ci8_t>              input,
                                      const precoding_weight_matrix& precoding) const override
   {

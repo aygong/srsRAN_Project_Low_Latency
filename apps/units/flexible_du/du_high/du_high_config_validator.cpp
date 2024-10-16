@@ -21,10 +21,15 @@
  */
 
 #include "du_high_config_validator.h"
+
 #include "srsran/ran/duplex_mode.h"
+#include "srsran/ran/nr_cell_identity.h"
 #include "srsran/ran/pdcch/pdcch_type0_css_coreset_config.h"
 #include "srsran/ran/prach/prach_helper.h"
+#include "srsran/ran/pucch/pucch_constants.h"
+#include "srsran/ran/transform_precoding/transform_precoding_helpers.h"
 #include "srsran/rlc/rlc_config.h"
+#include <algorithm>
 
 using namespace srsran;
 
@@ -202,17 +207,16 @@ static bool validate_srb_unit_config(const std::map<srb_id_t, du_high_unit_srb_c
   return true;
 }
 
-static bool validate_pdcch_unit_config(const du_high_unit_base_cell_config base_cell)
+static bool validate_pdcch_unit_config(const du_high_unit_base_cell_config& base_cell)
 {
-  const auto band =
-      base_cell.band.has_value() ? *base_cell.band : band_helper::get_band_from_dl_arfcn(base_cell.dl_arfcn);
+  const auto     band = base_cell.band.value_or(band_helper::get_band_from_dl_arfcn(base_cell.dl_f_ref_arfcn));
   const unsigned nof_crbs =
       band_helper::get_n_rbs_from_bw(base_cell.channel_bw_mhz, base_cell.common_scs, band_helper::get_freq_range(band));
   if (base_cell.pdcch_cfg.common.coreset0_index.has_value()) {
     const uint8_t  ss0_idx               = base_cell.pdcch_cfg.common.ss0_index;
     const unsigned cs0_idx               = base_cell.pdcch_cfg.common.coreset0_index.value();
     const auto     ssb_coreset0_freq_loc = band_helper::get_ssb_coreset0_freq_location_for_cset0_idx(
-        base_cell.dl_arfcn, band, nof_crbs, base_cell.common_scs, base_cell.common_scs, ss0_idx, cs0_idx);
+        base_cell.dl_f_ref_arfcn, band, nof_crbs, base_cell.common_scs, base_cell.common_scs, ss0_idx, cs0_idx);
     if (not ssb_coreset0_freq_loc.has_value()) {
       fmt::print("Unable to derive a valid SSB pointA and k_SSB for CORESET#0 index={}, SearchSpace#0 index={} and "
                  "cell bandwidth={}Mhz\n",
@@ -348,15 +352,18 @@ static bool validate_pusch_cell_unit_config(const du_high_unit_pusch_config& con
     return false;
   }
 
+  // Modulation and Code Scheme MCS ranges are given in TS38.214 Section 6.1.4.2.
   unsigned max_ue_mcs = 28;
-  if (config.mcs_table == pusch_mcs_table::qam256) {
+  if ((config.mcs_table == pusch_mcs_table::qam256) || config.enable_transform_precoding) {
     max_ue_mcs = 27;
   }
 
   if (config.min_ue_mcs > max_ue_mcs) {
-    fmt::print("Invalid PUSCH min_ue_mcs (i.e., {}) for the selected MCS table (i.e., {}).\n",
-               config.min_ue_mcs,
-               (config.mcs_table == pusch_mcs_table::qam256) ? "qam256" : "qam64");
+    fmt::print(
+        "Invalid PUSCH min_ue_mcs (i.e., {}) for the selected MCS table (i.e., {}) with transform precoding {}.\n",
+        config.min_ue_mcs,
+        (config.mcs_table == pusch_mcs_table::qam256) ? "qam256" : "qam64",
+        config.enable_transform_precoding ? "enabled" : "disabled");
     return false;
   }
 
@@ -368,6 +375,15 @@ static bool validate_pusch_cell_unit_config(const du_high_unit_pusch_config& con
     fmt::print("Invalid UE PUSCH RB range [{}, {}). The min_rb_size must be less or equal to the max_rb_size",
                config.min_rb_size,
                config.max_rb_size);
+    return false;
+  }
+
+  if (config.enable_transform_precoding && !is_transform_precoding_nof_prb_valid(config.min_rb_size)) {
+    fmt::print("Invalid minimum UE PUSCH RB (i.e., {}) with transform precoding. The nearest lower number of PRB is {} "
+               "and the higher is {}.\n",
+               config.min_rb_size,
+               get_transform_precoding_nearest_lower_nof_prb_valid(config.min_rb_size),
+               get_transform_precoding_nearest_higher_nof_prb_valid(config.min_rb_size));
     return false;
   }
 
@@ -402,7 +418,13 @@ static bool validate_pucch_cell_unit_config(const du_high_unit_base_cell_config&
     return false;
   }
 
-  static constexpr std::array<unsigned, 12> valid_sr_period_slots{1, 2, 4, 5, 8, 10, 16, 20, 40, 80, 160, 320};
+  // See \c periodicityAndOffset in \c SchedulingRequestResourceConfig of TS 38.331.
+  static const std::map<unsigned, std::vector<unsigned>> mu_to_valid_sr_period_slots_lookup{
+      {0, {1, 2, 4, 5, 8, 10, 16, 20, 40, 80}},
+      {1, {1, 2, 4, 8, 10, 16, 20, 40, 80, 160}},
+      {2, {1, 2, 4, 8, 16, 20, 40, 80, 160, 320}},
+      {3, {1, 2, 4, 8, 16, 40, 80, 160, 320, 640}},
+  };
   const auto sr_period_slots = static_cast<unsigned>(get_nof_slots_per_subframe(scs_common) * pucch_cfg.sr_period_msec);
 
   // Check that the SR period in milliseconds leads to an integer number of slots.
@@ -413,11 +435,85 @@ static bool validate_pucch_cell_unit_config(const du_high_unit_base_cell_config&
                get_nof_slots_per_subframe(scs_common));
     return false;
   }
-
+  span<const unsigned> valid_sr_period_slots = mu_to_valid_sr_period_slots_lookup.at(to_numerology_value(scs_common));
   if (std::find(valid_sr_period_slots.begin(), valid_sr_period_slots.end(), sr_period_slots) ==
       valid_sr_period_slots.end()) {
-    fmt::print("SR period of {}ms is not valid for {}kHz SCS.\n", pucch_cfg.sr_period_msec, scs_to_khz(scs_common));
+    fmt::print("SR period of {}ms (i.e. {} slots) is not valid for {}kHz SCS.\n",
+               pucch_cfg.sr_period_msec,
+               sr_period_slots,
+               scs_to_khz(scs_common));
     return false;
+  }
+
+  // We need to count pucch_cfg.nof_ue_pucch_res_harq_per_set twice, as we have 2 sets of PUCCH resources for HARQ-ACK
+  // (PUCCH Resource Set Id 0 with Format 0/1 and PUCCH Resource Set Id 1 with Format 2).
+  if (pucch_cfg.nof_ue_pucch_res_harq_per_set * 2U * pucch_cfg.nof_cell_harq_pucch_sets +
+          pucch_cfg.nof_cell_sr_resources + pucch_cfg.nof_cell_csi_resources >
+      pucch_constants::MAX_NOF_CELL_PUCCH_RESOURCES) {
+    fmt::print("With the given PUCCH parameters, the number of PUCCH resources per cell exceeds the limit={}.\n",
+               pucch_constants::MAX_NOF_CELL_PUCCH_RESOURCES);
+    return false;
+  }
+
+  return true;
+}
+
+static bool validate_srs_cell_unit_config(const du_high_unit_srs_config& config,
+                                          subcarrier_spacing             scs_common,
+                                          unsigned                       nof_ul_ports)
+{
+  if (config.srs_period_ms.has_value()) {
+    const auto srs_period_slots =
+        static_cast<unsigned>(get_nof_slots_per_subframe(scs_common) * config.srs_period_ms.value());
+
+    // Check that the SR period in milliseconds leads to an integer number of slots.
+    if (static_cast<float>(get_nof_slots_per_subframe(scs_common) * config.srs_period_ms.value()) !=
+        static_cast<float>(srs_period_slots)) {
+      fmt::print(
+          "SRS period (i.e., {}ms) times the number of slots per subframe (i.e., {}) must be an integer number of "
+          "slots\n",
+          config.srs_period_ms.has_value(),
+          get_nof_slots_per_subframe(scs_common));
+      return false;
+    }
+
+    if (scs_common == srsran::subcarrier_spacing::kHz30 and config.srs_period_ms.value() > 1280) {
+      fmt::print("With 30kHz SCS the maximum SRS period is 1280ms\n");
+      return false;
+    }
+  }
+
+  if (config.nof_symbols > config.max_nof_symbols_per_slot) {
+    fmt::print("The number of symbols per SRS resource ({}) should be less than or equal to the maximum number of "
+               "SRS symbols per slot"
+               "({})\n",
+               config.nof_symbols,
+               config.max_nof_symbols_per_slot);
+    return false;
+  }
+
+  if (config.tx_comb == 2U) {
+    if (nof_ul_ports == 2 and (config.cyclic_shift_reuse_factor == 3 or config.cyclic_shift_reuse_factor == 6)) {
+      fmt::print("With TX comb n2 and 2 UL antenna ports, valid cyclic-reuse-factor values are 1, 2, 4\n",
+                 config.nof_symbols,
+                 config.max_nof_symbols_per_slot);
+      return false;
+    }
+    if (nof_ul_ports == 4 and (config.cyclic_shift_reuse_factor == 3 or config.cyclic_shift_reuse_factor == 4 or
+                               config.cyclic_shift_reuse_factor == 6)) {
+      fmt::print("With TX comb n2 and 4 UL antenna ports, valid cyclic-reuse-factor values are 1, 2\n",
+                 config.nof_symbols,
+                 config.max_nof_symbols_per_slot);
+      return false;
+    }
+  } else {
+    if (nof_ul_ports == 4 and (config.cyclic_shift_reuse_factor == 2 or config.cyclic_shift_reuse_factor == 4 or
+                               config.cyclic_shift_reuse_factor == 6)) {
+      fmt::print("With TX comb n4 and 4 UL antenna ports, valid cyclic-reuse-factor values are 1, 3\n",
+                 config.nof_symbols,
+                 config.max_nof_symbols_per_slot);
+      return false;
+    }
   }
 
   return true;
@@ -535,8 +631,9 @@ static bool validate_tdd_ul_dl_pattern_unit_config(const tdd_ul_dl_pattern_unit_
                                                    subcarrier_spacing                   common_scs)
 {
   // NOTE: TDD pattern is assumed to use common SCS as reference SCS.
-  if (common_scs > subcarrier_spacing::kHz60) {
-    fmt::print("Invalid TDD UL DL reference SCS={}kHz. Must be 15, 30 or 60 kHz for FR1.\n", scs_to_khz(common_scs));
+  if (common_scs > subcarrier_spacing::kHz120) {
+    fmt::print("Invalid TDD UL DL reference SCS={}kHz. Must be 15, 30 or 60 kHz for FR1 and 120 kHz for FR2.\n",
+               scs_to_khz(common_scs));
     return false;
   }
 
@@ -576,39 +673,66 @@ static bool validate_tdd_ul_dl_unit_config(const du_high_unit_tdd_ul_dl_config& 
   return true;
 }
 
-static bool validate_dl_arfcn_and_band(const du_high_unit_base_cell_config& config)
+static bool validate_dl_ul_arfcn_and_band(const du_high_unit_base_cell_config& config)
 {
-  nr_band band = config.band.has_value() ? config.band.value() : band_helper::get_band_from_dl_arfcn(config.dl_arfcn);
+  const nr_band band = config.band.value_or(band_helper::get_band_from_dl_arfcn(config.dl_f_ref_arfcn));
 
   // Check if the band is supported with given SCS or band.
   // NOTE: Band n46 would be compatible with the 10MHz BW, but there is no sync raster that falls within the band
   // limits. Also, the Coreset#0 width in RBs given in Table 13-4A, TS 38.213, is larger than the band itself, which is
   // odd. Therefore, we limit the band to minimum 20MHz BW.
-  if (band == srsran::nr_band::n46 and config.channel_bw_mhz < bs_channel_bandwidth_fr1::MHz20) {
+  if (band == srsran::nr_band::n46 and config.channel_bw_mhz < bs_channel_bandwidth::MHz20) {
     fmt::print("Minimum supported bandwidth for n46 is 20MHz.\n");
     return false;
   }
 
-  if (bs_channel_bandwidth_to_MHz(config.channel_bw_mhz) <
-      min_channel_bandwidth_to_MHz(band_helper::get_min_channel_bw(band, config.common_scs))) {
-    fmt::print("Minimum supported bandwidth for n{} with SCS {} is {}MHz.\n",
-               config.band,
-               to_string(config.common_scs),
-               min_channel_bandwidth_to_MHz(band_helper::get_min_channel_bw(band, config.common_scs)));
+  // Check if the subcarier spacing is valid for the frequency range.
+  frequency_range fr = band_helper::get_freq_range(band);
+  if ((fr == frequency_range::FR1) && (config.common_scs > subcarrier_spacing::kHz60)) {
+    fmt::print("Frequency range 1 does not support the subcarrier spacing of {}.\n", to_string(config.common_scs));
     return false;
   }
 
-  // Check whether the DL-ARFCN is within the band and follows the Raster step.
+  if ((fr == frequency_range::FR2) && (config.common_scs < subcarrier_spacing::kHz60)) {
+    fmt::print("Frequency range 2 does not support the subcarrier spacing of {}.\n", to_string(config.common_scs));
+    return false;
+  }
+
+  // Obtain the minimum bandwidth for the subcarrier and band combination.
+  min_channel_bandwidth min_chan_bw = band_helper::get_min_channel_bw(band, config.common_scs);
+  if (min_chan_bw == min_channel_bandwidth::invalid) {
+    fmt::print("Invalid combination for band n{} and subcarrier spacing {}.\n", band, to_string(config.common_scs));
+    return false;
+  }
+
+  // Check that the configured bandwidth is greater than or equal to the minimum bandwidth
+  if (bs_channel_bandwidth_to_MHz(config.channel_bw_mhz) < min_channel_bandwidth_to_MHz(min_chan_bw)) {
+    fmt::print("Minimum supported bandwidth for n{} with SCS {} is {}MHz.\n",
+               band,
+               to_string(config.common_scs),
+               min_channel_bandwidth_to_MHz(min_chan_bw));
+    return false;
+  }
+
+  // Check whether the DL-ARFCN and the UL-ARFCN are within the band and follow the Raster step.
   if (config.band.has_value()) {
     error_type<std::string> ret = band_helper::is_dl_arfcn_valid_given_band(
-        *config.band, config.dl_arfcn, config.common_scs, config.channel_bw_mhz);
+        *config.band, config.dl_f_ref_arfcn, config.common_scs, config.channel_bw_mhz);
     if (not ret.has_value()) {
-      fmt::print("Invalid DL ARFCN={} for band {}. Cause: {}.\n", config.dl_arfcn, band, ret.error());
+      fmt::print("Invalid DL ARFCN={} for band {}. Cause: {}.\n", config.dl_f_ref_arfcn, band, ret.error());
+      return false;
+    }
+    // Check if also the corresponding UL ARFCN is valid.
+    const uint32_t ul_arfcn = band_helper::get_ul_arfcn_from_dl_arfcn(config.dl_f_ref_arfcn, config.band.value());
+    ret                     = band_helper::is_ul_arfcn_valid_given_band(*config.band, ul_arfcn, config.channel_bw_mhz);
+    if (not ret.has_value()) {
+      // NOTE: The message must say that it's the DL ARFCN that is invalid, as that is the parameters set by the user.
+      fmt::print("Invalid DL ARFCN={} for band {}. Cause: {}.\n", config.dl_f_ref_arfcn, band, ret.error());
       return false;
     }
   } else {
     if (band == nr_band::invalid) {
-      fmt::print("Invalid DL ARFCN={}. Cause: Could not find a valid band.\n", config.dl_arfcn);
+      fmt::print("Invalid DL ARFCN={}. Cause: Could not find a valid band.\n", config.dl_f_ref_arfcn);
       return false;
     }
   }
@@ -688,30 +812,43 @@ static bool validate_base_cell_unit_config(const du_high_unit_base_cell_config& 
     return false;
   }
   if (config.common_scs == srsran::subcarrier_spacing::kHz15 and
-      config.channel_bw_mhz > srsran::bs_channel_bandwidth_fr1::MHz50) {
+      config.channel_bw_mhz > srsran::bs_channel_bandwidth::MHz50) {
     fmt::print("Maximum Channel BW with SCS common 15kHz is 50MHz.\n");
     return false;
   }
   if (config.common_scs == srsran::subcarrier_spacing::kHz30 and
-      config.channel_bw_mhz < srsran::bs_channel_bandwidth_fr1::MHz10) {
+      config.channel_bw_mhz < srsran::bs_channel_bandwidth::MHz10) {
     fmt::print("Minimum supported Channel BW with SCS common 30kHz is 10MHz.\n");
     return false;
   }
-
-  if (!validate_dl_arfcn_and_band(config)) {
+  if (config.common_scs == srsran::subcarrier_spacing::kHz30 and
+      config.channel_bw_mhz > srsran::bs_channel_bandwidth::MHz100) {
+    fmt::print("Maximum Channel BW with SCS common 30kHz is 100MHz.\n");
+    return false;
+  }
+  if (config.common_scs == srsran::subcarrier_spacing::kHz60 and
+      config.channel_bw_mhz > srsran::bs_channel_bandwidth::MHz200) {
+    fmt::print("Maximum Channel BW with SCS common 60kHz is 200MHz.\n");
+    return false;
+  }
+  if (config.common_scs == srsran::subcarrier_spacing::kHz120 and
+      config.channel_bw_mhz > srsran::bs_channel_bandwidth::MHz400) {
+    fmt::print("Maximum Channel BW with SCS common 120kHz is 400MHz.\n");
+    return false;
+  }
+  if (!validate_dl_ul_arfcn_and_band(config)) {
     return false;
   }
 
-  const auto ssb_scs =
-      band_helper::get_most_suitable_ssb_scs(band_helper::get_band_from_dl_arfcn(config.dl_arfcn), config.common_scs);
+  const nr_band band    = config.band.value_or(band_helper::get_band_from_dl_arfcn(config.dl_f_ref_arfcn));
+  const auto    ssb_scs = band_helper::get_most_suitable_ssb_scs(band, config.common_scs);
   if (ssb_scs != config.common_scs) {
     fmt::print("Common SCS {}kHz is not equal to SSB SCS {}kHz. Different SCS for common and SSB is not supported.\n",
                scs_to_khz(config.common_scs),
                scs_to_khz(ssb_scs));
     return false;
   }
-  const nr_band band =
-      config.band.has_value() ? config.band.value() : band_helper::get_band_from_dl_arfcn(config.dl_arfcn);
+
   const unsigned nof_crbs =
       band_helper::get_n_rbs_from_bw(config.channel_bw_mhz, config.common_scs, band_helper::get_freq_range(band));
 
@@ -724,6 +861,10 @@ static bool validate_base_cell_unit_config(const du_high_unit_base_cell_config& 
   }
 
   if (!validate_pucch_cell_unit_config(config, config.common_scs)) {
+    return false;
+  }
+
+  if (!validate_srs_cell_unit_config(config.srs_cfg, config.common_scs, config.nof_antennas_ul)) {
     return false;
   }
 
@@ -757,7 +898,7 @@ static bool validate_cell_unit_config(const du_high_unit_cell_config& config)
 }
 
 /// Validates the given list of cell application configuration. Returns true on success, otherwise false.
-static bool validate_cells_unit_config(span<const du_high_unit_cell_config> config)
+static bool validate_cells_unit_config(span<const du_high_unit_cell_config> config, const gnb_id_t& gnb_id)
 {
   unsigned tac = config[0].cell.tac;
   for (const auto& cell : config) {
@@ -766,6 +907,26 @@ static bool validate_cells_unit_config(span<const du_high_unit_cell_config> conf
     }
     if (cell.cell.tac != tac) {
       fmt::print("The TAC must be the same for all cells\n");
+      return false;
+    }
+
+    if (cell.cell.sector_id.has_value() and
+        not nr_cell_identity::create(gnb_id, cell.cell.sector_id.value()).has_value()) {
+      fmt::print("Invalid Sector ID {}, for a gNB Id of {} bits\n", cell.cell.sector_id.value(), gnb_id.bit_length);
+      return false;
+    }
+    const auto band          = cell.cell.band.value_or(band_helper::get_band_from_dl_arfcn(cell.cell.dl_f_ref_arfcn));
+    bool       is_unlicensed = band_helper::is_unlicensed_band(band);
+    // Check if the RA Response Window (in ms) is within the limits for licensed and unlicensed bands.
+    unsigned int max_ra_resp_window = is_unlicensed ? 40 : 10;
+    unsigned int ra_resp_window_ms =
+        cell.cell.prach_cfg.ra_resp_window.value() >> to_numerology_value(cell.cell.common_scs);
+    if (ra_resp_window_ms > max_ra_resp_window) {
+      fmt::print("RA Response Window ({}sl -> {}ms) must be smaller than {}ms in {} bands.\n",
+                 cell.cell.prach_cfg.ra_resp_window,
+                 ra_resp_window_ms,
+                 max_ra_resp_window,
+                 is_unlicensed ? "unlicensed" : "licensed");
       return false;
     }
   }
@@ -777,12 +938,19 @@ static bool validate_cells_unit_config(span<const du_high_unit_cell_config> conf
       const auto& cell2 = *it2;
 
       // Check if both cells are on the same frequency.
-      if (cell1.cell.dl_arfcn == cell2.cell.dl_arfcn) {
+      if (cell1.cell.dl_f_ref_arfcn == cell2.cell.dl_f_ref_arfcn) {
         // Two cells on the same frequency should not have the same physical cell identifier.
         if (cell1.cell.pci == cell2.cell.pci) {
           fmt::print("Warning: two cells with the same DL ARFCN (i.e., {}) have the same PCI (i.e., {}).\n",
-                     cell1.cell.dl_arfcn,
+                     cell1.cell.dl_f_ref_arfcn,
                      cell1.cell.pci);
+        }
+        if (cell1.cell.sector_id.has_value() and cell1.cell.sector_id == cell2.cell.sector_id and
+            cell1.cell.plmn == cell2.cell.plmn) {
+          fmt::print("Error: two cells with the same PLMN (i.e., {}) and cell ID (i.e., {})\n",
+                     cell1.cell.plmn,
+                     cell1.cell.sector_id);
+          return false;
         }
 
         // Two cells on the same frequency should not share the same PRACH root sequence index.
@@ -792,7 +960,7 @@ static bool validate_cells_unit_config(span<const du_high_unit_cell_config> conf
                      "sequence index (i.e., {}).\n",
                      cell1.cell.pci,
                      cell2.cell.pci,
-                     cell1.cell.dl_arfcn,
+                     cell1.cell.dl_f_ref_arfcn,
                      cell1.cell.prach_cfg.prach_root_sequence_index);
         }
       }
@@ -1036,11 +1204,45 @@ static bool validate_rlc_unit_config(five_qi_t five_qi, const du_high_unit_rlc_c
   return true;
 }
 
-/// Validates the given QoS configuration. Returns true on success, otherwise false.
-static bool validate_qos_config(span<const du_high_unit_qos_config> config)
+static bool validate_mac_lc_unit_config(five_qi_t                         five_qi,
+                                        const du_high_unit_mac_lc_config& config,
+                                        unsigned                          max_srb_lc_priority,
+                                        span<uint8_t>                     srb_lcg_ids)
 {
+  // [Implementation-defined] Ensure that SRBs have higher LC priority than DRBs.
+  if (config.priority <= max_srb_lc_priority) {
+    fmt::print("MAC LC priority configured for {} cannot be less than the maximum LC priority of SRBs={}.\n",
+               five_qi,
+               max_srb_lc_priority);
+    return false;
+  }
+
+  // [Implementation-defined] Ensure that DRBs are not configured with same LCG IDs as SRBs.
+  if (srb_lcg_ids.end() != std::find(srb_lcg_ids.begin(), srb_lcg_ids.end(), config.lc_group_id)) {
+    fmt::print(
+        "MAC LCG ID={} configured for {} cannot be same as the one assigned to a SRB.\n", config.lc_group_id, five_qi);
+    return false;
+  }
+
+  return true;
+}
+
+/// Validates the given QoS configuration. Returns true on success, otherwise false.
+static bool validate_qos_config(span<const du_high_unit_qos_config>                config,
+                                const std::map<srb_id_t, du_high_unit_srb_config>& srb_cfg)
+{
+  uint8_t              max_srb_lc_priority = 0;
+  std::vector<uint8_t> srb_lcg_ids;
+  for (const auto& it : srb_cfg) {
+    max_srb_lc_priority = std::max(it.second.mac.priority, max_srb_lc_priority);
+    srb_lcg_ids.push_back(it.second.mac.lc_group_id);
+  }
+
   for (const auto& qos : config) {
     if (!validate_rlc_unit_config(qos.five_qi, qos.rlc)) {
+      return false;
+    }
+    if (!validate_mac_lc_unit_config(qos.five_qi, qos.mac, max_srb_lc_priority, srb_lcg_ids)) {
       return false;
     }
   }
@@ -1049,7 +1251,7 @@ static bool validate_qos_config(span<const du_high_unit_qos_config> config)
 
 bool srsran::validate_du_high_config(const du_high_unit_config& config, const os_sched_affinity_bitmask& available_cpus)
 {
-  if (!validate_cells_unit_config(config.cells_cfg)) {
+  if (!validate_cells_unit_config(config.cells_cfg, config.gnb_id)) {
     return false;
   }
 
@@ -1065,7 +1267,7 @@ bool srsran::validate_du_high_config(const du_high_unit_config& config, const os
     return false;
   }
 
-  if (!validate_qos_config(config.qos_cfg)) {
+  if (!validate_qos_config(config.qos_cfg, config.srb_cfg)) {
     return false;
   }
 

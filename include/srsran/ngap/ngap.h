@@ -23,9 +23,12 @@
 #pragma once
 
 #include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/ngap/ngap_context.h"
 #include "srsran/ngap/ngap_handover.h"
+#include "srsran/ngap/ngap_init_context_setup.h"
 #include "srsran/ngap/ngap_reset.h"
 #include "srsran/ngap/ngap_setup.h"
+#include "srsran/ngap/ngap_ue_radio_capability_management.h"
 #include "srsran/support/async/async_task.h"
 
 namespace srsran {
@@ -75,11 +78,11 @@ public:
   virtual async_task<void> handle_amf_disconnection_request() = 0;
 
   /// \brief Initiates the NG Setup procedure.
-  /// \param[in] request The NGSetupRequest message to transmit.
+  /// \param[in] max_setup_retries The maximum number of setup retries.
   /// \return Returns a ngap_ng_setup_result struct.
   /// \remark The CU transmits the NGSetupRequest as per TS 38.413 section 8.7.1
   /// and awaits the response. If a NGSetupFailure is received the NGAP will handle the failure.
-  virtual async_task<ngap_ng_setup_result> handle_ng_setup_request(const ngap_ng_setup_request& request) = 0;
+  virtual async_task<ngap_ng_setup_result> handle_ng_setup_request(unsigned max_setup_retries) = 0;
 
   /// \brief Initiates NG Reset procedure as per TS 38.413 section 8.7.4.2.2.
   /// \param[in] msg The ng reset message to transmit.
@@ -97,25 +100,18 @@ public:
   virtual void remove_ue_context(ue_index_t ue_index) = 0;
 };
 
-/// Notifier to the RRC UE for NAS PDUs.
-class ngap_rrc_ue_pdu_notifier
+/// Notifier to the RRC UE.
+class ngap_rrc_ue_notifier
 {
 public:
-  virtual ~ngap_rrc_ue_pdu_notifier() = default;
+  virtual ~ngap_rrc_ue_notifier() = default;
 
   /// \brief Notify about the a new nas pdu.
   /// \param [in] nas_pdu The nas pdu.
   virtual void on_new_pdu(byte_buffer nas_pdu) = 0;
-};
 
-/// Notifier to the RRC UE for control messages.
-class ngap_rrc_ue_control_notifier
-{
-public:
-  virtual ~ngap_rrc_ue_control_notifier() = default;
-
-  /// \brief Notify about the reception of new security context.
-  virtual async_task<bool> on_new_security_context() = 0;
+  /// \brief Get packed packed UE radio access capability info for UE radio capability info indication.
+  virtual byte_buffer on_ue_radio_access_cap_info_required() = 0;
 
   /// \brief Get packed handover preparation message for inter-gNB handover.
   virtual byte_buffer on_handover_preparation_message_required() = 0;
@@ -133,11 +129,8 @@ public:
   /// \brief Schedule an async task for the UE.
   virtual bool schedule_async_task(async_task<void> task) = 0;
 
-  /// \brief Get the RRC UE PDU notifier of the UE.
-  virtual ngap_rrc_ue_pdu_notifier& get_rrc_ue_pdu_notifier() = 0;
-
-  /// \brief Get the RRC UE control notifier of the UE.
-  virtual ngap_rrc_ue_control_notifier& get_rrc_ue_control_notifier() = 0;
+  /// \brief Get the RRC UE notifier of the UE.
+  virtual ngap_rrc_ue_notifier& get_ngap_rrc_ue_notifier() = 0;
 
   /// \brief Notify the CU-CP about a security context
   /// \param[in] sec_ctxt The received security context
@@ -171,6 +164,12 @@ public:
   /// \return True if the security context was successfully initialized, false otherwise.
   virtual bool on_handover_request_received(ue_index_t ue_index, security::security_context sec_ctxt) = 0;
 
+  /// \brief Notify about the reception of a new Initial Context Setup Request.
+  /// \param[in] request The received Initial Context Setup Request.
+  /// \returns The Initial Context Setup Response or the Initial Context Setup Failure.
+  virtual async_task<expected<ngap_init_context_setup_response, ngap_init_context_setup_failure>>
+  on_new_initial_context_setup_request(ngap_init_context_setup_request& request) = 0;
+
   /// \brief Notify about the reception of a new PDU Session Resource Setup Request.
   /// \param[in] request The received PDU Session Resource Setup Request.
   /// \returns The PDU Session Resource Setup Response.
@@ -203,14 +202,6 @@ public:
 
   /// \brief Notify that the TNL connection to the AMF was lost.
   virtual void on_n2_disconnection() = 0;
-};
-
-/// Interface to communication with the DU repository
-/// Useful when the NGAP does not know the DU for an UE, e.g. paging and handover.
-class ngap_cu_cp_du_repository_notifier
-{
-public:
-  virtual ~ngap_cu_cp_du_repository_notifier() = default;
 
   /// \brief Notifies the CU-CP about a Paging message.
   virtual void on_paging_message(cu_cp_paging_message& msg) = 0;
@@ -238,6 +229,18 @@ public:
   virtual void handle_ul_nas_transport_message(const cu_cp_ul_nas_transport& msg) = 0;
 };
 
+/// Handle NGAP UE Radio Capability Management Messages as per TS 38.413 section 8.14.
+class ngap_ue_radio_capability_management_handler
+{
+public:
+  virtual ~ngap_ue_radio_capability_management_handler() = default;
+
+  /// \brief Initiates the UE Radio Capability Info Indication procedure as per TS 38.413 section 8.14.1.
+  /// \param[in] msg The ue radio capability info indication to transmit.
+  virtual void
+  handle_tx_ue_radio_capability_info_indication_required(const ngap_ue_radio_capability_info_indication& msg) = 0;
+};
+
 class ngap_control_message_handler
 {
 public:
@@ -257,6 +260,9 @@ public:
   virtual void handle_inter_cu_ho_rrc_recfg_complete(const ue_index_t           ue_index,
                                                      const nr_cell_global_id_t& cgi,
                                                      const unsigned             tac) = 0;
+
+  /// \brief Get the supported PLMNs.
+  virtual const ngap_context_t& get_ngap_context() const = 0;
 };
 
 /// Interface to control the NGAP.
@@ -290,6 +296,7 @@ class ngap_interface : public ngap_message_handler,
                        public ngap_event_handler,
                        public ngap_connection_manager,
                        public ngap_nas_message_handler,
+                       public ngap_ue_radio_capability_management_handler,
                        public ngap_control_message_handler,
                        public ngap_ue_control_manager,
                        public ngap_statistics_handler,
@@ -298,14 +305,15 @@ class ngap_interface : public ngap_message_handler,
 public:
   virtual ~ngap_interface() = default;
 
-  virtual ngap_message_handler&            get_ngap_message_handler()            = 0;
-  virtual ngap_event_handler&              get_ngap_event_handler()              = 0;
-  virtual ngap_connection_manager&         get_ngap_connection_manager()         = 0;
-  virtual ngap_nas_message_handler&        get_ngap_nas_message_handler()        = 0;
-  virtual ngap_control_message_handler&    get_ngap_control_message_handler()    = 0;
-  virtual ngap_ue_control_manager&         get_ngap_ue_control_manager()         = 0;
-  virtual ngap_statistics_handler&         get_ngap_statistics_handler()         = 0;
-  virtual ngap_ue_context_removal_handler& get_ngap_ue_context_removal_handler() = 0;
+  virtual ngap_message_handler&                        get_ngap_message_handler()                 = 0;
+  virtual ngap_event_handler&                          get_ngap_event_handler()                   = 0;
+  virtual ngap_connection_manager&                     get_ngap_connection_manager()              = 0;
+  virtual ngap_nas_message_handler&                    get_ngap_nas_message_handler()             = 0;
+  virtual ngap_ue_radio_capability_management_handler& get_ngap_ue_radio_cap_management_handler() = 0;
+  virtual ngap_control_message_handler&                get_ngap_control_message_handler()         = 0;
+  virtual ngap_ue_control_manager&                     get_ngap_ue_control_manager()              = 0;
+  virtual ngap_statistics_handler&                     get_ngap_statistics_handler()              = 0;
+  virtual ngap_ue_context_removal_handler&             get_ngap_ue_context_removal_handler()      = 0;
 };
 
 } // namespace srs_cu_cp

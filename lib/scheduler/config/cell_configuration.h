@@ -67,6 +67,9 @@ public:
   /// List of nzp-CSI-RS resources.
   std::vector<nzp_csi_rs_resource> nzp_csi_rs_list;
 
+  /// List of dl-DataToUL-ACK values sent to UE in its dedicated configuration.
+  static_vector<uint8_t, 8> dl_data_to_ul_ack;
+
   /// List of RRM Policy members configured for this cell.
   std::vector<slice_rrm_policy_config> rrm_policy_members;
 
@@ -162,6 +165,21 @@ public:
                    dl_cfg_common.init_dl_bwp.pdcch_common.common_coreset.value().id == cs_id
                ? dl_cfg_common.init_dl_bwp.pdcch_common.common_coreset.value()
                : dl_cfg_common.init_dl_bwp.pdcch_common.coreset0.value();
+  }
+
+  /// \brief Determines the use of transform precoding according to the parameter \e msg3-transformPrecoder.
+  ///
+  /// The UE determines the use of the transform precoder in TS 38.214 Section 6.1.3. It uses this parameter when a
+  /// PUSCH is scheduled by:
+  /// - a RAR UL grant;
+  /// - DCI Format 0_0; or
+  /// - DCI Format 0_1 and the parameter \e transformPrecoder in \e pusch-Config is not present.
+  bool use_msg3_transform_precoder() const
+  {
+    if (!ul_cfg_common.init_ul_bwp.rach_cfg_common) {
+      return false;
+    }
+    return ul_cfg_common.init_ul_bwp.rach_cfg_common->msg3_transform_precoder;
   }
 
 private:

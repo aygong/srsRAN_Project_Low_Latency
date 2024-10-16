@@ -32,7 +32,8 @@ using namespace srsran;
 class rlc_tx_am_test_frame : public rlc_tx_upper_layer_data_notifier,
                              public rlc_tx_upper_layer_control_notifier,
                              public rlc_tx_lower_layer_notifier,
-                             public rlc_rx_am_status_provider
+                             public rlc_rx_am_status_provider,
+                             public rlc_metrics_notifier
 {
 public:
   rlc_am_sn_size    sn_size;
@@ -45,7 +46,7 @@ public:
   rlc_tx_am_test_frame(rlc_am_sn_size sn_size_) : sn_size(sn_size_), status(sn_size_) {}
 
   // rlc_tx_upper_layer_data_notifier interface
-  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn) override {}
+  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn, uint32_t desired_buf_size) override {}
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override {}
   void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override {}
   void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override {}
@@ -61,6 +62,9 @@ public:
   rlc_am_status_pdu& get_status_pdu() override { return status; }
   uint32_t           get_status_pdu_length() override { return status.get_packed_size(); }
   bool               status_report_required() override { return status_required; }
+
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 struct bench_params {
@@ -98,14 +102,15 @@ void benchmark_status_pdu_handling(rlc_am_status_pdu status, const bench_params&
 
   // Set Tx config
   rlc_tx_am_config config;
-  config.sn_field_length = rlc_am_sn_size::size18bits;
-  config.pdcp_sn_len     = pdcp_sn_size::size18bits;
-  config.t_poll_retx     = 45;
-  config.max_retx_thresh = 4;
-  config.poll_pdu        = 4;
-  config.poll_byte       = 25;
-  config.queue_size      = 4096;
-  config.max_window      = 0;
+  config.sn_field_length  = rlc_am_sn_size::size18bits;
+  config.pdcp_sn_len      = pdcp_sn_size::size18bits;
+  config.t_poll_retx      = 45;
+  config.max_retx_thresh  = 4;
+  config.poll_pdu         = 4;
+  config.poll_byte        = 25;
+  config.queue_size       = 4096;
+  config.queue_size_bytes = 4096 * 1507;
+  config.max_window       = 0;
 
   // Create test frame
   auto tester = std::make_unique<rlc_tx_am_test_frame>(config.sn_field_length);
@@ -122,26 +127,29 @@ void benchmark_status_pdu_handling(rlc_am_status_pdu status, const bench_params&
 
   null_rlc_pcap pcap;
 
+  auto metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+      gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{0}, tester.get(), ue_worker);
+
   // Run benchmark
-  auto context = [&rlc, &tester, config, &timers, &pcell_worker, &ue_worker, &pcap]() {
+  auto context = [&rlc, &tester, &metrics_agg, config, &timers, &pcell_worker, &ue_worker, &pcap]() {
     rlc = std::make_unique<rlc_tx_am_entity>(gnb_du_id_t::min,
                                              du_ue_index_t::MIN_DU_UE_INDEX,
-                                             srb_id_t::srb0,
+                                             drb_id_t::drb1,
                                              config,
                                              *tester,
                                              *tester,
                                              *tester,
-                                             timer_factory{timers, pcell_worker},
+                                             *metrics_agg,
+                                             pcap,
                                              pcell_worker,
                                              ue_worker,
-                                             false,
-                                             pcap);
+                                             timers);
 
     // Bind AM Rx/Tx interconnect
     rlc->set_status_provider(tester.get());
 
     for (int i = 0; i < 2048; i++) {
-      byte_buffer sdu = test_helpers::create_pdcp_pdu(config.pdcp_sn_len, i, 7, 0);
+      byte_buffer sdu = test_helpers::create_pdcp_pdu(config.pdcp_sn_len, /* is_srb = */ false, i, 7, 0);
       rlc->handle_sdu(std::move(sdu), false);
       std::array<uint8_t, 100> pdu_buf;
       rlc->pull_pdu(pdu_buf);

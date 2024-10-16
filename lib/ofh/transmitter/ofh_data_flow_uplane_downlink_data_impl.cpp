@@ -25,6 +25,8 @@
 #include "scoped_frame_buffer.h"
 #include "srsran/phy/support/resource_grid_context.h"
 #include "srsran/phy/support/resource_grid_reader.h"
+#include "srsran/phy/support/shared_resource_grid.h"
+#include "srsran/ran/resource_block.h"
 #include "srsran/srsvec/conversion.h"
 #include <thread>
 
@@ -75,7 +77,6 @@ data_flow_uplane_downlink_data_impl::data_flow_uplane_downlink_data_impl(
   logger(*dependencies.logger),
   nof_symbols_per_slot(get_nsymb_per_slot(config.cp)),
   ru_nof_prbs(config.ru_nof_prbs),
-  vlan_params(config.vlan_params),
   compr_params(config.compr_params),
   frame_pool(std::move(dependencies.frame_pool)),
   compressor_sel(std::move(dependencies.compressor_sel)),
@@ -93,7 +94,7 @@ data_flow_uplane_downlink_data_impl::data_flow_uplane_downlink_data_impl(
 
 void data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message(
     const data_flow_uplane_resource_grid_context& context,
-    const resource_grid_reader&                   grid)
+    const shared_resource_grid&                   grid)
 {
   trace_point tp = ofh_tracer.now();
   enqueue_section_type_1_message_symbol_burst(context, grid);
@@ -103,14 +104,15 @@ void data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message(
 
 void data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_symbol_burst(
     const data_flow_uplane_resource_grid_context& context,
-    const resource_grid_reader&                   grid)
+    const shared_resource_grid&                   grid)
 {
+  const resource_grid_reader& reader = grid.get_reader();
+
   // Temporary buffer used to store IQ data when the RU operating bandwidth is not the same to the cell bandwidth.
-  // TODO: cf_t constructor initializes with 0s.
-  std::array<cf_t, MAX_NOF_PRBS * NOF_SUBCARRIERS_PER_RB> temp_buffer;
-  if (SRSRAN_UNLIKELY(ru_nof_prbs * NOF_SUBCARRIERS_PER_RB != grid.get_nof_subc())) {
+  std::array<cbf16_t, MAX_NOF_PRBS * NOF_SUBCARRIERS_PER_RB> temp_buffer;
+  if (SRSRAN_UNLIKELY(ru_nof_prbs * NOF_SUBCARRIERS_PER_RB != reader.get_nof_subc())) {
     // Zero out the elements that won't be filled after reading the resource grid.
-    std::fill(temp_buffer.begin() + grid.get_nof_subc(), temp_buffer.end(), 0);
+    std::fill(temp_buffer.begin() + reader.get_nof_subc(), temp_buffer.end(), 0);
   }
 
   units::bytes headers_size = eth_builder->get_header_size() +
@@ -134,17 +136,12 @@ void data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_symbol_
     }
     ofh_tracer << trace_event("ofh_uplane_pool_access", pool_access_tp);
 
-    span<const cf_t> iq_data;
-    if (SRSRAN_LIKELY(ru_nof_prbs * NOF_SUBCARRIERS_PER_RB == grid.get_nof_subc())) {
-      span<const cbf16_t> iq_data_cbf16 = grid.get_view(context.port, symbol_id);
-
-      // TODO: Convert compressor to cbf16_t.
-      span<cf_t> temp_iq_data(temp_buffer.data(), ru_nof_prbs * NOF_SUBCARRIERS_PER_RB);
-      srsvec::convert(temp_iq_data, iq_data_cbf16);
-      iq_data = temp_iq_data;
+    span<const cbf16_t> iq_data;
+    if (SRSRAN_LIKELY(ru_nof_prbs * NOF_SUBCARRIERS_PER_RB == reader.get_nof_subc())) {
+      iq_data = reader.get_view(context.port, symbol_id);
     } else {
-      span<cf_t> temp_iq_data(temp_buffer.data(), ru_nof_prbs * NOF_SUBCARRIERS_PER_RB);
-      grid.get(temp_iq_data.first(grid.get_nof_subc()), context.port, symbol_id, 0);
+      span<cbf16_t> temp_iq_data(temp_buffer.data(), ru_nof_prbs * NOF_SUBCARRIERS_PER_RB);
+      reader.get(temp_iq_data.first(reader.get_nof_subc()), context.port, symbol_id, 0);
       iq_data = temp_iq_data;
     }
 
@@ -184,7 +181,7 @@ void data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_symbol_
   }
 }
 
-unsigned data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_symbol(span<const cf_t> iq_symbol_data,
+unsigned data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_symbol(span<const cbf16_t> iq_symbol_data,
                                                                                     const uplane_message_params& params,
                                                                                     unsigned                     eaxc,
                                                                                     span<uint8_t>                buffer)
@@ -206,7 +203,7 @@ unsigned data_flow_uplane_downlink_data_impl::enqueue_section_type_1_message_sym
 
   // Add Ethernet header.
   span<uint8_t> eth_buffer = span<uint8_t>(buffer).first(ether_header_size.value() + bytes_written);
-  eth_builder->build_vlan_frame(eth_buffer, vlan_params);
+  eth_builder->build_frame(eth_buffer);
 
   logger.debug("Packing a downlink User-Plane message for slot '{}' and eAxC '{}', symbol_id '{}', PRB range '{}:{}', "
                "size '{}' bytes",

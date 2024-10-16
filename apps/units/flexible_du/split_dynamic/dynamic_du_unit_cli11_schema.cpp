@@ -24,8 +24,8 @@
 #include "apps/units/flexible_du/du_high/du_high_config_cli11_schema.h"
 #include "apps/units/flexible_du/du_low/du_low_config_cli11_schema.h"
 #include "apps/units/flexible_du/fapi/fapi_config_cli11_schema.h"
-#include "apps/units/flexible_du/split_7_2/ru_ofh_config_cli11_schema.h"
-#include "apps/units/flexible_du/split_8/ru_sdr_config_cli11_schema.h"
+#include "apps/units/flexible_du/split_7_2/helpers/ru_ofh_config_cli11_schema.h"
+#include "apps/units/flexible_du/split_8/helpers/ru_sdr_config_cli11_schema.h"
 #include "apps/units/flexible_du/support/cli11_cpu_affinities_parser_helper.h"
 #include "dynamic_du_unit_config.h"
 #include "srsran/support/cli11_utils.h"
@@ -41,6 +41,13 @@ static void configure_cli11_ru_dummy_args(CLI::App& app, ru_dummy_unit_config& c
 {
   add_option(app, "--dl_processing_delay", config.dl_processing_delay, "DL processing processing delay in slots")
       ->capture_default_str();
+  add_option(app,
+             "--time_scaling",
+             config.time_scaling,
+             "Time scaling factor applied to the slot duration. Must be greater than zero. "
+             "A value greater than one slows down the RU, while a value between zero and one speeds it up.")
+      ->capture_default_str()
+      ->check(CLI::NonNegativeNumber);
 }
 
 static void configure_cli11_cell_affinity_args(CLI::App& app, ru_dummy_cpu_affinities_cell_unit_config& config)
@@ -103,9 +110,12 @@ void srsran::configure_cli11_with_dynamic_du_unit_config_schema(CLI::App& app, d
 static void manage_ru(CLI::App& app, dynamic_du_unit_config& parsed_cfg)
 {
   // Manage the RU optionals
-  unsigned nof_ofh_entries   = app.get_subcommand("ru_ofh")->count_all();
-  unsigned nof_sdr_entries   = app.get_subcommand("ru_sdr")->count_all();
-  unsigned nof_dummy_entries = app.get_subcommand("ru_dummy")->count_all();
+  auto     ofh_subcmd        = app.get_subcommand("ru_ofh");
+  auto     sdr_subcmd        = app.get_subcommand("ru_sdr");
+  auto     dummy_subcmd      = app.get_subcommand("ru_dummy");
+  unsigned nof_ofh_entries   = ofh_subcmd->count_all();
+  unsigned nof_sdr_entries   = sdr_subcmd->count_all();
+  unsigned nof_dummy_entries = dummy_subcmd->count_all();
 
   // Count the number of RU types.
   unsigned nof_ru_types = (nof_ofh_entries != 0) ? 1 : 0;
@@ -119,15 +129,23 @@ static void manage_ru(CLI::App& app, dynamic_du_unit_config& parsed_cfg)
 
   if (nof_ofh_entries != 0) {
     parsed_cfg.ru_cfg = ofh_cfg;
+    sdr_subcmd->disabled();
+    dummy_subcmd->disabled();
+
     return;
   }
 
   if (nof_sdr_entries != 0) {
     parsed_cfg.ru_cfg = sdr_cfg;
+    ofh_subcmd->disabled();
+    dummy_subcmd->disabled();
+
     return;
   }
 
   parsed_cfg.ru_cfg = dummy_cfg;
+  sdr_subcmd->disabled();
+  ofh_subcmd->disabled();
 }
 
 void srsran::autoderive_dynamic_du_parameters_after_parsing(CLI::App& app, dynamic_du_unit_config& parsed_cfg)
@@ -149,9 +167,9 @@ void srsran::autoderive_dynamic_du_parameters_after_parsing(CLI::App& app, dynam
   }
 
   // Auto derive DU low parameters.
-  const auto& cell             = parsed_cfg.du_high_cfg.config.cells_cfg.front().cell;
-  nr_band     band             = cell.band ? cell.band.value() : band_helper::get_band_from_dl_arfcn(cell.dl_arfcn);
-  bool        is_zmq_rf_driver = false;
+  const auto&   cell = parsed_cfg.du_high_cfg.config.cells_cfg.front().cell;
+  const nr_band band = cell.band ? cell.band.value() : band_helper::get_band_from_dl_arfcn(cell.dl_f_ref_arfcn);
+  bool          is_zmq_rf_driver = false;
   if (std::holds_alternative<ru_sdr_unit_config>(parsed_cfg.ru_cfg)) {
     is_zmq_rf_driver = std::get<ru_sdr_unit_config>(parsed_cfg.ru_cfg).device_driver == "zmq";
   }

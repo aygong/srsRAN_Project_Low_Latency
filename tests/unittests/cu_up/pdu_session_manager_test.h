@@ -66,6 +66,7 @@ protected:
                                                                  security_info,
                                                                  net_config,
                                                                  n3_config,
+                                                                 cu_up_test_mode_config{},
                                                                  logger,
                                                                  ue_inactivity_timer,
                                                                  timers_factory,
@@ -131,6 +132,21 @@ protected:
   void TearDown() override { finish(); }
 };
 
+/// Fixture class for PDU session manager tests with configurable F1-U ext addr
+class pdu_session_manager_test_set_f1u_ext_addr : public pdu_session_manager_test_base,
+                                                  public ::testing::TestWithParam<const char*>
+{
+protected:
+  network_interface_config get_net_config() override
+  {
+    network_interface_config cfg = net_config_default;
+    cfg.f1u_ext_addr             = GetParam();
+    return cfg;
+  }
+  void SetUp() override { init(); }
+  void TearDown() override { finish(); }
+};
+
 inline e1ap_pdu_session_res_to_setup_item
 generate_pdu_session_res_to_setup_item(pdu_session_id_t psi, drb_id_t drb_id, qos_flow_id_t qfi, five_qi_t five_qi)
 {
@@ -167,12 +183,10 @@ generate_pdu_session_res_to_setup_item(pdu_session_id_t psi, drb_id_t drb_id, qo
 
   e1ap_qos_flow_qos_param_item qos_flow_info;
   qos_flow_info.qos_flow_id = qfi;
-  non_dyn_5qi_descriptor_t non_dyn_5qi;
-  non_dyn_5qi.five_qi                                                                 = five_qi;
-  qos_flow_info.qos_flow_level_qos_params.qos_characteristics.non_dyn_5qi             = non_dyn_5qi;
-  qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.prio_level      = 1;
-  qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.pre_emption_cap = "shall-not-trigger-pre-emption";
-  qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.pre_emption_vulnerability = "not-pre-emptable";
+  non_dyn_5qi_descriptor non_dyn_5qi;
+  non_dyn_5qi.five_qi                                                           = five_qi;
+  qos_flow_info.qos_flow_level_qos_params.qos_desc                              = non_dyn_5qi;
+  qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention.prio_level_arp = 1;
   drb_to_setup_item.qos_flow_info_to_be_setup.emplace(qos_flow_info.qos_flow_id, qos_flow_info);
 
   pdu_session_setup_item.drb_to_setup_list_ng_ran.emplace(drb_to_setup_item.drb_id, drb_to_setup_item);
@@ -233,13 +247,10 @@ generate_pdu_session_res_to_modify_item_to_setup_drb(pdu_session_id_t           
   for (const auto& qfi : qfi_list) {
     e1ap_qos_flow_qos_param_item qos_flow_info;
     qos_flow_info.qos_flow_id = qfi;
-    non_dyn_5qi_descriptor_t non_dyn_5qi;
-    non_dyn_5qi.five_qi                                                            = five_qi;
-    qos_flow_info.qos_flow_level_qos_params.qos_characteristics.non_dyn_5qi        = non_dyn_5qi;
-    qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.prio_level = 1;
-    qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.pre_emption_cap =
-        "shall-not-trigger-pre-emption";
-    qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention_prio.pre_emption_vulnerability = "not-pre-emptable";
+    non_dyn_5qi_descriptor non_dyn_5qi;
+    non_dyn_5qi.five_qi                                                           = five_qi;
+    qos_flow_info.qos_flow_level_qos_params.qos_desc                              = non_dyn_5qi;
+    qos_flow_info.qos_flow_level_qos_params.ng_ran_alloc_retention.prio_level_arp = 1;
     drb_to_setup_item.qos_flow_info_to_be_setup.emplace(qos_flow_info.qos_flow_id, qos_flow_info);
   }
 

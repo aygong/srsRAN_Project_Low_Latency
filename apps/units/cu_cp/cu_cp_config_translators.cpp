@@ -21,8 +21,10 @@
  */
 
 #include "cu_cp_config_translators.h"
+#include "apps/services/worker_manager_config.h"
 #include "cu_cp_unit_config.h"
 #include "srsran/cu_cp/cu_cp_configuration_helpers.h"
+#include "srsran/ran/plmn_identity.h"
 #include "srsran/rlc/rlc_config.h"
 #include <sstream>
 
@@ -187,50 +189,219 @@ static srs_cu_cp::rrc_ssb_mtc generate_rrc_ssb_mtc(unsigned period, unsigned off
   return ssb_mtc;
 }
 
+static srs_cu_cp::rrc_periodical_report_cfg
+generate_cu_cp_periodical_report_config(const cu_cp_unit_report_config& report_cfg_item)
+{
+  srs_cu_cp::rrc_periodical_report_cfg periodical;
+
+  periodical.rs_type                = srs_cu_cp::rrc_nr_rs_type::ssb;
+  periodical.report_interv          = report_cfg_item.report_interval_ms;
+  periodical.report_amount          = -1;
+  periodical.report_quant_cell.rsrp = true;
+  periodical.report_quant_cell.rsrq = true;
+  periodical.report_quant_cell.sinr = true;
+  periodical.max_report_cells       = 4;
+
+  srs_cu_cp::rrc_meas_report_quant report_quant_rs_idxes;
+  report_quant_rs_idxes.rsrp       = true;
+  report_quant_rs_idxes.rsrq       = true;
+  report_quant_rs_idxes.sinr       = true;
+  periodical.report_quant_rs_idxes = report_quant_rs_idxes;
+
+  periodical.max_nrof_rs_idxes_to_report = 4;
+  periodical.include_beam_meass          = true;
+  periodical.use_allowed_cell_list       = false;
+
+  return periodical;
+}
+
+static srs_cu_cp::rrc_event_trigger_cfg
+generate_cu_cp_event_trigger_report_config(const cu_cp_unit_report_config& report_cfg_item)
+{
+  srs_cu_cp::rrc_event_trigger_cfg event_trigger_cfg;
+
+  {
+    srs_cu_cp::rrc_event_id event_id;
+
+    if (report_cfg_item.event_triggered_report_type.value() == "a1") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a1;
+    }
+    if (report_cfg_item.event_triggered_report_type.value() == "a2") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a2;
+    }
+    if (report_cfg_item.event_triggered_report_type.value() == "a3") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a3;
+    }
+    if (report_cfg_item.event_triggered_report_type.value() == "a4") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a4;
+    }
+    if (report_cfg_item.event_triggered_report_type.value() == "a5") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a5;
+    }
+    if (report_cfg_item.event_triggered_report_type.value() == "a6") {
+      event_id.id = srs_cu_cp::rrc_event_id::event_id_t::a6;
+    }
+
+    event_id.meas_trigger_quant_thres_or_offset.emplace();
+
+    // Event id
+    if (report_cfg_item.event_triggered_report_type.value() == "a1" or
+        report_cfg_item.event_triggered_report_type.value() == "a2" or
+        report_cfg_item.event_triggered_report_type.value() == "a4" or
+        report_cfg_item.event_triggered_report_type.value() == "a5") {
+      if (report_cfg_item.event_triggered_report_type.value() == "a5") {
+        event_id.meas_trigger_quant_thres_2.emplace();
+      }
+      // Meas trigger quantity threshold
+      if (report_cfg_item.meas_trigger_quantity.value() == "rsrp") {
+        event_id.meas_trigger_quant_thres_or_offset.value().rsrp =
+            report_cfg_item.meas_trigger_quantity_threshold_db.value();
+        if (report_cfg_item.event_triggered_report_type.value() == "a5") {
+          event_id.meas_trigger_quant_thres_2.value().rsrp =
+              report_cfg_item.meas_trigger_quantity_threshold_2_db.value();
+        }
+      } else if (report_cfg_item.meas_trigger_quantity.value() == "rsrq") {
+        event_id.meas_trigger_quant_thres_or_offset.value().rsrq =
+            report_cfg_item.meas_trigger_quantity_threshold_db.value();
+        if (report_cfg_item.event_triggered_report_type.value() == "a5") {
+          event_id.meas_trigger_quant_thres_2.value().rsrq =
+              report_cfg_item.meas_trigger_quantity_threshold_2_db.value();
+        }
+      } else if (report_cfg_item.meas_trigger_quantity.value() == "sinr") {
+        event_id.meas_trigger_quant_thres_or_offset.value().sinr =
+            report_cfg_item.meas_trigger_quantity_threshold_db.value();
+        if (report_cfg_item.event_triggered_report_type.value() == "a5") {
+          event_id.meas_trigger_quant_thres_2.value().sinr =
+              report_cfg_item.meas_trigger_quantity_threshold_2_db.value();
+        }
+      }
+    }
+
+    if (report_cfg_item.event_triggered_report_type.value() == "a3" or
+        report_cfg_item.event_triggered_report_type.value() == "a6") {
+      // Meas trigger quantity offset
+      if (report_cfg_item.meas_trigger_quantity.value() == "rsrp") {
+        event_id.meas_trigger_quant_thres_or_offset.value().rsrp =
+            report_cfg_item.meas_trigger_quantity_offset_db.value();
+      } else if (report_cfg_item.meas_trigger_quantity.value() == "rsrq") {
+        event_id.meas_trigger_quant_thres_or_offset.value().rsrq =
+            report_cfg_item.meas_trigger_quantity_offset_db.value();
+      } else if (report_cfg_item.meas_trigger_quantity.value() == "sinr") {
+        event_id.meas_trigger_quant_thres_or_offset.value().sinr =
+            report_cfg_item.meas_trigger_quantity_offset_db.value();
+      }
+    }
+
+    if (report_cfg_item.event_triggered_report_type.value() == "a3" or
+        report_cfg_item.event_triggered_report_type.value() == "a4" or
+        report_cfg_item.event_triggered_report_type.value() == "a5" or
+        report_cfg_item.event_triggered_report_type.value() == "a6") {
+      // Report on leave
+      event_id.use_allowed_cell_list = false;
+    }
+
+    // Common parameters
+
+    // Report on leave
+    event_id.report_on_leave = false;
+
+    // Hysteresis
+    event_id.hysteresis = report_cfg_item.hysteresis_db.value();
+
+    // Time to trigger
+    event_id.time_to_trigger = report_cfg_item.time_to_trigger_ms.value();
+
+    event_trigger_cfg.event_id = event_id;
+  }
+
+  event_trigger_cfg.rs_type                = srs_cu_cp::rrc_nr_rs_type::ssb;
+  event_trigger_cfg.report_interv          = report_cfg_item.report_interval_ms;
+  event_trigger_cfg.report_amount          = -1;
+  event_trigger_cfg.report_quant_cell.rsrp = true;
+  event_trigger_cfg.report_quant_cell.rsrq = true;
+  event_trigger_cfg.report_quant_cell.sinr = true;
+  event_trigger_cfg.max_report_cells       = 4;
+
+  srs_cu_cp::rrc_meas_report_quant report_quant_rs_idxes;
+  report_quant_rs_idxes.rsrp              = true;
+  report_quant_rs_idxes.rsrq              = true;
+  report_quant_rs_idxes.sinr              = true;
+  event_trigger_cfg.report_quant_rs_idxes = report_quant_rs_idxes;
+
+  return event_trigger_cfg;
+}
+
 srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const cu_cp_unit_config& cu_cfg)
 {
   srs_cu_cp::cu_cp_configuration out_cfg = config_helpers::make_default_cu_cp_config();
-  out_cfg.max_nof_dus                    = cu_cfg.max_nof_dus;
-  out_cfg.max_nof_cu_ups                 = cu_cfg.max_nof_cu_ups;
-  out_cfg.max_nof_ues                    = cu_cfg.max_nof_ues;
+  out_cfg.admission.max_nof_dus          = cu_cfg.max_nof_dus;
+  out_cfg.admission.max_nof_cu_ups       = cu_cfg.max_nof_cu_ups;
+  out_cfg.admission.max_nof_ues          = cu_cfg.max_nof_ues;
+  out_cfg.admission.max_nof_drbs_per_ue  = cu_cfg.max_nof_drbs_per_ue;
 
-  out_cfg.ngap_config.gnb_id               = cu_cfg.gnb_id;
-  out_cfg.ngap_config.ran_node_name        = cu_cfg.ran_node_name;
-  out_cfg.ngap_config.slice_configurations = cu_cfg.slice_cfg;
+  out_cfg.node.gnb_id        = cu_cfg.gnb_id;
+  out_cfg.node.ran_node_name = cu_cfg.ran_node_name;
 
-  srsran_assert(!cu_cfg.plmns.empty(), "PLMN list is empty");
-  srsran_assert(!cu_cfg.tacs.empty(), "PLMN list is empty");
-  out_cfg.ngap_config.plmn = plmn_identity::parse(cu_cfg.plmns.front()).value();
-  out_cfg.ngap_config.tac  = cu_cfg.tacs.front();
+  {
+    std::vector<srs_cu_cp::supported_tracking_area> supported_tas;
+    for (const auto& supported_ta : cu_cfg.amf_config.amf.supported_tas) {
+      std::vector<srs_cu_cp::plmn_item> plmn_list;
+      for (const auto& plmn_item : supported_ta.plmn_list) {
+        expected<plmn_identity> plmn = plmn_identity::parse(plmn_item.plmn_id);
+        srsran_assert(plmn.has_value(), "Invalid PLMN: {}", plmn_item.plmn_id);
+        plmn_list.push_back({plmn.value(), plmn_item.tai_slice_support_list});
+      }
+      supported_tas.push_back({supported_ta.tac, plmn_list});
+    }
+    out_cfg.ngaps.push_back(srs_cu_cp::cu_cp_configuration::ngap_params{nullptr, supported_tas});
+  }
 
-  out_cfg.rrc_config.gnb_id                         = cu_cfg.gnb_id;
-  out_cfg.rrc_config.force_reestablishment_fallback = cu_cfg.rrc_config.force_reestablishment_fallback;
-  out_cfg.rrc_config.rrc_procedure_timeout_ms       = cu_cfg.rrc_config.rrc_procedure_timeout_ms;
-  out_cfg.rrc_config.int_algo_pref_list             = generate_preferred_integrity_algorithms_list(cu_cfg);
-  out_cfg.rrc_config.enc_algo_pref_list             = generate_preferred_ciphering_algorithms_list(cu_cfg);
-  out_cfg.rrc_config.drb_config                     = generate_cu_cp_qos_config(cu_cfg);
+  for (const auto& cfg : cu_cfg.extra_amfs) {
+    std::vector<srs_cu_cp::supported_tracking_area> supported_tas;
+    for (const auto& supported_ta : cfg.supported_tas) {
+      std::vector<srs_cu_cp::plmn_item> plmn_list;
+      for (const auto& plmn_item : supported_ta.plmn_list) {
+        expected<plmn_identity> plmn = plmn_identity::parse(plmn_item.plmn_id);
+        srsran_assert(plmn.has_value(), "Invalid PLMN: {}", plmn_item.plmn_id);
+        plmn_list.push_back({plmn.value(), plmn_item.tai_slice_support_list});
+      }
+      supported_tas.push_back({supported_ta.tac, plmn_list});
+    }
+    out_cfg.ngaps.push_back(srs_cu_cp::cu_cp_configuration::ngap_params{nullptr, supported_tas});
+  }
 
-  if (!from_string(out_cfg.default_security_indication.integrity_protection_ind,
+  out_cfg.rrc.force_reestablishment_fallback = cu_cfg.rrc_config.force_reestablishment_fallback;
+  out_cfg.rrc.rrc_procedure_timeout_ms       = std::chrono::milliseconds{cu_cfg.rrc_config.rrc_procedure_timeout_ms};
+
+  out_cfg.bearers.drb_config = generate_cu_cp_qos_config(cu_cfg);
+
+  out_cfg.security.int_algo_pref_list = generate_preferred_integrity_algorithms_list(cu_cfg);
+  out_cfg.security.enc_algo_pref_list = generate_preferred_ciphering_algorithms_list(cu_cfg);
+  if (!from_string(out_cfg.security.default_security_indication.integrity_protection_ind,
                    cu_cfg.security_config.integrity_protection)) {
     report_error("Invalid value for integrity_protection={}\n", cu_cfg.security_config.integrity_protection);
   }
-  if (!from_string(out_cfg.default_security_indication.confidentiality_protection_ind,
+  if (!from_string(out_cfg.security.default_security_indication.confidentiality_protection_ind,
                    cu_cfg.security_config.confidentiality_protection)) {
     report_error("Invalid value for confidentiality_protection={}\n",
                  cu_cfg.security_config.confidentiality_protection);
   }
 
-  out_cfg.ue_config.inactivity_timer            = std::chrono::seconds{cu_cfg.inactivity_timer};
-  out_cfg.ue_config.max_nof_supported_ues       = cu_cfg.max_nof_ues;
-  out_cfg.ngap_config.pdu_session_setup_timeout = std::chrono::seconds{cu_cfg.pdu_session_setup_timeout};
-  out_cfg.statistics_report_period              = std::chrono::seconds{cu_cfg.metrics.cu_cp_statistics_report_period};
+  // Timers
+  out_cfg.ue.inactivity_timer              = std::chrono::seconds{cu_cfg.inactivity_timer};
+  out_cfg.ue.pdu_session_setup_timeout     = std::chrono::seconds{cu_cfg.pdu_session_setup_timeout};
+  out_cfg.metrics.statistics_report_period = std::chrono::seconds{cu_cfg.metrics.cu_cp_statistics_report_period};
 
-  out_cfg.mobility_config.mobility_manager_config.trigger_handover_from_measurements =
+  // Mobility
+  out_cfg.mobility.mobility_manager_config.trigger_handover_from_measurements =
       cu_cfg.mobility_config.trigger_handover_from_measurements;
 
   // F1AP-CU config.
-  out_cfg.f1ap_config.ue_context_setup_timeout = std::chrono::milliseconds{cu_cfg.f1ap_config.ue_context_setup_timeout};
-  out_cfg.f1ap_config.json_log_enabled         = cu_cfg.loggers.f1ap_json_enabled;
+  out_cfg.f1ap.proc_timeout     = std::chrono::milliseconds{cu_cfg.f1ap_config.procedure_timeout};
+  out_cfg.f1ap.json_log_enabled = cu_cfg.loggers.f1ap_json_enabled;
+
+  // Plugins
+  out_cfg.plugin.load_plugins = cu_cfg.load_plugins;
 
   // Convert appconfig's cell list into cell manager type.
   for (const auto& app_cfg_item : cu_cfg.mobility_config.cells) {
@@ -242,12 +413,10 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const cu_cp_unit_co
           srs_cu_cp::uint_to_report_cfg_id(app_cfg_item.periodic_report_cfg_id.value());
     }
 
-    if (app_cfg_item.gnb_id_bit_length.has_value()) {
-      meas_cfg_item.serving_cell_cfg.gnb_id = nci.gnb_id(app_cfg_item.gnb_id_bit_length.value());
-    }
-    meas_cfg_item.serving_cell_cfg.pci       = app_cfg_item.pci;
-    meas_cfg_item.serving_cell_cfg.band      = app_cfg_item.band;
-    meas_cfg_item.serving_cell_cfg.ssb_arfcn = app_cfg_item.ssb_arfcn;
+    meas_cfg_item.serving_cell_cfg.gnb_id_bit_length = app_cfg_item.gnb_id_bit_length.value();
+    meas_cfg_item.serving_cell_cfg.pci               = app_cfg_item.pci;
+    meas_cfg_item.serving_cell_cfg.band              = app_cfg_item.band;
+    meas_cfg_item.serving_cell_cfg.ssb_arfcn         = app_cfg_item.ssb_arfcn;
     if (app_cfg_item.ssb_scs.has_value()) {
       meas_cfg_item.serving_cell_cfg.ssb_scs.emplace() =
           to_subcarrier_spacing(std::to_string(app_cfg_item.ssb_scs.value()));
@@ -270,7 +439,7 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const cu_cp_unit_co
     }
 
     // Store config.
-    out_cfg.mobility_config.meas_manager_config.cells[meas_cfg_item.serving_cell_cfg.nci] = meas_cfg_item;
+    out_cfg.mobility.meas_manager_config.cells[meas_cfg_item.serving_cell_cfg.nci] = meas_cfg_item;
   }
 
   // Convert report config.
@@ -278,81 +447,13 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const cu_cp_unit_co
     srs_cu_cp::rrc_report_cfg_nr report_cfg;
 
     if (report_cfg_item.report_type == "periodical") {
-      srs_cu_cp::rrc_periodical_report_cfg periodical;
-
-      periodical.rs_type = srs_cu_cp::rrc_nr_rs_type::ssb;
-      if (report_cfg_item.report_interval_ms.has_value()) {
-        periodical.report_interv = report_cfg_item.report_interval_ms.value();
-      } else {
-        periodical.report_interv = 1024;
-      }
-      periodical.report_amount          = -1;
-      periodical.report_quant_cell.rsrp = true;
-      periodical.report_quant_cell.rsrq = true;
-      periodical.report_quant_cell.sinr = true;
-      periodical.max_report_cells       = 4;
-
-      srs_cu_cp::rrc_meas_report_quant report_quant_rs_idxes;
-      report_quant_rs_idxes.rsrp       = true;
-      report_quant_rs_idxes.rsrq       = true;
-      report_quant_rs_idxes.sinr       = true;
-      periodical.report_quant_rs_idxes = report_quant_rs_idxes;
-
-      periodical.max_nrof_rs_idxes_to_report = 4;
-      periodical.include_beam_meass          = true;
-      periodical.use_allowed_cell_list       = false;
-
-      report_cfg.periodical = periodical;
+      report_cfg = generate_cu_cp_periodical_report_config(report_cfg_item);
     } else {
-      srs_cu_cp::rrc_event_trigger_cfg event_trigger_cfg;
-
-      // event id
-      // A3 event config is currently the only supported event.
-      auto& event_a3 = event_trigger_cfg.event_id.event_a3.emplace();
-
-      if (report_cfg_item.a3_report_type.empty() or !report_cfg_item.a3_offset_db.has_value() or
-          !report_cfg_item.a3_hysteresis_db.has_value()) {
-        report_error("Invalid measurement report configuration.\n");
-      }
-
-      if (report_cfg_item.a3_report_type == "rsrp") {
-        event_a3.a3_offset.rsrp = report_cfg_item.a3_offset_db.value();
-      } else if (report_cfg_item.a3_report_type == "rsrq") {
-        event_a3.a3_offset.rsrq = report_cfg_item.a3_offset_db.value();
-      } else if (report_cfg_item.a3_report_type == "sinr") {
-        event_a3.a3_offset.sinr = report_cfg_item.a3_offset_db.value();
-      }
-
-      event_a3.report_on_leave = false;
-
-      event_a3.hysteresis      = report_cfg_item.a3_hysteresis_db.value();
-      event_a3.time_to_trigger = report_cfg_item.a3_time_to_trigger_ms.value();
-
-      event_a3.use_allowed_cell_list = false;
-
-      event_trigger_cfg.rs_type = srs_cu_cp::rrc_nr_rs_type::ssb;
-      if (report_cfg_item.report_interval_ms.has_value()) {
-        event_trigger_cfg.report_interv = report_cfg_item.report_interval_ms.value();
-      } else {
-        event_trigger_cfg.report_interv = 1024;
-      }
-      event_trigger_cfg.report_amount          = -1;
-      event_trigger_cfg.report_quant_cell.rsrp = true;
-      event_trigger_cfg.report_quant_cell.rsrq = true;
-      event_trigger_cfg.report_quant_cell.sinr = true;
-      event_trigger_cfg.max_report_cells       = 4;
-
-      srs_cu_cp::rrc_meas_report_quant report_quant_rs_idxes;
-      report_quant_rs_idxes.rsrp              = true;
-      report_quant_rs_idxes.rsrq              = true;
-      report_quant_rs_idxes.sinr              = true;
-      event_trigger_cfg.report_quant_rs_idxes = report_quant_rs_idxes;
-
-      report_cfg.event_triggered = event_trigger_cfg;
+      report_cfg = generate_cu_cp_event_trigger_report_config(report_cfg_item);
     }
 
     // Store config.
-    out_cfg.mobility_config.meas_manager_config
+    out_cfg.mobility.meas_manager_config
         .report_config_ids[srs_cu_cp::uint_to_report_cfg_id(report_cfg_item.report_cfg_id)] = report_cfg;
   }
 
@@ -363,24 +464,31 @@ srs_cu_cp::cu_cp_configuration srsran::generate_cu_cp_config(const cu_cp_unit_co
   return out_cfg;
 }
 
-srs_cu_cp::n2_connection_client_config
-srsran::generate_n2_client_config(const cu_cp_unit_amf_config& amf_cfg, dlt_pcap& pcap_writer, io_broker& broker)
+e2ap_configuration srsran::generate_e2_config(const cu_cp_unit_config& cu_cp)
+{
+  e2ap_configuration out_cfg = srsran::config_helpers::make_default_e2ap_config();
+  out_cfg.gnb_id             = cu_cp.gnb_id;
+  out_cfg.e2sm_kpm_enabled   = cu_cp.e2_cfg.e2sm_kpm_enabled;
+  out_cfg.e2sm_rc_enabled    = cu_cp.e2_cfg.e2sm_rc_enabled;
+  return out_cfg;
+}
+
+srs_cu_cp::n2_connection_client_config srsran::generate_n2_client_config(bool                              no_core,
+                                                                         const cu_cp_unit_amf_config_item& amf_cfg,
+                                                                         dlt_pcap&                         pcap_writer,
+                                                                         io_broker&                        broker)
 {
   using no_core_mode_t = srs_cu_cp::n2_connection_client_config::no_core;
   using network_mode_t = srs_cu_cp::n2_connection_client_config::network;
   using ngap_mode_t    = std::variant<no_core_mode_t, network_mode_t>;
 
-  ngap_mode_t mode = amf_cfg.no_core ? ngap_mode_t{no_core_mode_t{}} : ngap_mode_t{network_mode_t{broker}};
-  if (not amf_cfg.no_core) {
+  ngap_mode_t mode = no_core ? ngap_mode_t{no_core_mode_t{}} : ngap_mode_t{network_mode_t{broker}};
+  if (not no_core) {
     network_mode_t& nw_mode = std::get<network_mode_t>(mode);
     nw_mode.amf_address     = amf_cfg.ip_addr;
     nw_mode.amf_port        = amf_cfg.port;
-    if (amf_cfg.n2_bind_addr == "auto") {
-      nw_mode.bind_address = amf_cfg.bind_addr;
-    } else {
-      nw_mode.bind_address = amf_cfg.n2_bind_addr;
-    }
-    nw_mode.bind_interface = amf_cfg.n2_bind_interface;
+    nw_mode.bind_address    = amf_cfg.bind_addr;
+    nw_mode.bind_interface  = amf_cfg.bind_interface;
     if (amf_cfg.sctp_rto_initial >= 0) {
       nw_mode.rto_initial = amf_cfg.sctp_rto_initial;
     }
@@ -400,4 +508,18 @@ srsran::generate_n2_client_config(const cu_cp_unit_amf_config& amf_cfg, dlt_pcap
   }
 
   return srs_cu_cp::n2_connection_client_config{pcap_writer, mode};
+}
+
+void srsran::fill_cu_cp_worker_manager_config(worker_manager_config& config, const cu_cp_unit_config& unit_cfg)
+{
+  auto& pcap_cfg = config.pcap_cfg;
+  if (unit_cfg.pcap_cfg.e1ap.enabled) {
+    pcap_cfg.is_e1ap_enabled = true;
+  }
+  if (unit_cfg.pcap_cfg.f1ap.enabled) {
+    pcap_cfg.is_f1ap_enabled = true;
+  }
+  if (unit_cfg.pcap_cfg.ngap.enabled) {
+    pcap_cfg.is_ngap_enabled = true;
+  }
 }

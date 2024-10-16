@@ -28,12 +28,15 @@
 #include "srsran/ran/nr_cgi.h"
 #include "srsran/ran/pci.h"
 #include "srsran/ran/sib/system_info_config.h"
+#include "srsran/ran/srs/srs_configuration.h"
 #include "srsran/ran/ssb_configuration.h"
 #include "srsran/ran/tdd/tdd_ul_dl_config.h"
 #include "srsran/scheduler/config/bwp_configuration.h"
 #include "srsran/scheduler/config/serving_cell_config.h"
+#include "srsran/scheduler/config/slice_rrm_policy_config.h"
 
 namespace srsran {
+namespace srs_du {
 
 /// \brief Options for the number of Initial Cyclic Shifts that can be set for PUCCH Format 1.
 ///
@@ -46,6 +49,13 @@ inline unsigned format1_cp_step_to_uint(nof_cyclic_shifts opt)
 {
   return static_cast<unsigned>(opt);
 }
+
+/// Collects the parameters for PUCCH Format 0 that can be configured.
+struct pucch_f0_params {
+  /// Indicates whether OCCs (as per \c PUCCH-format0, in \c PUCCH-Config, TS 38.331) are supported.
+  bounded_integer<unsigned, 1, 2> nof_symbols{2};
+  bool                            intraslot_freq_hopping{false};
+};
 
 /// Collects the parameters for PUCCH Format 1 that can be configured.
 struct pucch_f1_params {
@@ -76,8 +86,9 @@ struct pucch_f2_params {
 struct pucch_builder_params {
   /// UE specific parameters. Use to set the number of resources per UE for HARQ-ACK reporting (not including SR/CSI
   /// dedicated resources). NOTE: by default, each UE is assigned 1 SR and 1 CSI resource.
-  bounded_integer<unsigned, 1, 8> nof_ue_pucch_f1_res_harq = 3;
-  bounded_integer<unsigned, 1, 8> nof_ue_pucch_f2_res_harq = 6;
+  /// \remark Format 0 and Format 1 resources are mutually exclusive.
+  bounded_integer<unsigned, 1, 8> nof_ue_pucch_f0_or_f1_res_harq = 6;
+  bounded_integer<unsigned, 1, 8> nof_ue_pucch_f2_res_harq       = 6;
   /// \brief Number of separate PUCCH resource sets for HARQ-ACK reporting that are available in a cell.
   /// \remark UEs will be distributed possibly over different HARQ-ACK PUCCH sets; the more sets, the fewer UEs will
   /// have to share the same set, which reduces the chances that UEs won't be allocated PUCCH due to lack of resources.
@@ -91,8 +102,41 @@ struct pucch_builder_params {
   unsigned nof_csi_resources = 1;
 
   /// PUCCH Format specific parameters.
-  pucch_f1_params f1_params;
-  pucch_f2_params f2_params;
+  // NOTE: Having \c pucch_f1_params force the varint to use the Format 1 in the default constructor.
+  std::variant<pucch_f1_params, pucch_f0_params> f0_or_f1_params;
+  pucch_f2_params                                f2_params;
+  /// Maximum number of symbols per UL slot dedicated for PUCCH.
+  /// \remark In case of Sounding Reference Signals (SRS) being used, the number of symbols should be reduced so that
+  /// the PUCCH resources do not overlap in symbols with the SRS resources.
+  /// \remark This parameter should be computed by the GNB and not exposed to the user configuration interface.
+  bounded_integer<unsigned, 1, 14> max_nof_symbols = NOF_OFDM_SYM_PER_SLOT_NORMAL_CP;
+};
+
+struct srs_builder_params {
+  /// If present, defines the SRS period for SRS periodic resources, in slots.
+  /// When not present, the SRS resources are set as aperiodic.
+  std::optional<srs_periodicity> srs_period = std::nullopt;
+  /// Maximum number of symbols per UL slot dedicated for SRS resources.
+  /// \remark In case of Sounding Reference Signals (SRS) being used, the number of symbols should be reduced so that
+  /// the PUCCH resources do not overlap in symbols with the SRS resources.
+  /// \remark The SRS resources are always placed at the end of the slot.
+  /// \remark As per TS 38.211, Section 6.4.1.4.1, SRS resource can only be placed in the last 6 symbols of a slot.
+  bounded_integer<unsigned, 1, 6> max_nof_symbols = 2U;
+  /// \c Transmission comb number, as per TS 38.211, Section 6.4.1.4.2, or TS 38.331, "SRS-Resource".
+  tx_comb_size tx_comb = tx_comb_size::n4;
+  /// Defines the number of symbols per SRS resource.
+  srs_nof_symbols nof_symbols = srs_nof_symbols::n1;
+  /// Defines the CS reuse factor for the SRS resources.
+  /// \remark With 2 or 4 antenna ports, different cyclic shifts are used by the different antennas. This parameter
+  /// defines how many UEs can be multiplexed in the same symbols and RBs by exploiting different cyclic shifts.
+  /// Values: {no_cyclic_shift, two, three, four, six} for 2 UL antenna ports.
+  /// Values: {no_cyclic_shift, three} for 4 UL antenna ports.
+  nof_cyclic_shifts cyclic_shift_reuse_factor = nof_cyclic_shifts::no_cyclic_shift;
+  /// Defines the reuse of the SRS sequence ID for different UEs within the same cell.
+  /// \remark The goal of the SRS sequence ID would be to reduce the inter-cell interference. However, if the cell is
+  /// not in a dense multi-cell environment, we can reuse different sequence ID for different cell UEs.
+  /// Values: {1, 2, 3, 5, 6, 10, 15, 30}.
+  unsigned sequence_id_reuse_factor = 1;
 };
 
 /// Parameters that are used to initialize or build the \c PhysicalCellGroupConfig, TS 38.331.
@@ -168,8 +212,15 @@ struct du_cell_config {
   /// Parameters for PUCCH-Config generation.
   pucch_builder_params pucch_cfg;
 
-  /// Defines the maximum allowable channel delay in slots when runnning in NTN mode. seee (TS 38.300 section 16.14.2)
+  /// Parameters for SRS-Config generation.
+  srs_builder_params srs_cfg;
+
+  /// Defines the maximum allowable channel delay in slots when runnning in NTN mode. see TS38.300 section 16.14.2.
   unsigned ntn_cs_koffset = 0;
+
+  /// List of RAN slices to support in the scheduler.
+  std::vector<slice_rrm_policy_config> rrm_policy_members;
 };
 
+} // namespace srs_du
 } // namespace srsran

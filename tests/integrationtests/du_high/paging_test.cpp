@@ -23,12 +23,12 @@
 /// \file
 /// \brief Tests that check the transmission of Paging messages by the DU-high class.
 
-#include "lib/f1ap/common/f1ap_asn1_packer.h"
+#include "lib/f1ap/f1ap_asn1_packer.h"
 #include "tests/integrationtests/du_high/test_utils/du_high_env_simulator.h"
 #include "tests/unittests/gateways/test_helpers.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/asn1/f1ap/f1ap_pdu_contents.h"
-#include "srsran/f1ap/common/f1ap_message.h"
+#include "srsran/f1ap/f1ap_message.h"
 #include "srsran/ran/bcd_helper.h"
 #include "srsran/support/test_utils.h"
 
@@ -72,8 +72,8 @@ TEST_F(paging_tester, when_paging_message_is_received_its_relayed_to_ue)
 
   // Receive F1AP paging message.
   cu_notifier.last_f1ap_msgs.clear();
-  ASSERT_TRUE(not this->du_high_cfg.cells.empty());
-  const auto du_cell_cfg = this->du_high_cfg.cells[0];
+  ASSERT_TRUE(not this->du_high_cfg.ran.cells.empty());
+  const auto du_cell_cfg = this->du_high_cfg.ran.cells[0];
   this->du_hi->get_f1ap_message_handler().handle_message(generate_paging_message(five_g_tmsi, du_cell_cfg.nr_cgi));
   // Flag indicating whether UE is Paged or not.
   bool ue_is_paged{false};

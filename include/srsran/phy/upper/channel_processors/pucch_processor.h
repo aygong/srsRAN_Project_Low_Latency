@@ -22,15 +22,14 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
+#include "srsran/adt/expected.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/phy/constants.h"
 #include "srsran/phy/upper/channel_processors/pucch_processor_result.h"
-#include "srsran/phy/upper/channel_processors/pucch_uci_message.h"
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/ran/pucch/pucch_context.h"
-#include "srsran/ran/sch/modulation_scheme.h"
 #include "srsran/ran/slot_point.h"
+#include <string>
 
 namespace srsran {
 
@@ -206,32 +205,32 @@ public:
   virtual ~pucch_processor() = default;
 
   /// \brief Processes a PUCCH Format 0 message.
-  /// \param[out] grid    Resource grid.
-  /// \param[in]  config  PUCCH Format 0 configuration.
+  /// \param[in] grid    Resource grid.
+  /// \param[in] config  PUCCH Format 0 configuration.
   /// \return The PUCCH process result.
   virtual pucch_processor_result process(const resource_grid_reader& grid, const format0_configuration& config) = 0;
 
   /// \brief Processes a PUCCH Format 1 message.
-  /// \param[out] grid    Resource grid.
-  /// \param[in]  config  PUCCH Format 1 configuration.
+  /// \param[in] grid    Resource grid.
+  /// \param[in] config  PUCCH Format 1 configuration.
   /// \return The PUCCH process result.
   virtual pucch_processor_result process(const resource_grid_reader& grid, const format1_configuration& config) = 0;
 
   /// \brief Processes a PUCCH Format 2 message.
-  /// \param[out] grid    Resource grid.
-  /// \param[in]  config  PUCCH Format 2 configuration.
+  /// \param[in] grid    Resource grid.
+  /// \param[in] config  PUCCH Format 2 configuration.
   /// \return The PUCCH process result.
   virtual pucch_processor_result process(const resource_grid_reader& grid, const format2_configuration& config) = 0;
 
   /// \brief Processes a PUCCH Format 3 message.
-  /// \param[out] grid    Resource grid.
-  /// \param[in]  config  PUCCH Format 3 configuration.
+  /// \param[in] grid    Resource grid.
+  /// \param[in] config  PUCCH Format 3 configuration.
   /// \return The PUCCH process result.
   virtual pucch_processor_result process(const resource_grid_reader& grid, const format3_configuration& config) = 0;
 
   /// \brief Processes a PUCCH Format 4 message.
-  /// \param[out] indication PUCCH process result.
-  /// \param[in]  config     PUCCH Format 4 configuration.
+  /// \param[in] grid    Resource grid.
+  /// \param[in] config  PUCCH Format 4 configuration.
   /// \return The PUCCH process result.
   virtual pucch_processor_result process(const resource_grid_reader& grid, const format4_configuration& config) = 0;
 };
@@ -244,24 +243,24 @@ public:
   virtual ~pucch_pdu_validator() = default;
 
   /// \brief Validates PUCCH Format 0 configuration parameters.
-  /// \return True if the parameters contained in \c config are supported, false otherwise.
-  virtual bool is_valid(const pucch_processor::format0_configuration& config) const = 0;
+  /// \return A success if the parameters contained in \c config are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pucch_processor::format0_configuration& config) const = 0;
 
   /// \brief Validates PUCCH Format 1 configuration parameters.
-  /// \return True if the parameters contained in \c config are supported, false otherwise.
-  virtual bool is_valid(const pucch_processor::format1_configuration& config) const = 0;
+  /// \return A success if the parameters contained in \c config are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pucch_processor::format1_configuration& config) const = 0;
 
   /// \brief Validates PUCCH Format 2 configuration parameters.
-  /// \return True if the parameters contained in \c config are supported, false otherwise.
-  virtual bool is_valid(const pucch_processor::format2_configuration& config) const = 0;
+  /// \return A success if the parameters contained in \c config are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pucch_processor::format2_configuration& config) const = 0;
 
   /// \brief Validates PUCCH Format 3 configuration parameters.
-  /// \return True if the parameters contained in \c config are supported, false otherwise.
-  virtual bool is_valid(const pucch_processor::format3_configuration& config) const = 0;
+  /// \return A success if the parameters contained in \c config are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pucch_processor::format3_configuration& config) const = 0;
 
   /// \brief Validates PUCCH Format 4 configuration parameters.
-  /// \return True if the parameters contained in \c config are supported, false otherwise.
-  virtual bool is_valid(const pucch_processor::format4_configuration& config) const = 0;
+  /// \return A success if the parameters contained in \c config are supported, an error message otherwise.
+  virtual error_type<std::string> is_valid(const pucch_processor::format4_configuration& config) const = 0;
 };
 
 } // namespace srsran

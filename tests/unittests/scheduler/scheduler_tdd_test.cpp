@@ -49,14 +49,14 @@ protected:
     // Add Cell.
     this->add_cell([this, &testparams]() {
       params.scs_common       = testparams.tdd_cfg.ref_scs;
-      params.dl_arfcn         = 520002;
+      params.dl_f_ref_arfcn   = 520002;
       params.band             = nr_band::n41;
-      params.channel_bw_mhz   = bs_channel_bandwidth_fr1::MHz20;
+      params.channel_bw_mhz   = bs_channel_bandwidth::MHz20;
       const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(
           params.channel_bw_mhz, params.scs_common, band_helper::get_freq_range(*params.band));
       static const uint8_t                                   ss0_idx = 0;
       std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-          band_helper::get_ssb_coreset0_freq_location(params.dl_arfcn,
+          band_helper::get_ssb_coreset0_freq_location(params.dl_f_ref_arfcn,
                                                       *params.band,
                                                       nof_crbs,
                                                       params.scs_common,
@@ -155,6 +155,19 @@ public:
     unsigned tdd_period = nof_slots_per_tdd_period(*cell_cfg_list[0].tdd_cfg_common);
     for (unsigned i = 0; i != 2 * tdd_period; ++i) {
       run_slot();
+
+      for (const ul_sched_info& pusch : this->last_sched_res_list[to_du_cell_index(0)]->ul.puschs) {
+        ul_crc_indication crc{};
+        crc.cell_index = to_du_cell_index(0);
+        crc.sl_rx      = this->last_result_slot();
+        crc.crcs.resize(1);
+        crc.crcs[0].ue_index       = ue_idx;
+        crc.crcs[0].rnti           = ue_rnti;
+        crc.crcs[0].harq_id        = to_harq_id(pusch.pusch_cfg.harq_id);
+        crc.crcs[0].tb_crc_success = true;
+        crc.crcs[0].ul_sinr_dB     = 100.0F;
+        this->sched->handle_crc_indication(crc);
+      }
     }
   }
 };
@@ -220,6 +233,10 @@ INSTANTIATE_TEST_SUITE_P(
   tdd_test_params{true,  {subcarrier_spacing::kHz30, {10, 7, 5, 2, 4}}}, // DDDDDDDSUU
   tdd_test_params{true,  {subcarrier_spacing::kHz30, {10, 8, 5, 1, 4}}}, // DDDDDDDDSU
   tdd_test_params{false, {subcarrier_spacing::kHz30, {6,  3, 5, 2, 0}, tdd_ul_dl_pattern{4, 4, 0, 0, 0}}},
-  tdd_test_params{true,  {subcarrier_spacing::kHz30, {4,  2, 9, 1, 0}}}  // DDSU
+  tdd_test_params{true,  {subcarrier_spacing::kHz30, {4,  2, 9, 1, 0}}},  // DDSU
+  // UL heavy
+  tdd_test_params{true, {subcarrier_spacing::kHz30, {10, 4, 5, 5, 0}}}, // DDDDSUUUUU
+  tdd_test_params{true, {subcarrier_spacing::kHz30, {10, 3, 5, 6, 0}}},
+  tdd_test_params{true, {subcarrier_spacing::kHz30, {10, 2, 10, 7, 0}}, 2}
 )); // DDDSUUDDDD
 // clang-format on

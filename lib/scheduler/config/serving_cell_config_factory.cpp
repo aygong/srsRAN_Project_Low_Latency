@@ -29,6 +29,7 @@
 #include "srsran/ran/pdcch/search_space.h"
 #include "srsran/ran/prach/prach_configuration.h"
 #include "srsran/ran/prach/prach_helper.h"
+#include "srsran/ran/pucch/pucch_info.h"
 #include "srsran/ran/resource_allocation/ofdm_symbol_range.h"
 #include "srsran/scheduler/config/csi_helper.h"
 #include "srsran/srslog/srslog.h"
@@ -42,7 +43,7 @@ cell_config_builder_params_extended::cell_config_builder_params_extended(const c
   cell_config_builder_params(source)
 {
   if (not band.has_value()) {
-    band = band_helper::get_band_from_dl_arfcn(dl_arfcn);
+    band = band_helper::get_band_from_dl_arfcn(dl_f_ref_arfcn);
   }
 
   cell_nof_crbs = band_helper::get_n_rbs_from_bw(channel_bw_mhz, scs_common, band_helper::get_freq_range(band.value()));
@@ -71,10 +72,10 @@ cell_config_builder_params_extended::cell_config_builder_params_extended(const c
     std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc;
     if (coreset0_index.has_value()) {
       ssb_freq_loc = band_helper::get_ssb_coreset0_freq_location_for_cset0_idx(
-          dl_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, search_space0_index, coreset0_index.value());
+          dl_f_ref_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, search_space0_index, coreset0_index.value());
     } else {
       ssb_freq_loc = band_helper::get_ssb_coreset0_freq_location(
-          dl_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, search_space0_index, max_coreset0_duration);
+          dl_f_ref_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, search_space0_index, max_coreset0_duration);
     }
     if (!ssb_freq_loc.has_value()) {
       report_error("Unable to derive a valid SSB pointA and k_SSB for cell id ({}).\n", pci);
@@ -86,7 +87,7 @@ cell_config_builder_params_extended::cell_config_builder_params_extended(const c
 
   // Compute and store final SSB position based on (selected) values.
   ssb_arfcn = band_helper::get_ssb_arfcn(
-      dl_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, offset_to_point_a.value(), k_ssb.value());
+      dl_f_ref_arfcn, *band, cell_nof_crbs, scs_common, ssb_scs, offset_to_point_a.value(), k_ssb.value());
   srsran_assert(ssb_arfcn.has_value(), "Unable to derive SSB location correctly");
 }
 
@@ -97,11 +98,11 @@ static carrier_configuration make_default_carrier_configuration(const cell_confi
   cfg.carrier_bw_mhz = bs_channel_bandwidth_to_MHz(params.channel_bw_mhz);
   cfg.band           = params.band.value();
   if (is_dl) {
-    cfg.arfcn   = params.dl_arfcn;
-    cfg.nof_ant = params.nof_dl_ports;
+    cfg.arfcn_f_ref = params.dl_f_ref_arfcn;
+    cfg.nof_ant     = params.nof_dl_ports;
   } else {
-    cfg.arfcn   = band_helper::get_ul_arfcn_from_dl_arfcn(params.dl_arfcn, cfg.band);
-    cfg.nof_ant = 1;
+    cfg.arfcn_f_ref = band_helper::get_ul_arfcn_from_dl_arfcn(params.dl_f_ref_arfcn, cfg.band);
+    cfg.nof_ant     = 1;
   }
   const min_channel_bandwidth min_channel_bw = band_helper::get_min_channel_bw(cfg.band, params.scs_common);
   srsran_assert(cfg.carrier_bw_mhz >= min_channel_bandwidth_to_MHz(min_channel_bw),
@@ -114,7 +115,7 @@ static carrier_configuration make_default_carrier_configuration(const cell_confi
 static_vector<uint8_t, 8> srsran::config_helpers::generate_k1_candidates(const tdd_ul_dl_config_common& tdd_cfg,
                                                                          uint8_t                        min_k1)
 {
-  const static unsigned MAX_K1_CANDIDATES = 8;
+  static const unsigned MAX_K1_CANDIDATES = 8;
   const unsigned        tdd_period        = nof_slots_per_tdd_period(tdd_cfg);
   unsigned              nof_dl_slots = tdd_cfg.pattern1.nof_dl_slots + (tdd_cfg.pattern1.nof_dl_symbols > 0 ? 1 : 0);
   if (tdd_cfg.pattern2.has_value()) {
@@ -265,9 +266,13 @@ srsran::config_helpers::make_default_dl_config_common(const cell_config_builder_
   cfg.freq_info_dl.scs_carrier_list.back().carrier_bandwidth = params.cell_nof_crbs;
 
   cfg.freq_info_dl.absolute_frequency_ssb = params.ssb_arfcn.value();
-  const double dl_f_ref                   = band_helper::get_abs_freq_point_a_from_f_ref(
-      band_helper::nr_arfcn_to_freq(params.dl_arfcn), params.cell_nof_crbs, params.scs_common);
-  cfg.freq_info_dl.absolute_freq_point_a = band_helper::freq_to_nr_arfcn(dl_f_ref);
+
+  // \c params.dl_f_ref_arfcn refers to the ARFCN of the DL f_ref, as per TS 38.104, Section 5.4.2.1.
+  const double dl_absolute_freq_point_a = band_helper::get_abs_freq_point_a_from_f_ref(
+      band_helper::nr_arfcn_to_freq(params.dl_f_ref_arfcn), params.cell_nof_crbs, params.scs_common);
+  // \c absolute_freq_point_a needs to be expressed as in ARFCN, as per \c absoluteFrequencyPointA definition in 38.211,
+  // Section 4.4.4.2.
+  cfg.freq_info_dl.absolute_freq_point_a = band_helper::freq_to_nr_arfcn(dl_absolute_freq_point_a);
 
   // Configure initial DL BWP.
   cfg.init_dl_bwp.generic_params = make_default_init_bwp(params);
@@ -341,23 +346,16 @@ srsran::config_helpers::make_default_ul_config_common(const cell_config_builder_
 {
   ul_config_common cfg{};
   // This is the ARFCN of the UL f_ref, as per TS 38.104, Section 5.4.2.1.
-  const uint32_t ul_arfcn = band_helper::get_ul_arfcn_from_dl_arfcn(params.dl_arfcn, params.band);
-  // This is f_ref frequency for UL, expressed in Hz and obtained from the corresponding ARFCN.
-
-  const frequency_range freq_range = band_helper::get_freq_range(params.band.value());
-  const duplex_mode     duplex     = band_helper::get_duplex_mode(params.band.value());
-
-  const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(params.channel_bw_mhz, params.scs_common, freq_range);
-
-  const double ul_f_ref = band_helper::get_abs_freq_point_a_from_f_ref(
-      band_helper::nr_arfcn_to_freq(ul_arfcn), nof_crbs, params.scs_common);
-  // absolute_freq_point_a needs to be expressed as in ARFCN, as per \c absoluteFrequencyPointA definition in 38.211,
+  const uint32_t ul_arfcn                 = band_helper::get_ul_arfcn_from_dl_arfcn(params.dl_f_ref_arfcn, params.band);
+  const double   ul_absolute_freq_point_a = band_helper::get_abs_freq_point_a_from_f_ref(
+      band_helper::nr_arfcn_to_freq(ul_arfcn), params.cell_nof_crbs, params.scs_common);
+  // \c absolute_freq_point_a needs to be expressed as in ARFCN, as per \c absoluteFrequencyPointA definition in 38.211,
   // Section 4.4.4.2.
-  cfg.freq_info_ul.absolute_freq_point_a = band_helper::freq_to_nr_arfcn(ul_f_ref);
+  cfg.freq_info_ul.absolute_freq_point_a = band_helper::freq_to_nr_arfcn(ul_absolute_freq_point_a);
   cfg.freq_info_ul.scs_carrier_list.resize(1);
   cfg.freq_info_ul.scs_carrier_list[0].scs               = params.scs_common;
   cfg.freq_info_ul.scs_carrier_list[0].offset_to_carrier = 0;
-  cfg.freq_info_ul.scs_carrier_list[0].carrier_bandwidth = nof_crbs;
+  cfg.freq_info_ul.scs_carrier_list[0].carrier_bandwidth = params.cell_nof_crbs;
   cfg.freq_info_ul.freq_band_list.emplace_back();
   cfg.freq_info_ul.freq_band_list.back().band = *params.band;
   cfg.init_ul_bwp.generic_params              = make_default_init_bwp(params);
@@ -376,6 +374,8 @@ srsran::config_helpers::make_default_ul_config_common(const cell_config_builder_
   // Although this is not specified in the TS, from our tests, the UE expects Msg1-SCS to be given when using short
   // PRACH Preambles formats. With long formats, we can set Msg1-SCS as \c invalid, in which case the UE derives the
   // PRACH SCS from \c prach-ConfigurationIndex in RACH-ConfigGeneric.
+  const frequency_range freq_range = band_helper::get_freq_range(params.band.value());
+  const duplex_mode     duplex     = band_helper::get_duplex_mode(params.band.value());
   cfg.init_ul_bwp.rach_cfg_common->msg1_scs =
       is_long_preamble(prach_configuration_get(
                            freq_range, duplex, cfg.init_ul_bwp.rach_cfg_common->rach_cfg_generic.prach_config_index)
@@ -389,7 +389,6 @@ srsran::config_helpers::make_default_ul_config_common(const cell_config_builder_
       prach_configuration_get(freq_range, duplex, cfg.init_ul_bwp.rach_cfg_common->rach_cfg_generic.prach_config_index)
           .format);
   cfg.init_ul_bwp.rach_cfg_common->prach_root_seq_index      = 1;
-  cfg.init_ul_bwp.rach_cfg_common->msg3_transform_precoder   = false;
   cfg.init_ul_bwp.rach_cfg_common->rach_cfg_generic.msg1_fdm = 1;
   // Add +3 PRBS to the MSG1 frequency start, which act as a guardband between the PUCCH and PRACH.
   cfg.init_ul_bwp.rach_cfg_common->rach_cfg_generic.msg1_frequency_start = 6;
@@ -442,9 +441,13 @@ ssb_configuration srsran::config_helpers::make_default_ssb_config(const cell_con
 
 pusch_config srsran::config_helpers::make_default_pusch_config(const cell_config_builder_params_extended& params)
 {
+  // Default PUSCH transmission scheme is codebook with at maximum one layer. It assumes the UE Capability parameter
+  // pusch-TransCoherence is fullCoherent.
+  static constexpr unsigned                  max_rank        = 1;
+  static constexpr tx_scheme_codebook_subset codebook_subset = tx_scheme_codebook_subset::non_coherent;
+
   pusch_config cfg{};
-  // TODO: Verify whether its the correct Transmission Configuration we want to support.
-  cfg.tx_cfg = pusch_config::tx_config::codebook;
+  cfg.tx_cfg = tx_scheme_codebook{.max_rank = max_rank, .codebook_subset = codebook_subset};
   cfg.pusch_mapping_type_a_dmrs.emplace();
   cfg.pusch_mapping_type_a_dmrs.value().trans_precoder_disabled.emplace();
   cfg.pusch_mapping_type_a_dmrs.value().additional_positions = dmrs_additional_positions::pos2;
@@ -466,8 +469,6 @@ pusch_config srsran::config_helpers::make_default_pusch_config(const cell_config
       .closed_loop_idx = pusch_config::pusch_power_control::sri_pusch_pwr_ctrl::sri_pusch_closed_loop_index::i0});
   cfg.res_alloc      = pusch_config::resource_allocation::resource_allocation_type_1;
   cfg.trans_precoder = pusch_config::transform_precoder::disabled;
-  cfg.cb_subset      = pusch_config::codebook_subset::non_coherent;
-  cfg.max_rank       = 1;
 
   cfg.uci_cfg.emplace();
   auto& uci_cfg   = cfg.uci_cfg.value();
@@ -489,19 +490,19 @@ srs_config srsran::config_helpers::make_default_srs_config(const cell_config_bui
 {
   srs_config cfg{};
 
-  cfg.srs_res.emplace_back();
+  cfg.srs_res_list.emplace_back();
   // TODO: Verify correctness of the config based on what we support.
-  srs_config::srs_resource& res = cfg.srs_res.back();
-  res.id                        = static_cast<srs_config::srs_res_id>(0);
-  res.nof_ports                 = srs_config::srs_resource::nof_srs_ports::port1;
-  res.trans_comb_value          = 2;
-  res.trans_comb_offset         = 0;
-  res.trans_comb_cyclic_shift   = 0;
-  res.res_mapping.start_pos     = 0;
-  res.res_mapping.nof_symb      = srs_config::srs_resource::resource_mapping::nof_symbols::n1;
-  res.res_mapping.re_factor     = srs_config::srs_resource::resource_mapping::repetition_factor::n1;
-  res.freq_domain_pos           = 0;
-  res.freq_domain_shift         = 5;
+  srs_config::srs_resource& res    = cfg.srs_res_list.back();
+  res.id.ue_res_id                 = static_cast<srs_config::srs_res_id>(0);
+  res.nof_ports                    = srs_config::srs_resource::nof_srs_ports::port1;
+  res.tx_comb.size                 = tx_comb_size::n2;
+  res.tx_comb.tx_comb_offset       = 0;
+  res.tx_comb.tx_comb_cyclic_shift = 0;
+  res.res_mapping.start_pos        = 0;
+  res.res_mapping.nof_symb         = srs_nof_symbols::n1;
+  res.res_mapping.rept_factor      = srs_nof_symbols::n1;
+  res.freq_domain_pos              = 0;
+  res.freq_domain_shift            = 0;
   // NOTE: C_SRS, B_SRS and B_hop are chosen to disable SRS frequency hopping and to monitor SRS over smallest
   // possible BW i.e. 4 RBs. See TS 38.211, Table 6.4.1.4.3-1.
   // This is done to cater to setups of all BWs until SRS is supported in scheduler.
@@ -509,18 +510,19 @@ srs_config srsran::config_helpers::make_default_srs_config(const cell_config_bui
   res.freq_hop.c_srs = 0;
   res.freq_hop.b_srs = 0;
   res.freq_hop.b_hop = 0;
-  res.grp_or_seq_hop = srs_config::srs_resource::group_or_sequence_hopping::neither;
-  res.res_type       = srs_config::srs_resource::aperiodic;
+  res.grp_or_seq_hop = srs_group_or_sequence_hopping::neither;
+  res.res_type       = srs_resource_type::aperiodic;
   res.sequence_id    = params.pci;
 
-  cfg.srs_res_set.emplace_back();
+  cfg.srs_res_set_list.emplace_back();
   // TODO: Verify correctness of the config based on what we support.
-  srs_config::srs_resource_set& res_set = cfg.srs_res_set.back();
+  srs_config::srs_resource_set& res_set = cfg.srs_res_set_list.back();
   res_set.id                            = static_cast<srs_config::srs_res_set_id>(0);
   res_set.srs_res_id_list.emplace_back(static_cast<srs_config::srs_res_id>(0));
   res_set.res_type =
       srs_config::srs_resource_set::aperiodic_resource_type{.aperiodic_srs_res_trigger = 1, .slot_offset = 7};
-  res_set.srs_res_set_usage = srs_config::srs_resource_set::usage::codebook;
+
+  res_set.srs_res_set_usage = srs_usage::codebook;
   res_set.p0                = -84;
   res_set.pathloss_ref_rs   = static_cast<ssb_id_t>(0);
 
@@ -538,14 +540,14 @@ uplink_config srsran::config_helpers::make_default_ue_uplink_config(const cell_c
 
   // PUCCH Resource Set ID 0. This is for PUCCH Format 1 only (Format 0 not yet supported), used for HARQ-ACK only.
   auto& pucch_res_set_0            = pucch_cfg.pucch_res_set.emplace_back();
-  pucch_res_set_0.pucch_res_set_id = 0;
+  pucch_res_set_0.pucch_res_set_id = pucch_res_set_idx::set_0;
   pucch_res_set_0.pucch_res_id_list.emplace_back(pucch_res_id_t{0, 0});
   pucch_res_set_0.pucch_res_id_list.emplace_back(pucch_res_id_t{1, 1});
   pucch_res_set_0.pucch_res_id_list.emplace_back(pucch_res_id_t{2, 2});
 
   // PUCCH Resource Set ID 1. This is for PUCCH Format 2 only and used for HARQ-ACK + optionally SR and/or CSI.
   auto& pucch_res_set_1            = pucch_cfg.pucch_res_set.emplace_back();
-  pucch_res_set_1.pucch_res_set_id = 1;
+  pucch_res_set_1.pucch_res_set_id = pucch_res_set_idx::set_1;
   pucch_res_set_1.pucch_res_id_list.emplace_back(pucch_res_id_t{3, 3});
   pucch_res_set_1.pucch_res_id_list.emplace_back(pucch_res_id_t{4, 4});
   pucch_res_set_1.pucch_res_id_list.emplace_back(pucch_res_id_t{5, 5});
@@ -656,6 +658,15 @@ uplink_config srsran::config_helpers::make_default_ue_uplink_config(const cell_c
     // TDD
     pucch_cfg.dl_data_to_ul_ack = generate_k1_candidates(*params.tdd_ul_dl_cfg_common, params.min_k1);
   }
+
+  // Compute the max UCI payload per format.
+  // As per TS 38.231, Section 9.2.1, with PUCCH Format 1, we can have up to 2 HARQ-ACK bits (SR doesn't count as part
+  // of the payload).
+  static constexpr unsigned pucch_f1_max_harq_payload                        = 2U;
+  pucch_cfg.format_max_payload[pucch_format_to_uint(pucch_format::FORMAT_1)] = pucch_f1_max_harq_payload;
+  const auto& res_f2 = std::get<pucch_format_2_3_cfg>(res_basic_f2.format_params);
+  pucch_cfg.format_max_payload[pucch_format_to_uint(pucch_format::FORMAT_2)] = get_pucch_format2_max_payload(
+      res_f2.nof_prbs, res_f2.nof_symbols, to_max_code_rate_float(pucch_cfg.format_2_common_param.value().max_c_rate));
 
   // > PUSCH config.
   ul_config.init_ul_bwp.pusch_cfg.emplace(make_default_pusch_config());

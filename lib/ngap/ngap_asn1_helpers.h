@@ -23,15 +23,15 @@
 #pragma once
 
 #include "ngap_asn1_converters.h"
-#include "ngap_context.h"
 #include "srsran/adt/byte_buffer.h"
-#include "srsran/adt/optional.h"
 #include "srsran/asn1/asn1_utils.h"
 #include "srsran/asn1/ngap/ngap_ies.h"
 #include "srsran/asn1/ngap/ngap_pdu_contents.h"
 #include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/ngap/ngap_context.h"
 #include "srsran/ngap/ngap_handover.h"
 #include "srsran/ngap/ngap_init_context_setup.h"
+#include "srsran/ngap/ngap_nas.h"
 #include "srsran/ngap/ngap_reset.h"
 #include "srsran/ngap/ngap_setup.h"
 #include "srsran/ngap/ngap_types.h"
@@ -46,50 +46,50 @@ namespace srs_cu_cp {
 
 /// \brief Fills ASN.1 NGSetupRequest struct.
 /// \param[out] asn1_request The NGSetupRequest ASN.1 struct to fill.
-/// \param[in] request The common type NGSetupRequest.
-inline void fill_asn1_ng_setup_request(asn1::ngap::ng_setup_request_s& asn1_request,
-                                       const ngap_ng_setup_request&    request)
+/// \param[in] ngap_ctxt The NGAP context.
+inline void fill_asn1_ng_setup_request(asn1::ngap::ng_setup_request_s& asn1_request, const ngap_context_t& ngap_ctxt)
 {
   // fill global ran node id
   auto& global_gnb = asn1_request->global_ran_node_id.set_global_gnb_id();
   global_gnb.gnb_id.set_gnb_id();
-  global_gnb.gnb_id.gnb_id().from_number(request.global_ran_node_id.gnb_id.id,
-                                         request.global_ran_node_id.gnb_id.bit_length);
-  global_gnb.plmn_id = request.global_ran_node_id.plmn_id.to_bytes();
+  global_gnb.gnb_id.gnb_id().from_number(ngap_ctxt.gnb_id.id, ngap_ctxt.gnb_id.bit_length);
+  // TODO: Which PLMN do we need to use here?
+  global_gnb.plmn_id = ngap_ctxt.supported_tas.front().plmn_list.front().plmn_id.to_bytes();
 
   // fill ran node name
   asn1_request->ran_node_name_present = true;
-  asn1_request->ran_node_name.from_string(request.ran_node_name);
+  asn1_request->ran_node_name.from_string(ngap_ctxt.ran_node_name);
 
   // fill supported ta list
-  for (const auto& supported_ta_item : request.supported_ta_list) {
+  for (const auto& supported_ta_item : ngap_ctxt.supported_tas) {
     asn1::ngap::supported_ta_item_s asn1_supported_ta_item = {};
 
     // fill tac
     asn1_supported_ta_item.tac.from_number(supported_ta_item.tac);
 
     // fill broadcast plmn list
-    for (const auto& broadcast_plmn_item : supported_ta_item.broadcast_plmn_list) {
+    for (const auto& plmn_item : supported_ta_item.plmn_list) {
       asn1::ngap::broadcast_plmn_item_s asn1_broadcast_plmn_item = {};
 
       // fill plmn id
-      asn1_broadcast_plmn_item.plmn_id = broadcast_plmn_item.plmn_id.to_bytes();
+      asn1_broadcast_plmn_item.plmn_id = plmn_item.plmn_id.to_bytes();
 
       // fill tai slice support list
-      for (const auto& slice_support_item : broadcast_plmn_item.tai_slice_support_list) {
+      for (const auto& slice_support_item : plmn_item.slice_support_list) {
         // fill s_nssai
         asn1::ngap::slice_support_item_s asn1_slice_support_item = {};
-        asn1_slice_support_item.s_nssai                          = s_nssai_to_asn1(slice_support_item.s_nssai);
+        asn1_slice_support_item.s_nssai                          = s_nssai_to_asn1(slice_support_item);
 
         asn1_broadcast_plmn_item.tai_slice_support_list.push_back(asn1_slice_support_item);
       }
       asn1_supported_ta_item.broadcast_plmn_list.push_back(asn1_broadcast_plmn_item);
     }
+
     asn1_request->supported_ta_list.push_back(asn1_supported_ta_item);
   }
 
   // fill paging drx
-  asn1::number_to_enum(asn1_request->default_paging_drx, request.default_paging_drx);
+  asn1::number_to_enum(asn1_request->default_paging_drx, ngap_ctxt.default_paging_drx);
 }
 
 /// \brief Fills the common type \c ngap_ng_setup_result struct.
@@ -176,6 +176,22 @@ inline void fill_asn1_ng_reset(asn1::ngap::ng_reset_s& asn1_reset, const ngap_ng
   }
 }
 
+/// \brief Fills the common type \c ngap_dl_nas_transport_message struct.
+/// \param[out] msg The common type \c ngap_dl_nas_transport_message struct to fill.
+/// \param[in] ue_index The index of the UE.
+/// \param[in] asn1_msg The ASN.1 type DLNASTransport.
+inline void fill_ngap_dl_nas_transport_message(ngap_dl_nas_transport_message&        msg,
+                                               ue_index_t                            ue_index,
+                                               const asn1::ngap::dl_nas_transport_s& asn1_msg)
+{
+  msg.ue_index = ue_index;
+  msg.nas_pdu  = asn1_msg->nas_pdu.copy();
+  if (asn1_msg->ue_cap_info_request_present &&
+      asn1_msg->ue_cap_info_request == asn1::ngap::ue_cap_info_request_opts::options::requested) {
+    msg.ue_cap_info_request = true;
+  }
+}
+
 /// \brief Convert common type Initial UE Message to NGAP Initial UE Message.
 /// \param[out] asn1_msg The ASN1 NGAP Initial UE Message.
 /// \param[in] msg The CU-CP Initial UE Message.
@@ -197,9 +213,9 @@ inline void fill_asn1_initial_ue_message(asn1::ngap::init_ue_msg_s&      asn1_ms
   if (msg.five_g_s_tmsi.has_value()) {
     // TS 23.003 - 5G-S-TMSI contains AMF Set ID, AMF Pointer and 5G TMSI.
     asn1_msg->five_g_s_tmsi_present = true;
-    asn1_msg->five_g_s_tmsi.amf_set_id.from_number(msg.five_g_s_tmsi.value().amf_set_id);
-    asn1_msg->five_g_s_tmsi.amf_pointer.from_number(msg.five_g_s_tmsi.value().amf_pointer);
-    asn1_msg->five_g_s_tmsi.five_g_tmsi.from_number(msg.five_g_s_tmsi.value().five_g_tmsi);
+    asn1_msg->five_g_s_tmsi.amf_set_id.from_number(msg.five_g_s_tmsi.value().get_amf_set_id());
+    asn1_msg->five_g_s_tmsi.amf_pointer.from_number(msg.five_g_s_tmsi.value().get_amf_pointer());
+    asn1_msg->five_g_s_tmsi.five_g_tmsi.from_number(msg.five_g_s_tmsi.value().get_five_g_tmsi());
   }
 
   if (msg.amf_set_id.has_value()) {
@@ -283,34 +299,36 @@ inline bool fill_cu_cp_pdu_session_resource_setup_item_base(cu_cp_pdu_session_re
     // qosFlowLevelQosParameters
     if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.type() ==
         asn1::ngap::qos_characteristics_c::types::dyn5qi) {
-      dyn_5qi_descriptor_t dyn_5qi = {};
+      dyn_5qi_descriptor dyn_5qi = {};
       if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.dyn5qi().five_qi_present) {
         dyn_5qi.five_qi =
             uint_to_five_qi(asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.dyn5qi().five_qi);
       }
       // TODO: Add optional values
 
-      qos_flow_setup_req_item.qos_flow_level_qos_params.qos_characteristics.dyn_5qi = dyn_5qi;
+      qos_flow_setup_req_item.qos_flow_level_qos_params.qos_desc = dyn_5qi;
 
       // TODO: Add optional values
 
     } else if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.type() ==
                asn1::ngap::qos_characteristics_c::types::non_dyn5qi) {
-      non_dyn_5qi_descriptor_t non_dyn_5qi = {};
+      non_dyn_5qi_descriptor non_dyn_5qi = {};
       non_dyn_5qi.five_qi =
           uint_to_five_qi(asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.non_dyn5qi().five_qi);
-      qos_flow_setup_req_item.qos_flow_level_qos_params.qos_characteristics.non_dyn_5qi = non_dyn_5qi;
+      qos_flow_setup_req_item.qos_flow_level_qos_params.qos_desc = non_dyn_5qi;
 
       // TODO: Add optional values
     }
 
     // allocationAndRetentionPriority
-    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_and_retention_prio.prio_level_arp =
+    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_retention_prio.prio_level_arp =
         asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.prio_level_arp;
-    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap =
-        asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap.to_string();
-    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability =
-        asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability.to_string();
+    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_retention_prio.may_trigger_preemption =
+        asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap ==
+        asn1::ngap::pre_emption_cap_opts::may_trigger_pre_emption;
+    qos_flow_setup_req_item.qos_flow_level_qos_params.alloc_retention_prio.is_preemptable =
+        asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability ==
+        asn1::ngap::pre_emption_vulnerability_opts::pre_emptable;
 
     // Optional Parameters
     if (asn1_flow_item.qos_flow_level_qos_params.add_qos_flow_info_present) {
@@ -323,8 +341,7 @@ inline bool fill_cu_cp_pdu_session_resource_setup_item_base(cu_cp_pdu_session_re
     }
 
     if (asn1_flow_item.qos_flow_level_qos_params.reflective_qos_attribute_present) {
-      qos_flow_setup_req_item.qos_flow_level_qos_params.reflective_qos_attribute =
-          asn1::enum_to_bool(asn1_flow_item.qos_flow_level_qos_params.reflective_qos_attribute);
+      qos_flow_setup_req_item.qos_flow_level_qos_params.reflective_qos_attribute_subject_to = true;
     }
 
     if (asn1_flow_item.erab_id_present) {
@@ -584,34 +601,36 @@ inline bool fill_cu_cp_pdu_session_resource_modify_item_base(
       if (asn1_flow_item.qos_flow_level_qos_params_present) {
         if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.type() ==
             asn1::ngap::qos_characteristics_c::types::dyn5qi) {
-          dyn_5qi_descriptor_t dyn_5qi = {};
+          dyn_5qi_descriptor dyn_5qi = {};
           if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.dyn5qi().five_qi_present) {
             dyn_5qi.five_qi =
                 uint_to_five_qi(asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.dyn5qi().five_qi);
           }
           // TODO: Add optional values
 
-          qos_flow_add_item.qos_flow_level_qos_params.qos_characteristics.dyn_5qi = dyn_5qi;
+          qos_flow_add_item.qos_flow_level_qos_params.qos_desc = dyn_5qi;
 
           // TODO: Add optional values
 
         } else if (asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.type() ==
                    asn1::ngap::qos_characteristics_c::types::non_dyn5qi) {
-          non_dyn_5qi_descriptor_t non_dyn_5qi = {};
+          non_dyn_5qi_descriptor non_dyn_5qi = {};
           non_dyn_5qi.five_qi =
               uint_to_five_qi(asn1_flow_item.qos_flow_level_qos_params.qos_characteristics.non_dyn5qi().five_qi);
-          qos_flow_add_item.qos_flow_level_qos_params.qos_characteristics.non_dyn_5qi = non_dyn_5qi;
+          qos_flow_add_item.qos_flow_level_qos_params.qos_desc = non_dyn_5qi;
 
           // TODO: Add optional values
         }
 
         // allocationAndRetentionPriority
-        qos_flow_add_item.qos_flow_level_qos_params.alloc_and_retention_prio.prio_level_arp =
+        qos_flow_add_item.qos_flow_level_qos_params.alloc_retention_prio.prio_level_arp =
             asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.prio_level_arp;
-        qos_flow_add_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap =
-            asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap.to_string();
-        qos_flow_add_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability =
-            asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability.to_string();
+        qos_flow_add_item.qos_flow_level_qos_params.alloc_retention_prio.may_trigger_preemption =
+            asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_cap.value ==
+            asn1::ngap::pre_emption_cap_opts::may_trigger_pre_emption;
+        qos_flow_add_item.qos_flow_level_qos_params.alloc_retention_prio.is_preemptable =
+            asn1_flow_item.qos_flow_level_qos_params.alloc_and_retention_prio.pre_emption_vulnerability.value ==
+            asn1::ngap::pre_emption_vulnerability_opts::pre_emptable;
       }
 
       modify_item.transfer.qos_flow_add_or_modify_request_list.emplace(qos_flow_add_item.qos_flow_id,
@@ -849,9 +868,7 @@ inline void fill_asn1_ue_context_release_complete(asn1::ngap::ue_context_release
 inline void fill_cu_cp_paging_message(cu_cp_paging_message& paging, const asn1::ngap::paging_s& asn1_paging)
 {
   // add ue paging id
-  paging.ue_paging_id.amf_set_id  = asn1_paging->ue_paging_id.five_g_s_tmsi().amf_set_id.to_number();
-  paging.ue_paging_id.amf_pointer = asn1_paging->ue_paging_id.five_g_s_tmsi().amf_pointer.to_number();
-  paging.ue_paging_id.five_g_tmsi = asn1_paging->ue_paging_id.five_g_s_tmsi().five_g_tmsi.to_number();
+  paging.ue_paging_id = ngap_asn1_to_ue_paging_id(asn1_paging->ue_paging_id);
 
   // add paging drx
   if (asn1_paging->paging_drx_present) {

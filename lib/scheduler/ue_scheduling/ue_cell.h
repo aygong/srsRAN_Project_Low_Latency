@@ -22,10 +22,10 @@
 
 #pragma once
 
+#include "../cell/cell_harq_manager.h"
 #include "../config/ue_configuration.h"
 #include "../support/bwp_helpers.h"
 #include "../support/sch_pdu_builder.h"
-#include "harq_process.h"
 #include "ue_channel_state_manager.h"
 #include "ue_link_adaptation_controller.h"
 #include "srsran/ran/uci/uci_constants.h"
@@ -37,9 +37,9 @@ namespace srsran {
 struct ul_crc_pdu_indication;
 
 struct grant_prbs_mcs {
-  /// MCS to use for the UE's PUSCH.
+  /// MCS to use for the UE's PxSCH.
   sch_mcs_index mcs;
-  /// Number of PRBs to be allocated for the UE's PUSCH.
+  /// Number of PRBs to be allocated for the UE's PxSCH.
   unsigned n_prbs;
 };
 
@@ -56,12 +56,12 @@ public:
   ue_cell(du_ue_index_t                ue_index_,
           rnti_t                       crnti_val,
           const ue_cell_configuration& ue_cell_cfg_,
-          ue_harq_timeout_notifier     harq_timeout_notifier);
+          cell_harq_manager&           cell_harq_pool);
 
   const du_ue_index_t   ue_index;
   const du_cell_index_t cell_index;
 
-  harq_entity harqs;
+  unique_ue_harq_entity harqs;
 
   // Slot at which PDSCH was allocated in the past for this UE in this cell.
   slot_point last_pdsch_allocated_slot;
@@ -84,10 +84,14 @@ public:
 
   void set_fallback_state(bool in_fallback);
 
-  std::optional<dl_harq_process::dl_ack_info_result> handle_dl_ack_info(slot_point                 uci_slot,
-                                                                        mac_harq_ack_report_status ack_value,
-                                                                        unsigned                   harq_bit_idx,
-                                                                        std::optional<float>       pucch_snr);
+  struct dl_ack_info_result {
+    dl_harq_process_handle::status_update update;
+    dl_harq_process_handle                h_dl;
+  };
+  std::optional<dl_ack_info_result> handle_dl_ack_info(slot_point                 uci_slot,
+                                                       mac_harq_ack_report_status ack_value,
+                                                       unsigned                   harq_bit_idx,
+                                                       std::optional<float>       pucch_snr);
 
   /// \brief Estimate the number of required DL PRBs to allocate the given number of bytes.
   grant_prbs_mcs required_dl_prbs(const pdsch_time_domain_resource_allocation& pdsch_td_cfg,
@@ -99,19 +103,20 @@ public:
                                   unsigned                                     pending_bytes,
                                   dci_ul_rnti_config_type                      dci_type) const;
 
-  uint8_t get_pdsch_rv(const dl_harq_process& h_dl) const
+  uint8_t get_pdsch_rv(unsigned nof_retxs) const
   {
-    return cell_cfg.expert_cfg.ue
-        .pdsch_rv_sequence[h_dl.tb(0).nof_retxs % cell_cfg.expert_cfg.ue.pdsch_rv_sequence.size()];
+    return cell_cfg.expert_cfg.ue.pdsch_rv_sequence[nof_retxs % cell_cfg.expert_cfg.ue.pdsch_rv_sequence.size()];
   }
-  uint8_t get_pusch_rv(const ul_harq_process& h_ul) const
+  uint8_t get_pusch_rv(unsigned nof_retxs) const
   {
-    return cell_cfg.expert_cfg.ue
-        .pusch_rv_sequence[h_ul.tb().nof_retxs % cell_cfg.expert_cfg.ue.pusch_rv_sequence.size()];
+    return cell_cfg.expert_cfg.ue.pusch_rv_sequence[nof_retxs % cell_cfg.expert_cfg.ue.pusch_rv_sequence.size()];
   }
 
   /// \brief Handle CRC PDU indication.
   int handle_crc_pdu(slot_point pusch_slot, const ul_crc_pdu_indication& crc_pdu);
+
+  /// \brief Handle Sounding Reference Signal (SRS) channel matrix.
+  void handle_srs_channel_matrix(const srs_channel_matrix& channel_matrix);
 
   /// Update UE with the latest CSI report for a given cell.
   void handle_csi_report(const csi_report_data& csi_report);

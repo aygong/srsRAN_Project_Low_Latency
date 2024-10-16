@@ -22,6 +22,7 @@
 
 #include "ra_scheduler.h"
 #include "../logging/scheduler_event_logger.h"
+#include "../logging/scheduler_metrics_handler.h"
 #include "../pdcch_scheduling/pdcch_resource_allocator_impl.h"
 #include "../support/dci_builder.h"
 #include "../support/dmrs_helpers.h"
@@ -80,16 +81,44 @@ static crb_interval msg3_vrb_to_crb(const cell_configuration& cell_cfg, vrb_inte
                                                   cell_cfg.ul_cfg_common.init_ul_bwp.generic_params.crbs.start());
 }
 
+class ra_scheduler::msg3_harq_timeout_notifier final : public harq_timeout_notifier
+{
+public:
+  msg3_harq_timeout_notifier(std::vector<pending_msg3_t>& pending_msg3s_) : pending_msg3s(pending_msg3s_) {}
+
+  void on_harq_timeout(du_ue_index_t ue_idx, bool is_dl, bool ack) override
+  {
+    srsran_sanity_check(pending_msg3s[ue_idx].busy(), "timeout called but HARQ entity does not exist");
+
+    // Delete Msg3 HARQ entity to make it available again.
+    pending_msg3s[ue_idx].msg3_harq_ent.reset();
+  }
+
+private:
+  std::vector<pending_msg3_t>& pending_msg3s;
+};
+
+// (Implementation-defined) limit for maximum number of concurrent Msg3s.
+static constexpr size_t MAX_NOF_MSG3 = 1024;
+
+// (Implementation-defined) limit for maximum number of pending RACH indications.
+static constexpr size_t RACH_IND_QUEUE_SIZE = MAX_PRACH_OCCASIONS_PER_SLOT * 2;
+
+// (Implementation-defined) limit for maximum number of pending CRC indications.
+static constexpr size_t CRC_IND_QUEUE_SIZE = MAX_PUCCH_PDUS_PER_SLOT * 2;
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 ra_scheduler::ra_scheduler(const scheduler_ra_expert_config& sched_cfg_,
                            const cell_configuration&         cellcfg_,
                            pdcch_resource_allocator&         pdcch_sch_,
-                           scheduler_event_logger&           ev_logger_) :
+                           scheduler_event_logger&           ev_logger_,
+                           cell_metrics_handler&             metrics_hdlr_) :
   sched_cfg(sched_cfg_),
   cell_cfg(cellcfg_),
   pdcch_sch(pdcch_sch_),
   ev_logger(ev_logger_),
+  metrics_hdlr(metrics_hdlr_),
   ra_win_nof_slots(cell_cfg.ul_cfg_common.init_ul_bwp.rach_cfg_common->rach_cfg_generic.ra_resp_window),
   ra_crb_lims(
       pdsch_helper::get_ra_crb_limits_common(cell_cfg.dl_cfg_common.init_dl_bwp,
@@ -99,6 +128,9 @@ ra_scheduler::ra_scheduler(const scheduler_ra_expert_config& sched_cfg_,
                               band_helper::get_duplex_mode(cell_cfg.band),
                               cell_cfg.ul_cfg_common.init_ul_bwp.rach_cfg_common->rach_cfg_generic.prach_config_index)
           .format)),
+  msg3_harqs(MAX_NOF_MSG3, 1, std::make_unique<msg3_harq_timeout_notifier>(pending_msg3s)),
+  pending_rachs(RACH_IND_QUEUE_SIZE),
+  pending_crcs(CRC_IND_QUEUE_SIZE),
   pending_msg3s(MAX_NOF_MSG3)
 {
   // Precompute RAR PDSCH and DCI PDUs.
@@ -151,7 +183,8 @@ void ra_scheduler::precompute_msg3_pdus()
   static const unsigned nof_oh_prb = 0;
   static const unsigned nof_layers = 1;
 
-  msg3_mcs_config = pusch_mcs_get_config(pusch_mcs_table::qam64, sched_cfg.msg3_mcs_index, false);
+  msg3_mcs_config = pusch_mcs_get_config(
+      pusch_mcs_table::qam64, sched_cfg.msg3_mcs_index, cell_cfg.use_msg3_transform_precoder(), false);
 
   const auto& pusch_td_alloc_list = get_pusch_time_domain_resource_table(get_pusch_cfg());
 
@@ -159,12 +192,6 @@ void ra_scheduler::precompute_msg3_pdus()
   msg3_data.resize(pusch_td_alloc_list.size());
 
   for (unsigned i = 0; i != msg3_data.size(); ++i) {
-    // Create a dummy HARQ used to fill DCI and PUSCH.
-    harq_logger      dummy_harq_logger{logger, to_rnti(0x4601), cell_cfg.cell_index, false};
-    ul_harq_process  dummy_h_ul(to_harq_id(0), dummy_harq_logger);
-    const slot_point dummy_slot{to_numerology_value(get_ul_bwp_cfg().scs), 0};
-    dummy_h_ul.new_tx(dummy_slot, sched_cfg.max_nof_msg3_harq_retxs);
-
     // Compute the required PRBs and TBS for Msg3.
     const pusch_config_params pusch_cfg = get_pusch_config_f0_0_tc_rnti(cell_cfg, pusch_td_alloc_list[i]);
     const sch_prbs_tbs        prbs_tbs =
@@ -183,8 +210,7 @@ void ra_scheduler::precompute_msg3_pdus()
                            crb_interval{0, prbs_tbs.nof_prbs},
                            i,
                            sched_cfg.msg3_mcs_index,
-                           msg3_rv,
-                           dummy_h_ul);
+                           msg3_rv);
 
     // Note: RNTI will be overwritten later.
     build_pusch_f0_0_tc_rnti(msg3_data[i].pusch,
@@ -201,12 +227,15 @@ void ra_scheduler::precompute_msg3_pdus()
 void ra_scheduler::handle_rach_indication(const rach_indication_message& msg)
 {
   // Buffer detected RACHs to be handled in next slot.
-  pending_rachs.push(msg);
+  if (not pending_rachs.try_push(msg)) {
+    logger.warning(
+        "cell={}: Discarding RACH indication for slot={}. Cause: Event queue is full", msg.cell_index, msg.slot_rx);
+  }
 }
 
 void ra_scheduler::handle_rach_indication_impl(const rach_indication_message& msg)
 {
-  const static unsigned prach_duration = 1; // TODO: Take from config
+  static const unsigned prach_duration = 1; // TODO: Take from config
 
   for (const auto& prach_occ : msg.occasions) {
     // As per Section 5.1.3, TS 38.321, and from Section 5.3.2, TS 38.211, slot_idx uses as the numerology of reference
@@ -258,7 +287,9 @@ void ra_scheduler::handle_rach_indication_impl(const rach_indication_message& ms
                                                             prach_preamble.time_advance.to_Ta(get_ul_bwp_cfg().scs)});
 
       // Check if TC-RNTI value to be scheduled is already under use
-      if (not pending_msg3s[to_value(prach_preamble.tc_rnti) % MAX_NOF_MSG3].harq.empty()) {
+      unsigned msg3_ring_idx = to_value(prach_preamble.tc_rnti) % MAX_NOF_MSG3;
+      auto&    msg3_entry    = pending_msg3s[msg3_ring_idx];
+      if (msg3_entry.busy()) {
         logger.warning("PRACH ignored, as the allocated TC-RNTI={} is already under use", prach_preamble.tc_rnti);
         continue;
       }
@@ -266,68 +297,81 @@ void ra_scheduler::handle_rach_indication_impl(const rach_indication_message& ms
       // Store TC-RNTI of the preamble.
       rar_req->tc_rntis.emplace_back(prach_preamble.tc_rnti);
 
-      // Store Msg3 to allocate.
-      pending_msg3s[to_value(prach_preamble.tc_rnti) % MAX_NOF_MSG3].preamble = prach_preamble;
-      pending_msg3s[to_value(prach_preamble.tc_rnti) % MAX_NOF_MSG3].msg3_harq_logger.set_rnti(prach_preamble.tc_rnti);
+      // Store Msg3 request and create a HARQ entity of 1 UL HARQ.
+      msg3_entry.preamble      = prach_preamble;
+      msg3_entry.msg3_harq_ent = msg3_harqs.add_ue(to_du_ue_index(msg3_ring_idx), prach_preamble.tc_rnti, 1, 1);
     }
   }
+
+  // Forward RACH indication to metrics handler.
+  metrics_hdlr.handle_rach_indication(msg);
 }
 
 void ra_scheduler::handle_crc_indication(const ul_crc_indication& crc_ind)
 {
-  pending_crcs.push(crc_ind);
+  if (not pending_crcs.try_push(crc_ind)) {
+    logger.warning(
+        "cell={}: CRC indication for slot={} discarded. Cause: Event queue is full", crc_ind.cell_index, crc_ind.sl_rx);
+  }
 }
 
 void ra_scheduler::handle_pending_crc_indications_impl(cell_resource_allocator& res_alloc)
 {
   // Pop pending CRCs and process them.
-  pending_crcs.slot_indication();
-  const span<const ul_crc_indication> new_crc_inds = pending_crcs.get_events();
-
-  for (const ul_crc_indication& crc_ind : new_crc_inds) {
+  ul_crc_indication crc_ind;
+  while (pending_crcs.try_pop(crc_ind)) {
     for (const ul_crc_pdu_indication& crc : crc_ind.crcs) {
-      srsran_assert(crc.ue_index == INVALID_DU_UE_INDEX, "Msg3 HARQ CRCs cannot have a ueId assigned yet");
+      srsran_assert(crc.ue_index == INVALID_DU_UE_INDEX, "Msg3 HARQ CRCs cannot have a ue index assigned yet");
       auto& pending_msg3 = pending_msg3s[to_value(crc.rnti) % MAX_NOF_MSG3];
-      if (pending_msg3.preamble.tc_rnti != crc.rnti) {
-        logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: Nonexistent rnti.",
+      if (pending_msg3.preamble.tc_rnti != crc.rnti or pending_msg3.msg3_harq_ent.empty()) {
+        logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: Nonexistent tc-rnti",
                        cell_cfg.cell_index,
                        crc.rnti,
                        crc.harq_id);
         continue;
       }
-      if (pending_msg3.harq.id != crc.harq_id) {
-        logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: HARQ-Ids do not match ({} != {})",
+
+      // See TS38.321, 5.4.2.1 - "For UL transmission with UL grant in RA Response, HARQ process identifier 0 is used."
+      harq_id_t                             h_id = to_harq_id(0);
+      std::optional<ul_harq_process_handle> h_ul = pending_msg3.msg3_harq_ent.ul_harq(h_id);
+      if (not h_ul.has_value() or crc.harq_id != h_id) {
+        logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: HARQ-Id 0 must be used in Msg3",
                        cell_cfg.cell_index,
                        crc.rnti,
-                       crc.harq_id,
-                       crc.harq_id,
-                       pending_msg3.harq.id);
+                       crc.harq_id);
         continue;
       }
-      pending_msg3.harq.crc_info(crc.tb_crc_success);
+
+      // Handle CRC info.
+      h_ul->ul_crc_info(crc.tb_crc_success);
+      if (h_ul->empty()) {
+        // Deallocate Msg3 entry.
+        pending_msg3.msg3_harq_ent.reset();
+      }
     }
   }
 
   // Allocate pending Msg3 retransmissions.
-  for (auto& pending_msg3 : pending_msg3s) {
-    if (not pending_msg3.harq.empty()) {
-      pending_msg3.harq.slot_indication(res_alloc.slot_tx());
-      if (pending_msg3.harq.has_pending_retx()) {
-        schedule_msg3_retx(res_alloc, pending_msg3);
-      }
-    }
+  // Note: pending_ul_retxs size will change in this iteration, so we prefetch the next iterator.
+  auto pending_ul_retxs = msg3_harqs.pending_ul_retxs();
+  for (auto it = pending_ul_retxs.begin(); it != pending_ul_retxs.end();) {
+    ul_harq_process_handle h_ul = *it;
+    ++it;
+    schedule_msg3_retx(res_alloc, pending_msg3s[h_ul.ue_index()]);
   }
 }
 
 void ra_scheduler::run_slot(cell_resource_allocator& res_alloc)
 {
+  // Update Msg3 HARQ state.
+  msg3_harqs.slot_indication(res_alloc.slot_tx());
+
   // Handle pending CRCs, which may lead to Msg3 reTxs.
   handle_pending_crc_indications_impl(res_alloc);
 
   // Pop pending RACHs and process them.
-  pending_rachs.slot_indication();
-  const span<const rach_indication_message> new_rachs = pending_rachs.get_events();
-  for (const rach_indication_message& rach : new_rachs) {
+  rach_indication_message rach;
+  while (pending_rachs.try_pop(rach)) {
     handle_rach_indication_impl(rach);
   }
 
@@ -601,7 +645,7 @@ unsigned ra_scheduler::schedule_rar(const pending_rar_t& rar, cell_resource_allo
   rar_crbs.resize(get_nof_pdsch_prbs_required(pdsch_time_res_index, max_nof_allocs).nof_prbs);
 
   // > Find space in PDCCH for RAR.
-  const static aggregation_level aggr_lvl = aggregation_level::n4;
+  static const aggregation_level aggr_lvl = aggregation_level::n4;
   const search_space_id          ss_id    = cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common.ra_search_space_id;
   pdcch_dl_information*          pdcch    = pdcch_sch.alloc_dl_pdcch_common(pdcch_alloc, rar.ra_rnti, ss_id, aggr_lvl);
   if (pdcch == nullptr) {
@@ -660,10 +704,12 @@ void ra_scheduler::fill_rar_grant(cell_resource_allocator&         res_alloc,
     const vrb_interval            vrbs       = msg3_crb_to_vrb(cell_cfg, msg3_candidate.crbs);
 
     auto& pending_msg3 = pending_msg3s[to_value(rar_request.tc_rntis[i]) % MAX_NOF_MSG3];
-    srsran_sanity_check(pending_msg3.harq.empty(), "Pending Msg3 should not have been added if HARQ is busy");
+    srsran_sanity_check(pending_msg3.busy(), "Pending Msg3 entry should have been reserved when RACH was received");
 
     // Allocate Msg3 UL HARQ
-    pending_msg3.harq.new_tx(msg3_alloc.slot, sched_cfg.max_nof_msg3_harq_retxs);
+    std::optional<ul_harq_process_handle> h_ul =
+        pending_msg3.msg3_harq_ent.alloc_ul_harq(msg3_alloc.slot, sched_cfg.max_nof_msg3_harq_retxs);
+    srsran_sanity_check(h_ul.has_value(), "Pending Msg3 HARQ must be available when RAR is allocated");
 
     // Add MAC SDU with UL grant (Msg3) in RAR PDU.
     rar_ul_grant& msg3_info            = rar.grants.emplace_back();
@@ -695,7 +741,7 @@ void ra_scheduler::fill_rar_grant(cell_resource_allocator&         res_alloc,
     pusch.pusch_cfg.new_data = true;
 
     // Store parameters used in HARQ.
-    pending_msg3.harq.save_alloc_params(ul_harq_sched_context{dci_ul_rnti_config_type::tc_rnti_f0_0}, pusch.pusch_cfg);
+    h_ul->save_grant_params(ul_harq_alloc_context{dci_ul_rnti_config_type::tc_rnti_f0_0}, pusch.pusch_cfg);
   }
 }
 
@@ -715,6 +761,10 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
     return;
   }
 
+  ul_harq_process_handle h_ul = msg3_ctx.msg3_harq_ent.ul_harq(to_harq_id(0)).value();
+  srsran_sanity_check(h_ul.has_pending_retx(), "schedule_msg3_retx called when HARQ has no pending reTx");
+  const ul_harq_process_handle::grant_params& last_harq_params = h_ul.get_grant_params();
+
   const span<const pusch_time_domain_resource_allocation> pusch_td_alloc_list =
       get_pusch_time_domain_resource_table(get_pusch_cfg());
   for (unsigned pusch_td_res_index = 0; pusch_td_res_index != pusch_td_alloc_list.size(); ++pusch_td_res_index) {
@@ -725,8 +775,7 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
         NOF_OFDM_SYM_PER_SLOT_NORMAL_CP - cell_cfg.get_nof_ul_symbol_per_slot(pusch_alloc.slot);
     // If it is a retx, we need to ensure we use a time_domain_resource with the same number of symbols as used for
     // the first transmission.
-    const bool sym_length_match_prev_grant_for_retx =
-        pusch_td_cfg.symbols.length() == msg3_ctx.harq.last_tx_params().nof_symbols;
+    const bool sym_length_match_prev_grant_for_retx = pusch_td_cfg.symbols.length() == last_harq_params.nof_symbols;
     if (not cell_cfg.is_ul_enabled(pusch_alloc.slot) or pusch_td_cfg.symbols.start() < start_ul_symbols or
         !sym_length_match_prev_grant_for_retx) {
       // Not possible to schedule Msg3s in this TDD slot.
@@ -740,7 +789,7 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
     }
 
     // Try to reuse previous HARQ PRBs.
-    const vrb_interval msg3_vrbs = msg3_ctx.harq.last_tx_params().rbs.type1();
+    const vrb_interval msg3_vrbs = last_harq_params.rbs.type1();
     grant_info         grant;
     grant.scs     = bwp_ul_cmn.scs;
     grant.symbols = pusch_td_cfg.symbols;
@@ -776,7 +825,10 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
     pusch_alloc.ul_res_grid.fill(grant);
 
     // Allocate new retx in the HARQ.
-    msg3_ctx.harq.new_retx(pusch_alloc.slot);
+    if (not h_ul.new_retx(pusch_alloc.slot)) {
+      logger.warning("tc-rnti={}: Failed to allocate reTx for Msg3", msg3_ctx.preamble.tc_rnti);
+      continue;
+    }
 
     // Fill DCI.
     static constexpr uint8_t msg3_rv = 0;
@@ -785,16 +837,15 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
                            cell_cfg.ul_cfg_common.init_ul_bwp.generic_params,
                            grant.crbs,
                            pusch_td_res_index,
-                           msg3_ctx.harq.last_tx_params().mcs,
-                           msg3_rv,
-                           msg3_ctx.harq);
+                           last_harq_params.mcs,
+                           msg3_rv);
 
     // Fill PUSCH.
     ul_sched_info& ul_info     = pusch_alloc.result.ul.puschs.emplace_back();
     ul_info.context.ue_index   = INVALID_DU_UE_INDEX;
     ul_info.context.ss_id      = cell_cfg.dl_cfg_common.init_dl_bwp.pdcch_common.ra_search_space_id;
     ul_info.context.k2         = k2;
-    ul_info.context.nof_retxs  = msg3_ctx.harq.tb().nof_retxs;
+    ul_info.context.nof_retxs  = h_ul.nof_retxs();
     ul_info.pusch_cfg          = msg3_data[pusch_td_res_index].pusch;
     ul_info.pusch_cfg.rnti     = msg3_ctx.preamble.tc_rnti;
     ul_info.pusch_cfg.rbs      = msg3_vrbs;
@@ -802,7 +853,7 @@ void ra_scheduler::schedule_msg3_retx(cell_resource_allocator& res_alloc, pendin
     ul_info.pusch_cfg.new_data = false;
 
     // Store parameters used in HARQ.
-    msg3_ctx.harq.save_alloc_params(ul_harq_sched_context{dci_ul_rnti_config_type::tc_rnti_f0_0}, ul_info.pusch_cfg);
+    h_ul.save_grant_params(ul_harq_alloc_context{dci_ul_rnti_config_type::tc_rnti_f0_0}, ul_info.pusch_cfg);
 
     // successful allocation. Exit loop.
     break;

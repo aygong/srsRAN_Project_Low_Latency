@@ -123,7 +123,7 @@ private:
 };
 
 /// Dummy NGAP to RRC UE notifier
-class dummy_ngap_rrc_ue_notifier : public ngap_rrc_ue_pdu_notifier, public ngap_rrc_ue_control_notifier
+class dummy_ngap_rrc_ue_notifier : public ngap_rrc_ue_notifier
 {
 public:
   dummy_ngap_rrc_ue_notifier() : logger(srslog::fetch_basic_logger("TEST")){};
@@ -134,14 +134,7 @@ public:
     logger.info("Received a NAS PDU");
   }
 
-  async_task<bool> on_new_security_context() override
-  {
-    logger.info("Received a new security context");
-    return launch_async([](coro_context<async_task<bool>>& ctx) {
-      CORO_BEGIN(ctx);
-      CORO_RETURN(true);
-    });
-  }
+  byte_buffer on_ue_radio_access_cap_info_required() override { return make_byte_buffer("deadbeef").value(); }
 
   byte_buffer on_handover_preparation_message_required() override { return ho_preparation_message.copy(); }
 
@@ -153,36 +146,6 @@ public:
   byte_buffer last_nas_pdu;
   byte_buffer ho_preparation_message;
   byte_buffer last_handover_command;
-
-private:
-  srslog::basic_logger& logger;
-};
-
-class dummy_ngap_cu_cp_paging_notifier : public ngap_cu_cp_du_repository_notifier
-{
-public:
-  dummy_ngap_cu_cp_paging_notifier() : logger(srslog::fetch_basic_logger("TEST")){};
-
-  void on_paging_message(cu_cp_paging_message& msg) override
-  {
-    logger.info("Received a new Paging message");
-    last_msg = std::move(msg);
-  }
-
-  ue_index_t request_new_ue_index_allocation(nr_cell_global_id_t /*cgi*/) override { return ue_index_t::invalid; }
-
-  async_task<ngap_handover_resource_allocation_response>
-  on_ngap_handover_request(const ngap_handover_request& request) override
-  {
-    return launch_async([res = ngap_handover_resource_allocation_response{}](
-                            coro_context<async_task<ngap_handover_resource_allocation_response>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-
-      CORO_RETURN(res);
-    });
-  }
-
-  cu_cp_paging_message last_msg;
 
 private:
   srslog::basic_logger& logger;
@@ -223,10 +186,60 @@ public:
     return ue_mng.find_ue(ue_index)->get_security_manager().init_security_context(sec_ctxt);
   }
 
+  async_task<expected<ngap_init_context_setup_response, ngap_init_context_setup_failure>>
+  on_new_initial_context_setup_request(ngap_init_context_setup_request& request) override
+  {
+    logger.info("Received a new initial context setup request");
+
+    last_init_ctxt_setup_request = std::move(request);
+
+    return launch_async(
+        [this, resp = ngap_init_context_setup_response{}, fail = ngap_init_context_setup_failure{}](
+            coro_context<async_task<expected<ngap_init_context_setup_response, ngap_init_context_setup_failure>>>&
+                ctx) mutable {
+          CORO_BEGIN(ctx);
+
+          if (!ue_mng.find_ue(last_init_ctxt_setup_request.ue_index)
+                   ->get_security_manager()
+                   .init_security_context(last_init_ctxt_setup_request.security_context)) {
+            // Add failed PDU session setup responses
+            if (last_init_ctxt_setup_request.pdu_session_res_setup_list_cxt_req.has_value()) {
+              for (const auto& session : last_init_ctxt_setup_request.pdu_session_res_setup_list_cxt_req.value()
+                                             .pdu_session_res_setup_items) {
+                cu_cp_pdu_session_res_setup_failed_item failed_item;
+                failed_item.pdu_session_id              = session.pdu_session_id;
+                failed_item.unsuccessful_transfer.cause = ngap_cause_radio_network_t::unspecified;
+
+                fail.pdu_session_res_failed_to_setup_items.emplace(failed_item.pdu_session_id, failed_item);
+              }
+            }
+            CORO_EARLY_RETURN(make_unexpected(fail));
+          }
+
+          // Add successful PDU session setup responses
+          if (last_init_ctxt_setup_request.pdu_session_res_setup_list_cxt_req.has_value()) {
+            for (const auto& session :
+                 last_init_ctxt_setup_request.pdu_session_res_setup_list_cxt_req.value().pdu_session_res_setup_items) {
+              cu_cp_pdu_session_res_setup_response_item response_item;
+              response_item.pdu_session_id = session.pdu_session_id;
+              response_item.pdu_session_resource_setup_response_transfer.dlqos_flow_per_tnl_info.up_tp_layer_info =
+                  up_transport_layer_info{transport_layer_address::create_from_string("127.0.0.1"),
+                                          int_to_gtpu_teid(1)};
+              response_item.pdu_session_resource_setup_response_transfer.dlqos_flow_per_tnl_info
+                  .associated_qos_flow_list.emplace(uint_to_qos_flow_id(5),
+                                                    cu_cp_associated_qos_flow{uint_to_qos_flow_id(5)});
+              resp.pdu_session_res_setup_response_items.emplace(response_item.pdu_session_id, response_item);
+            }
+          }
+
+          CORO_RETURN(resp);
+        });
+  }
+
   async_task<cu_cp_pdu_session_resource_setup_response>
   on_new_pdu_session_resource_setup_request(cu_cp_pdu_session_resource_setup_request& request) override
   {
-    logger.info("Received a new pdu session resource setup request.");
+    logger.info("Received a new pdu session resource setup request");
 
     last_request = std::move(request);
 
@@ -334,11 +347,32 @@ public:
     return ue_index;
   }
 
+  void on_paging_message(cu_cp_paging_message& msg) override
+  {
+    logger.info("Received a new Paging message");
+    last_paging_msg = std::move(msg);
+  }
+
+  ue_index_t request_new_ue_index_allocation(nr_cell_global_id_t /*cgi*/) override { return ue_index_t::invalid; }
+
+  async_task<ngap_handover_resource_allocation_response>
+  on_ngap_handover_request(const ngap_handover_request& request) override
+  {
+    return launch_async([res = ngap_handover_resource_allocation_response{}](
+                            coro_context<async_task<ngap_handover_resource_allocation_response>>& ctx) mutable {
+      CORO_BEGIN(ctx);
+
+      CORO_RETURN(res);
+    });
+  }
+
   ue_index_t                                 last_ue = ue_index_t::invalid;
+  ngap_init_context_setup_request            last_init_ctxt_setup_request;
   cu_cp_pdu_session_resource_setup_request   last_request;
   cu_cp_pdu_session_resource_modify_request  last_modify_request;
   cu_cp_pdu_session_resource_release_command last_release_command;
   std::optional<ue_index_t>                  last_created_ue_index;
+  cu_cp_paging_message                       last_paging_msg;
 
 private:
   ue_manager&           ue_mng;
@@ -349,10 +383,10 @@ private:
   uint64_t ue_id = ue_index_to_uint(srs_cu_cp::ue_index_t::min);
 };
 
-class dummy_rrc_dl_nas_message_handler : public rrc_dl_nas_message_handler
+class dummy_rrc_ngap_message_handler : public rrc_ngap_message_handler
 {
 public:
-  dummy_rrc_dl_nas_message_handler(ue_index_t ue_index_) :
+  dummy_rrc_ngap_message_handler(ue_index_t ue_index_) :
     ue_index(ue_index_), logger(srslog::fetch_basic_logger("TEST")){};
 
   void handle_dl_nas_transport_message(byte_buffer nas_pdu) override
@@ -361,39 +395,7 @@ public:
     last_nas_pdu = std::move(nas_pdu);
   }
 
-  byte_buffer last_nas_pdu;
-
-private:
-  ue_index_t            ue_index = ue_index_t::invalid;
-  srslog::basic_logger& logger;
-};
-
-class dummy_rrc_ue_init_security_context_handler : public rrc_ue_init_security_context_handler
-{
-public:
-  dummy_rrc_ue_init_security_context_handler() : logger(srslog::fetch_basic_logger("TEST")){};
-
-  void set_security_enabled(bool enabled) { security_enabled = enabled; }
-
-  async_task<bool> handle_init_security_context() override
-  {
-    logger.info("Received a new security context");
-
-    return launch_async([](coro_context<async_task<bool>>& ctx) mutable {
-      CORO_BEGIN(ctx);
-      CORO_RETURN(true);
-    });
-  }
-
-private:
-  bool                  security_enabled = true;
-  srslog::basic_logger& logger;
-};
-
-class dummy_rrc_ue_handover_preparation_handler : public rrc_ue_handover_preparation_handler
-{
-public:
-  dummy_rrc_ue_handover_preparation_handler() : logger(srslog::fetch_basic_logger("TEST")){};
+  byte_buffer get_packed_ue_radio_access_cap_info() const override { return make_byte_buffer("deadbeef").value(); }
 
   void set_ho_preparation_message(byte_buffer ho_preparation_message_)
   {
@@ -402,7 +404,10 @@ public:
 
   byte_buffer get_packed_handover_preparation_message() override { return ho_preparation_message.copy(); }
 
+  byte_buffer last_nas_pdu;
+
 private:
+  ue_index_t            ue_index = ue_index_t::invalid;
   srslog::basic_logger& logger;
   byte_buffer           ho_preparation_message;
 };

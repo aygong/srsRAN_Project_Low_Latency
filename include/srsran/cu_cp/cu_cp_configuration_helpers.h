@@ -23,18 +23,9 @@
 #pragma once
 
 #include "cu_cp_configuration.h"
-#include "srsran/ngap/ngap_configuration_helpers.h"
 
 namespace srsran {
 namespace config_helpers {
-
-/// Generates default cell configuration used by gNB DU. The default configuration should be valid.
-inline srs_cu_cp::cu_cp_configuration make_default_cu_cp_config()
-{
-  srs_cu_cp::cu_cp_configuration cfg{};
-  cfg.ngap_config = make_default_ngap_config();
-  return cfg;
-}
 
 /// Generates default QoS configuration used by gNB CU-CP. The default configuration should be valid.
 /// Dependencies between timers should be considered:
@@ -163,10 +154,21 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
   return qos_list;
 }
 
-inline srs_cu_cp::mobility_configuration make_default_mobility_config()
+/// Generates default cell configuration used by gNB DU. The default configuration should be valid.
+inline srs_cu_cp::cu_cp_configuration make_default_cu_cp_config()
 {
-  srs_cu_cp::mobility_configuration cfg{};
-
+  srs_cu_cp::cu_cp_configuration cfg{};
+  // DRBs
+  cfg.bearers.drb_config = config_helpers::make_default_cu_cp_qos_config_list();
+  // Security.
+  cfg.security.int_algo_pref_list = {security::integrity_algorithm::nia2,
+                                     security::integrity_algorithm::nia1,
+                                     security::integrity_algorithm::nia3,
+                                     security::integrity_algorithm::nia0};
+  cfg.security.enc_algo_pref_list = {security::ciphering_algorithm::nea0,
+                                     security::ciphering_algorithm::nea2,
+                                     security::ciphering_algorithm::nea1,
+                                     security::ciphering_algorithm::nea3};
   return cfg;
 }
 
@@ -184,17 +186,33 @@ inline bool is_valid_configuration(const srs_cu_cp::mobility_configuration& conf
 inline bool is_valid_configuration(const srs_cu_cp::cu_cp_configuration& config)
 {
   // Notifiers aren't checked here.
-  if (!is_valid_configuration(config.ngap_config)) {
-    fmt::print("Invalid NGAP configuration.\n");
+  if (config.node.ran_node_name.empty()) {
+    fmt::print("RAN node name is empty\n");
     return false;
   }
 
-  if (!is_valid_configuration(config.mobility_config)) {
+  if (!is_valid_configuration(config.mobility)) {
     fmt::print("Invalid mobility configuration.\n");
     return false;
   }
 
   return true;
+}
+
+inline std::vector<plmn_identity>
+get_supported_plmns(const std::vector<srs_cu_cp::cu_cp_configuration::ngap_params>& ngaps)
+{
+  std::vector<plmn_identity> plmns;
+
+  for (const auto& ngap : ngaps) {
+    for (const auto& ta : ngap.supported_tas) {
+      for (const auto& plmn_item : ta.plmn_list) {
+        plmns.push_back(plmn_item.plmn_id);
+      }
+    }
+  }
+
+  return plmns;
 }
 
 } // namespace config_helpers

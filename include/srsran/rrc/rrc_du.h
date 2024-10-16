@@ -48,6 +48,7 @@ struct rrc_ue_creation_message {
   rnti_t                                 c_rnti;
   rrc_cell_context                       cell;
   rrc_pdu_f1ap_notifier*                 f1ap_pdu_notifier;
+  rrc_ue_ngap_notifier*                  ngap_notifier;
   rrc_ue_context_update_notifier*        rrc_ue_cu_cp_notifier;
   rrc_ue_measurement_notifier*           measurement_notifier;
   rrc_ue_cu_cp_ue_notifier*              cu_cp_ue_notifier;
@@ -110,13 +111,13 @@ public:
 };
 
 /// Combined entry point for the RRC DU handling.
-class rrc_du_interface : public rrc_du_cell_manager,
-                         public rrc_du_ue_repository,
-                         public rrc_ue_handler,
-                         public rrc_du_statistics_handler
+class rrc_du : public rrc_du_cell_manager,
+               public rrc_du_ue_repository,
+               public rrc_ue_handler,
+               public rrc_du_statistics_handler
 {
 public:
-  virtual ~rrc_du_interface() = default;
+  virtual ~rrc_du() = default;
 
   virtual rrc_du_cell_manager&       get_rrc_du_cell_manager()       = 0;
   virtual rrc_du_ue_repository&      get_rrc_du_ue_repository()      = 0;

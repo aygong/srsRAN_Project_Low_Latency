@@ -35,7 +35,7 @@ namespace srsran {
 struct ue_creation_command {
   const ue_configuration& cfg;
   bool                    starts_in_fallback;
-  harq_timeout_handler&   harq_timeout_notifier;
+  cell_harq_manager&      pcell_harq_pool;
 };
 
 /// Parameters used to reconfigure a UE.
@@ -89,6 +89,9 @@ public:
   /// \brief Number of cells configured for the UE.
   unsigned nof_cells() const { return ue_cells.size(); }
 
+  /// \brief Returns dedicated configuration for the UE.
+  const ue_configuration* ue_cfg_dedicated() const { return ue_ded_cfg; }
+
   bool is_ca_enabled() const { return ue_cells.size() > 1; }
 
   void activate_cells(bounded_bitset<MAX_NOF_DU_CELLS> activ_bitmap) {}
@@ -128,6 +131,14 @@ public:
   /// \remark Excludes SRB0 and UE Contention Resolution Identity CE.
   bool has_pending_dl_newtx_bytes() const { return dl_lc_ch_mgr.has_pending_bytes(); }
 
+  /// \brief Checks if there are DL pending bytes in SRBs that are yet to be allocated in a DL HARQ.
+  /// This method is faster than computing \c pending_dl_newtx_bytes() > 0.
+  /// \remark Excludes SRB0 pending bytes.
+  bool has_pending_dl_srb_newtx_bytes() const
+  {
+    return dl_lc_ch_mgr.has_pending_bytes(LCID_SRB1) or dl_lc_ch_mgr.has_pending_bytes(LCID_SRB2);
+  }
+
   /// \brief Checks if there are DL pending bytes for a specific LCID that are yet to be allocated in a DL HARQ.
   bool has_pending_dl_newtx_bytes(lcid_t lcid) const { return dl_lc_ch_mgr.has_pending_bytes(lcid); }
 
@@ -140,6 +151,9 @@ public:
   /// \brief Returns the UE pending CEs' bytes to be scheduled, if any.
   unsigned pending_ce_bytes() const { return dl_lc_ch_mgr.pending_ce_bytes(); }
 
+  /// \brief Returns whether the UE has pending CEs' bytes to be scheduled, if any.
+  bool has_pending_ce_bytes() const { return dl_lc_ch_mgr.is_con_res_id_pending() or dl_lc_ch_mgr.has_pending_ces(); }
+
   /// \brief Computes the number of DL pending bytes that are not already allocated in a DL HARQ. The value is used
   /// to derive the required transport block size for an DL grant.
   /// param[in] lcid If the LCID is provided, the method will return the number of pending bytes for that LCID.
@@ -147,9 +161,24 @@ public:
   /// \return The number of DL pending bytes that are not already allocated in a DL HARQ.
   unsigned pending_dl_newtx_bytes(lcid_t lcid = lcid_t::INVALID_LCID) const;
 
+  /// \brief Computes the number of DL pending bytes in SRBs that are not already allocated in a DL
+  /// HARQ. The value is used to derive the required transport block size for an DL grant.
+  /// \return The number of DL pending bytes in SRBs that are not already allocated in a DL HARQ.
+  /// \remark Excludes SRB0 pending bytes.
+  unsigned pending_dl_srb_newtx_bytes() const;
+
   /// \brief Computes the number of UL pending bytes that are not already allocated in a UL HARQ. The value is used
   /// to derive the required transport block size for an UL grant.
   unsigned pending_ul_newtx_bytes() const;
+
+  /// \brief Computes the number of UL pending bytes for a LCG ID.
+  unsigned pending_ul_newtx_bytes(lcg_id_t lcg_id) const;
+
+  /// \brief Computes the number of UL pending bytes in SRBs. The value is used to derive the required transport block
+  /// size for an UL grant.
+  /// \return The number of UL pending bytes in SRBs.
+  /// \remark The returned UL pending bytes does not exclude already allocated bytes in UL HARQ(s).
+  unsigned pending_ul_srb_newtx_bytes() const;
 
   /// \brief Returns whether a SR indication handling is pending.
   bool has_pending_sr() const;
@@ -157,7 +186,9 @@ public:
   /// \brief Defines the list of subPDUs, including LCID and payload size, that will compose the transport block.
   /// \return Returns the number of bytes reserved in the TB for subPDUs (other than padding).
   /// \remark Excludes SRB0.
-  unsigned build_dl_transport_block_info(dl_msg_tb_info& tb_info, unsigned tb_size_bytes, lcid_t lcid = INVALID_LCID);
+  unsigned build_dl_transport_block_info(dl_msg_tb_info&                         tb_info,
+                                         unsigned                                tb_size_bytes,
+                                         const bounded_bitset<MAX_NOF_RB_LCIDS>& lcids);
 
   /// \brief Defines the list of subPDUs, including LCID and payload size, that will compose the transport block for
   /// SRB0 or for SRB1 in fallback mode.
@@ -166,19 +197,14 @@ public:
   unsigned build_dl_fallback_transport_block_info(dl_msg_tb_info& tb_info, unsigned tb_size_bytes);
 
 private:
-  /// Expert config parameters used for UE scheduler.
+  // Expert config parameters used for UE scheduler.
   const scheduler_ue_expert_config& expert_cfg;
-
-  /// Cell configuration. This is common to all UEs within the same cell.
+  // Cell configuration. This is common to all UEs within the same cell.
   const cell_configuration& cell_cfg_common;
-
-  /// Dedicated configuration for the UE.
+  // Dedicated configuration for the UE.
   const ue_configuration* ue_ded_cfg = nullptr;
-
-  /// Notifier used by HARQ processes to signal timeouts due to undetected HARQ ACKs/CRCs.
-  ue_harq_timeout_notifier harq_timeout_notif;
-
-  srslog::basic_logger& logger;
+  cell_harq_manager&      pcell_harq_pool;
+  srslog::basic_logger&   logger;
 
   /// List of UE cells indexed by \c du_cell_index_t. If an element is null, it means that the DU cell is not
   /// configured to be used by the UE.

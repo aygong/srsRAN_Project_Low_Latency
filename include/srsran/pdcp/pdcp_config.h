@@ -134,6 +134,7 @@ struct pdcp_custom_config_base {
 struct pdcp_custom_config_tx : public pdcp_custom_config_base {
   uint16_t rlc_sdu_queue = 4096;
   bool     warn_on_drop  = false;
+  bool     test_mode     = false;
 };
 
 struct pdcp_custom_config_rx : public pdcp_custom_config_base {
@@ -278,7 +279,7 @@ struct formatter<srsran::pdcp_rb_type> {
   template <typename FormatContext>
   auto format(srsran::pdcp_rb_type type, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
   {
-    constexpr static const char* options[] = {"SRB", "DRB"};
+    static constexpr const char* options[] = {"SRB", "DRB"};
     return format_to(ctx.out(), "{}", options[static_cast<unsigned>(type)]);
   }
 };
@@ -295,7 +296,7 @@ struct formatter<srsran::pdcp_rlc_mode> {
   template <typename FormatContext>
   auto format(srsran::pdcp_rlc_mode mode, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
   {
-    constexpr static const char* options[] = {"UM", "AM"};
+    static constexpr const char* options[] = {"UM", "AM"};
     return format_to(ctx.out(), "{}", options[static_cast<unsigned>(mode)]);
   }
 };
@@ -353,11 +354,12 @@ struct formatter<srsran::pdcp_custom_config_tx> {
   auto format(srsran::pdcp_custom_config_tx cfg, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
   {
     return format_to(ctx.out(),
-                     "count_notify={} count_max={} rlc_sdu_queue={} warn_on_drop={}",
+                     "count_notify={} count_max={} rlc_sdu_queue={} warn_on_drop={} test_mode={}",
                      cfg.max_count.notify,
                      cfg.max_count.hard,
                      cfg.rlc_sdu_queue,
-                     cfg.warn_on_drop);
+                     cfg.warn_on_drop,
+                     cfg.test_mode);
   }
 };
 

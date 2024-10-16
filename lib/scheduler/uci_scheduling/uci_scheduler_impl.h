@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "../cell/resource_grid_util.h"
 #include "../ue_scheduling/ue_repository.h"
 #include "uci_scheduler.h"
+#include "srsran/scheduler/resource_grid_util.h"
 
 namespace srsran {
 
@@ -37,8 +37,6 @@ class uci_scheduler_impl final : public uci_scheduler
 {
 public:
   explicit uci_scheduler_impl(const cell_configuration& cell_cfg_, uci_allocator& uci_alloc_, ue_repository& ues_);
-
-  ~uci_scheduler_impl() override;
 
   void run_slot(cell_resource_allocator& res_alloc) override;
 

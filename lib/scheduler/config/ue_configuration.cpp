@@ -27,7 +27,7 @@
 #include "../support/pdsch/pdsch_resource_allocation.h"
 #include "../support/pusch/pusch_default_time_allocation.h"
 #include "../support/pusch/pusch_resource_allocation.h"
-#include "srsran/support/math/gcd.h"
+#include "srsran/support/math_utils.h"
 #include <algorithm>
 
 using namespace srsran;
@@ -140,7 +140,7 @@ static dci_size_config get_dci_size_config(const ue_cell_configuration& ue_cell_
     dci_sz_cfg.report_trigger_size = opt_csi_meas_cfg.value().report_trigger_size.value();
   }
   dci_sz_cfg.frequency_hopping_configured = false;
-  dci_sz_cfg.tx_config_non_codebook       = false;
+  dci_sz_cfg.pusch_tx_scheme              = std::nullopt;
   dci_sz_cfg.ptrs_uplink_configured       = false;
   dci_sz_cfg.dynamic_beta_offsets         = false;
   dci_sz_cfg.transform_precoding_enabled  = false;
@@ -150,8 +150,7 @@ static dci_size_config get_dci_size_config(const ue_cell_configuration& ue_cell_
     const std::optional<srs_config>&                opt_srs_cfg      = opt_ul_cfg.value().init_ul_bwp.srs_cfg;
     const std::optional<pusch_serving_cell_config>& opt_pusch_sc_cfg = opt_ul_cfg.value().pusch_scell_cfg;
     if (opt_pusch_cfg.has_value()) {
-      dci_sz_cfg.tx_config_non_codebook = opt_pusch_cfg.value().tx_cfg != pusch_config::tx_config::not_set and
-                                          opt_pusch_cfg.value().tx_cfg == pusch_config::tx_config::non_codebook;
+      dci_sz_cfg.pusch_tx_scheme = opt_pusch_cfg->tx_cfg;
       if (opt_pusch_cfg.value().trans_precoder != pusch_config::transform_precoder::not_set) {
         dci_sz_cfg.transform_precoding_enabled =
             opt_pusch_cfg.value().trans_precoder == pusch_config::transform_precoder::enabled;
@@ -188,9 +187,6 @@ static dci_size_config get_dci_size_config(const ue_cell_configuration& ue_cell_
           break;
         }
       }
-      if (not dci_sz_cfg.tx_config_non_codebook and opt_pusch_cfg.value().max_rank.has_value()) {
-        dci_sz_cfg.max_rank = opt_pusch_cfg.value().max_rank.value();
-      }
       if (opt_pusch_cfg.value().pusch_mapping_type_a_dmrs.has_value()) {
         dci_sz_cfg.pusch_dmrs_A_type    = opt_pusch_cfg.value().pusch_mapping_type_a_dmrs.value().is_dmrs_type2
                                               ? dmrs_config_type::type2
@@ -209,50 +205,38 @@ static dci_size_config get_dci_size_config(const ue_cell_configuration& ue_cell_
       }
     }
     if (opt_srs_cfg.has_value()) {
-      const srs_config::srs_resource_set::usage usage = dci_sz_cfg.tx_config_non_codebook
-                                                            ? srs_config::srs_resource_set::usage::non_codebook
-                                                            : srs_config::srs_resource_set::usage::codebook;
+      // Deduce the SRS usage from the selected PUSCH transmission scheme.
+      const srs_usage usage = (dci_sz_cfg.pusch_tx_scheme.has_value() &&
+                               std::holds_alternative<tx_scheme_non_codebook>(dci_sz_cfg.pusch_tx_scheme.value()))
+                                  ? srs_usage::non_codebook
+                                  : srs_usage::codebook;
+
       // See TS 38.214, clause 6.1.1.1 and 6.1.1.2.
       const auto* srs_res_set = std::find_if(
-          opt_srs_cfg.value().srs_res_set.begin(),
-          opt_srs_cfg.value().srs_res_set.end(),
+          opt_srs_cfg.value().srs_res_set_list.begin(),
+          opt_srs_cfg.value().srs_res_set_list.end(),
           [usage](const srs_config::srs_resource_set& res_set) { return res_set.srs_res_set_usage == usage; });
-      srsran_assert(srs_res_set != opt_srs_cfg.value().srs_res_set.end(), "No valid SRS resource set found");
+      srsran_assert(srs_res_set != opt_srs_cfg.value().srs_res_set_list.end(), "No valid SRS resource set found");
       srsran_assert(not srs_res_set->srs_res_id_list.empty(), "No SRS resource configured in SRS resource set");
       // As per TS 38.214, clause 6.1.1.1, When multiple SRS resources are configured by SRS-ResourceSet with usage set
       // to 'codebook', the UE shall expect that higher layer parameters nrofSRS-Ports in SRS-Resource in
       // SRS-ResourceSet shall be configured with the same value for all these SRS resources.
       const auto  srs_resource_id = srs_res_set->srs_res_id_list.front();
-      const auto* srs_res =
-          std::find_if(opt_srs_cfg.value().srs_res.begin(),
-                       opt_srs_cfg.value().srs_res.end(),
-                       [srs_resource_id](const srs_config::srs_resource& res) { return res.id == srs_resource_id; });
-      srsran_assert(srs_res != opt_srs_cfg.value().srs_res.end(), "No valid SRS resource found");
-      if (not dci_sz_cfg.tx_config_non_codebook) {
+      const auto* srs_res         = std::find_if(
+          opt_srs_cfg.value().srs_res_list.begin(),
+          opt_srs_cfg.value().srs_res_list.end(),
+          [srs_resource_id](const srs_config::srs_resource& res) { return res.id.ue_res_id == srs_resource_id; });
+      srsran_assert(srs_res != opt_srs_cfg.value().srs_res_list.end(), "No valid SRS resource found");
+      if (usage == srs_usage::codebook) {
         dci_sz_cfg.nof_srs_ports = static_cast<unsigned>(srs_res->nof_ports);
       }
       dci_sz_cfg.nof_srs_resources = srs_res_set->srs_res_id_list.size();
     }
-    if (not dci_sz_cfg.tx_config_non_codebook and dci_sz_cfg.nof_srs_ports.has_value() and
-        dci_sz_cfg.nof_srs_ports.value() > 1) {
-      switch (opt_pusch_cfg.value().cb_subset) {
-        case pusch_config::codebook_subset::fully_and_partial_and_non_coherent:
-          dci_sz_cfg.cb_subset = tx_scheme_codebook_subset::fully_and_partial_and_non_coherent;
-          break;
-        case pusch_config::codebook_subset::partial_and_non_coherent:
-          dci_sz_cfg.cb_subset = tx_scheme_codebook_subset::partial_and_non_coherent;
-          break;
-        case pusch_config::codebook_subset::non_coherent:
-          dci_sz_cfg.cb_subset = tx_scheme_codebook_subset::non_coherent;
-          break;
-        default:
-          break;
-      }
-    }
     if (opt_pusch_sc_cfg.has_value() and opt_pusch_sc_cfg.value().cbg_tx.has_value()) {
       dci_sz_cfg.max_cbg_tb_pusch = static_cast<unsigned>(opt_pusch_sc_cfg.value().cbg_tx.value().max_cgb_per_tb);
     }
-    if (dci_sz_cfg.tx_config_non_codebook) {
+    if (opt_pusch_cfg->tx_cfg.has_value() &&
+        std::holds_alternative<tx_scheme_non_codebook>(opt_pusch_cfg->tx_cfg.value())) {
       // TODO: Set value based on maxMIMO-Layers config in PUSCH-ServingCellConfig or UE capability.
       dci_sz_cfg.pusch_max_layers = 1;
     }
@@ -525,8 +509,8 @@ static void generate_crnti_monitored_pdcch_candidates(bwp_info& bwp_cfg, rnti_t 
     for (const search_space_info* ss : bwp_cfg.search_spaces) {
       ss_periods.push_back(ss->cfg->get_monitoring_slot_periodicity());
     }
-    max_slot_periodicity = lcm<unsigned>(ss_periods);
-    max_slot_periodicity = lcm(max_slot_periodicity, slots_per_frame);
+    max_slot_periodicity = lcm<unsigned>(ss_periods.begin(), ss_periods.end());
+    max_slot_periodicity = std::lcm(max_slot_periodicity, slots_per_frame);
   }
 
   frame_pdcch_candidate_list candidates;
@@ -580,6 +564,20 @@ static void generate_crnti_monitored_pdcch_candidates(bwp_info& bwp_cfg, rnti_t 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+static void assert_dci_size_config(search_space_id ss_id, const dci_size_config& dci_sz_cfg)
+{
+  [[maybe_unused]] std::string error_msg;
+  [[maybe_unused]] auto        validate_dci_sz_cfg = [&dci_sz_cfg, &error_msg]() {
+    error_type<std::string> dci_size_valid = validate_dci_size_config(dci_sz_cfg);
+    bool                    is_success     = dci_size_valid.has_value();
+    if (!is_success) {
+      error_msg = dci_size_valid.error();
+    }
+    return is_success;
+  };
+  srsran_assert(validate_dci_sz_cfg(), "Invalid DCI size configuration for SearchSpace={}: {}", ss_id, error_msg);
+}
+
 ue_cell_configuration::ue_cell_configuration(rnti_t                     crnti_,
                                              const cell_configuration&  cell_cfg_common_,
                                              const serving_cell_config& serv_cell_cfg_,
@@ -631,9 +629,13 @@ void ue_cell_configuration::reconfigure(const serving_cell_config& cell_cfg_ded_
 
   // Compute DCI sizes
   for (search_space_info& ss : search_spaces) {
+    // Generate DCI size calculation parameters.
     ss.dci_sz_cfg = get_dci_size_config(*this, multi_cells_configured, ss.cfg->get_id());
-    srsran_assert(
-        validate_dci_size_config(ss.dci_sz_cfg), "Invalid DCI size configuration for SearchSpace={}", ss.cfg->get_id());
+
+    // Verify the DCI size configuration is valid.
+    assert_dci_size_config(ss.cfg->get_id(), ss.dci_sz_cfg);
+
+    // Calculate DCI sizes.
     ss.dci_sz = get_dci_sizes(ss.dci_sz_cfg);
   }
 
@@ -753,6 +755,13 @@ void ue_cell_configuration::configure_bwp_ded_cfg(bwp_id_t bwpid, const bwp_upli
   }
 }
 
+bool ue_cell_configuration::is_cfg_dedicated_complete() const
+{
+  return (cell_cfg_ded.init_dl_bwp.pdcch_cfg.has_value() and
+          not cell_cfg_ded.init_dl_bwp.pdcch_cfg->search_spaces.empty()) and
+         (cell_cfg_ded.ul_config.has_value() and cell_cfg_ded.ul_config->init_ul_bwp.pucch_cfg.has_value());
+}
+
 ue_configuration::ue_configuration(du_ue_index_t ue_index_, rnti_t crnti_) : ue_index(ue_index_), crnti(crnti_) {}
 
 ue_configuration::ue_configuration(du_ue_index_t                         ue_index_,
@@ -831,4 +840,15 @@ void ue_configuration::update(const cell_common_configuration_list& common_cells
       du_cells[ue_cell_to_du_cell_index[i]]->set_rrm_config(*cfg_req.res_alloc_cfg);
     }
   }
+}
+
+bool ue_configuration::is_ue_cfg_complete() const
+{
+  // [Implementation-defined] UE with only SRB0 configured is considered to not have complete UE configuration yet.
+  if ((lc_list.size() == 1 and lc_list.back().lcid == LCID_SRB0)) {
+    return false;
+  }
+  return std::any_of(du_cells.begin(), du_cells.end(), [](const auto& ue_cell_cfg) {
+    return ue_cell_cfg->is_cfg_dedicated_complete();
+  });
 }

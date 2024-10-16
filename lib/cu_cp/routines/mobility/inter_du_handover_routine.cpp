@@ -93,7 +93,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
     // Retrieve source UE context.
     source_ue          = ue_mng.find_du_ue(request.source_ue_index);
-    source_rrc_context = source_ue->get_rrc_ue_notifier().get_transfer_context();
+    source_rrc_context = source_ue->get_rrc_ue()->get_transfer_context();
     next_config        = to_config_update(source_rrc_context.up_ctx);
   }
 
@@ -101,7 +101,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
   {
     // Allocate UE index at target DU
-    target_ue_context_setup_request.ue_index = ue_mng.add_ue(request.target_du_index);
+    target_ue_context_setup_request.ue_index = ue_mng.add_ue(request.target_du_index, request.cgi.plmn_id);
     if (target_ue_context_setup_request.ue_index == ue_index_t::invalid) {
       logger.warning("ue={}: \"{}\" failed to allocate UE index at target DU", request.source_ue_index, name());
       CORO_EARLY_RETURN(response_msg);
@@ -109,7 +109,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
     // prepare F1AP UE Context Setup Command and call F1AP notifier of target DU
     if (!generate_ue_context_setup_request(
-            target_ue_context_setup_request, source_ue->get_rrc_ue_srb_notifier().get_srbs(), source_rrc_context)) {
+            target_ue_context_setup_request, source_ue->get_rrc_ue()->get_srbs(), source_rrc_context)) {
       logger.warning("ue={}: \"{}\" failed to generate UeContextSetupRequest", request.source_ue_index, name());
       CORO_EARLY_RETURN(response_msg);
     }
@@ -145,7 +145,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
 
   // Inform CU-UP about new DL tunnels.
   {
-    // get securtiy context of target UE
+    // get security context of target UE
     if (!target_ue->get_security_manager().is_security_context_initialized()) {
       logger.warning(
           "ue={}: \"{}\" failed. Cause: Security context not initialized", target_ue->get_ue_index(), name());
@@ -197,7 +197,7 @@ void inter_du_handover_routine::operator()(coro_context<async_task<cu_cp_inter_d
                                   {} /* No DRB to be removed */,
                                   target_ue_context_setup_response.du_to_cu_rrc_info,
                                   {} /* No NAS PDUs required */,
-                                  target_ue->get_rrc_ue_notifier().generate_meas_config(source_rrc_context.meas_cfg),
+                                  target_ue->get_rrc_ue()->generate_meas_config(source_rrc_context.meas_cfg),
                                   true, /* Reestablish SRBs */
                                   true /* Reestablish DRBs */,
                                   true, /* Update keys */
@@ -269,33 +269,34 @@ bool inter_du_handover_routine::generate_ue_context_setup_request(f1ap_ue_contex
     return false;
   }
   setup_request.cu_to_du_rrc_info.ie_exts.value().ho_prep_info = std::move(buffer_copy.value());
+  setup_request.cu_to_du_rrc_info.ue_cap_rat_container_list    = transfer_context.ue_cap_rat_container_list.copy();
 
   for (const auto& srb_id : srbs) {
-    f1ap_srbs_to_be_setup_mod_item srb_item;
+    f1ap_srb_to_setup srb_item;
     srb_item.srb_id = srb_id;
-    setup_request.srbs_to_be_setup_list.emplace(srb_item.srb_id, srb_item);
+    setup_request.srbs_to_be_setup_list.push_back(srb_item);
   }
 
   for (const auto& pdu_session : next_config.pdu_sessions_to_setup_list) {
     for (const auto& drb : pdu_session.second.drb_to_add) {
       const up_drb_context& drb_context = drb.second;
 
-      f1ap_drbs_to_be_setup_mod_item drb_item;
+      f1ap_drb_to_setup drb_item;
       drb_item.drb_id           = drb_context.drb_id;
       drb_item.qos_info.drb_qos = drb_context.qos_params;
 
       // Add each QoS flow including QoS.
       for (const auto& flow : drb_context.qos_flows) {
-        f1ap_flows_mapped_to_drb_item flow_item;
+        flow_mapped_to_drb flow_item;
         flow_item.qos_flow_id               = flow.first;
         flow_item.qos_flow_level_qos_params = flow.second.qos_params;
-        drb_item.qos_info.flows_mapped_to_drb_list.emplace(flow_item.qos_flow_id, flow_item);
+        drb_item.qos_info.flows_mapped_to_drb_list.push_back(flow_item);
       }
-      drb_item.ul_up_tnl_info_to_be_setup_list = drb_context.ul_up_tnl_info_to_be_setup_list;
-      drb_item.rlc_mod                         = drb_context.rlc_mod;
-      drb_item.pdcp_sn_len                     = drb_context.pdcp_cfg.tx.sn_size;
+      drb_item.uluptnl_info_list = drb_context.ul_up_tnl_info_to_be_setup_list;
+      drb_item.mode              = drb_context.rlc_mod;
+      drb_item.pdcp_sn_len       = drb_context.pdcp_cfg.tx.sn_size;
 
-      setup_request.drbs_to_be_setup_list.emplace(drb_item.drb_id, drb_item);
+      setup_request.drbs_to_be_setup_list.push_back(drb_item);
     }
   }
 
@@ -309,7 +310,7 @@ void inter_du_handover_routine::create_srb(cu_cp_ue* ue, srb_id_t srb_id)
   srb_msg.srb_id          = srb_id;
   srb_msg.enable_security = true;
   // TODO: add support for non-default PDCP config.
-  ue->get_rrc_ue_srb_notifier().create_srb(srb_msg);
+  ue->get_rrc_ue()->create_srb(srb_msg);
 }
 
 bool inter_du_handover_routine::add_security_context_to_bearer_context_modification(

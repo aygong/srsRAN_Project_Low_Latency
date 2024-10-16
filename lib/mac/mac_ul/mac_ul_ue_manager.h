@@ -22,12 +22,12 @@
 
 #pragma once
 
-#include "../../ran/gnb_format.h"
+#include "../rnti_value_table.h"
 #include "srsran/adt/slotted_array.h"
-#include "srsran/du_high/rnti_value_table.h"
 #include "srsran/mac/mac.h"
 #include "srsran/ran/du_types.h"
 #include "srsran/ran/du_ue_list.h"
+#include "srsran/srslog/logger.h"
 
 namespace srsran {
 
@@ -41,6 +41,9 @@ public:
 
   const du_ue_index_t ue_index = MAX_NOF_DU_UES;
   const rnti_t        rnti     = rnti_t::INVALID_RNTI;
+
+  /// Flag to indicate that a UE RRC configuration is pending.
+  bool rrc_config_pending = false;
 
   /// List of UL PDU notification endpoints associated to UE's logical channels.
   slotted_vector<mac_sdu_rx_notifier*> ul_bearers;
@@ -75,6 +78,8 @@ public:
     }
     return nullptr;
   }
+
+  void handle_ue_config_applied(du_ue_index_t ue_index);
 
 private:
   /// Arguments of UE manager.

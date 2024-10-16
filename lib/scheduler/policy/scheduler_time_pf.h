@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "../slicing/slice_ue_repository.h"
 #include "scheduler_policy.h"
 
 namespace srsran {
@@ -31,11 +32,15 @@ class scheduler_time_pf : public scheduler_policy
 public:
   scheduler_time_pf(const scheduler_ue_expert_config& expert_cfg_);
 
-  void
-  dl_sched(ue_pdsch_allocator& pdsch_alloc, const ue_resource_grid_view& res_grid, const ue_repository& ues) override;
+  void dl_sched(ue_pdsch_allocator&          pdsch_alloc,
+                const ue_resource_grid_view& res_grid,
+                dl_ran_slice_candidate&      slice_candidate,
+                dl_harq_pending_retx_list    harq_pending_retx_list) override;
 
-  void
-  ul_sched(ue_pusch_allocator& pusch_alloc, const ue_resource_grid_view& res_grid, const ue_repository& ues) override;
+  void ul_sched(ue_pusch_allocator&          pusch_alloc,
+                const ue_resource_grid_view& res_grid,
+                ul_ran_slice_candidate&      slice_candidate,
+                ul_harq_pending_retx_list    harq_pending_retx_list) override;
 
 private:
   /// Fairness parameters.
@@ -54,8 +59,8 @@ private:
     /// Returns average UL rate expressed in bytes per slot.
     [[nodiscard]] double ul_avg_rate() const { return ul_nof_samples == 0 ? 0 : ul_avg_rate_; }
 
-    void compute_dl_prio(const ue& u);
-    void compute_ul_prio(const ue& u, const ue_resource_grid_view& res_grid);
+    void compute_dl_prio(const slice_ue& u, ran_slice_id_t slice_id);
+    void compute_ul_prio(const slice_ue& u, const ue_resource_grid_view& res_grid, ran_slice_id_t slice_id);
 
     void save_dl_alloc(uint32_t alloc_bytes);
     void save_ul_alloc(uint32_t alloc_bytes);
@@ -69,10 +74,10 @@ private:
     /// UL priority value of the UE.
     double ul_prio = 0;
 
-    const dl_harq_process* dl_retx_h  = nullptr;
-    const dl_harq_process* dl_newtx_h = nullptr;
-    const ul_harq_process* ul_retx_h  = nullptr;
-    const ul_harq_process* ul_newtx_h = nullptr;
+    bool                                  has_empty_dl_harq = false;
+    bool                                  has_empty_ul_harq = false;
+    std::optional<dl_harq_process_handle> dl_retx_h;
+    std::optional<ul_harq_process_handle> ul_retx_h;
     /// Flag indicating whether SR indication from the UE is received or not.
     bool sr_ind_received = false;
 
@@ -88,11 +93,13 @@ private:
   };
 
   /// \brief Attempts to allocate PDSCH for a UE.
-  /// \return Returns allocation status and nof. allocated bytes.
-  alloc_result try_dl_alloc(ue_ctxt& ctxt, const ue_repository& ues, ue_pdsch_allocator& pdsch_alloc);
+  /// \return Returns allocation status, nof. allocated bytes and nof. allocated RBs.
+  alloc_result
+  try_dl_alloc(ue_ctxt& ctxt, const slice_ue_repository& ues, ue_pdsch_allocator& pdsch_alloc, unsigned max_rbs);
   /// \brief Attempts to allocate PUSCH for a UE.
-  /// \return Returns allocation status and nof. allocated bytes.
-  alloc_result try_ul_alloc(ue_ctxt& ctxt, const ue_repository& ues, ue_pusch_allocator& pusch_alloc);
+  /// \return Returns allocation status, nof. allocated bytes and nof. allocated RBs.
+  alloc_result
+  try_ul_alloc(ue_ctxt& ctxt, const slice_ue_repository& ues, ue_pusch_allocator& pusch_alloc, unsigned max_rbs);
 
   slotted_id_table<du_ue_index_t, ue_ctxt, MAX_NOF_DU_UES> ue_history_db;
 
@@ -121,7 +128,7 @@ private:
     // Adapter of the priority_queue push method to avoid adding candidates with skip priority level.
     void push(ue_ctxt* elem)
     {
-      if (elem->dl_retx_h == nullptr and elem->dl_newtx_h == nullptr) {
+      if (not elem->dl_retx_h.has_value() and not elem->has_empty_dl_harq) {
         return;
       }
       base_type::push(elem);
@@ -146,7 +153,7 @@ private:
     // Adapter of the priority_queue push method to avoid adding candidates with skip priority level.
     void push(ue_ctxt* elem)
     {
-      if (elem->ul_retx_h == nullptr and elem->ul_newtx_h == nullptr) {
+      if (not elem->ul_retx_h.has_value() and not elem->has_empty_ul_harq) {
         return;
       }
       base_type::push(elem);

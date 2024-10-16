@@ -30,10 +30,9 @@
 
 #include "srsran/adt/bit_buffer.h"
 #include "srsran/adt/span.h"
-#include "srsran/srsvec/detail/traits.h"
+#include "srsran/srsvec/type_traits.h"
 #include "srsran/support/srsran_assert.h"
 #include "fmt/format.h"
-
 #include <numeric>
 
 namespace srsran {
@@ -87,11 +86,7 @@ public:
   ///@}
 
   /// Default assignment operator.
-  constexpr log_likelihood_ratio& operator=(const log_likelihood_ratio& other)
-  {
-    value = other.value;
-    return *this;
-  }
+  constexpr log_likelihood_ratio& operator=(const log_likelihood_ratio& other) = default;
 
   /// Negation (additive inverse).
   constexpr log_likelihood_ratio operator-() const { return -value; }
@@ -184,7 +179,7 @@ public:
   template <typename T>
   static constexpr log_likelihood_ratio copysign(log_likelihood_ratio a, T b)
   {
-    static_assert(std::is_arithmetic<T>::value, "Template type is not an arithmetic type.");
+    static_assert(std::is_arithmetic_v<T>, "Template type is not an arithmetic type.");
     if (b < 0) {
       return -std::abs(a.value);
     }
@@ -267,8 +262,8 @@ struct is_llr_span_compatible : std::false_type {
 /// Checks if \c T is compatible with a span of log_likelihood_ratios.
 template <typename T>
 struct is_llr_span_compatible<T,
-                              std::enable_if_t<std::is_convertible<T, span<log_likelihood_ratio>>::value ||
-                                               std::is_convertible<T, span<const log_likelihood_ratio>>::value>>
+                              std::enable_if_t<std::is_convertible_v<T, span<log_likelihood_ratio>> ||
+                                               std::is_convertible_v<T, span<const log_likelihood_ratio>>>>
   : std::true_type {
   // Intentionally empty.
 };
@@ -294,7 +289,7 @@ template <typename T, typename U, typename V>
 V log_likelihood_ratio::dot_prod(const T& x, const U& y, V init)
 {
   static_assert(detail::is_llr_span_compatible<T>::value, "Template type is not compatible with a span of LLRs");
-  static_assert(srsvec::detail::is_arithmetic_span_compatible<U>::value,
+  static_assert(srsvec::is_arithmetic_span_compatible<U>::value,
                 "Template type is not compatible with a span of arithmetics");
   srsran_assert(x.size() == y.size(), "Input spans must have identical sizes: '{}' vs '{}'", x.size(), y.size());
   return std::inner_product(
@@ -302,6 +297,24 @@ V log_likelihood_ratio::dot_prod(const T& x, const U& y, V init)
         return a.to_int() * b.to_int();
       });
 }
+
+/// \brief Clamps the input values between a lower and higher bound.
+///
+/// The equivalent code is:
+/// \code
+/// std::transform(in.begin(), in.end(), out.begin(), [low, high](auto llr){
+///   return std::clamp(llr, low, high);
+/// });
+/// \endcode
+///
+/// \param[out] out  Resultant values.
+/// \param[in]  in   Input values to clamp.
+/// \param[in]  low  Lower bound to clamp to.
+/// \param[in]  high Higher bound to clamp to.
+void clamp(span<log_likelihood_ratio>       out,
+           span<const log_likelihood_ratio> in,
+           log_likelihood_ratio             low,
+           log_likelihood_ratio             high);
 
 /// \brief Squared Euclidean norm of a sequence of LLRs.
 ///

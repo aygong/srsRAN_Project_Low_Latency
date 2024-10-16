@@ -144,9 +144,7 @@ void benchmark_pdcp_tx(bench_params                  params,
   // Create PDCP entities
   std::unique_ptr<pdcp_entity_tx> pdcp_tx = std::make_unique<pdcp_entity_tx>(
       0, drb_id_t::drb1, config, frame, frame, timer_factory{timers, worker}, worker, worker);
-  pdcp_tx->configure_security(sec_cfg);
-  pdcp_tx->set_integrity_protection(int_enabled);
-  pdcp_tx->set_ciphering(ciph_enabled);
+  pdcp_tx->configure_security(sec_cfg, int_enabled, ciph_enabled);
 
   // Prepare SDU list for benchmark
   std::vector<byte_buffer> sdu_list  = {};
@@ -187,6 +185,8 @@ int run_benchmark(bench_params params, int algo)
 
   auto int_algo  = static_cast<security::integrity_algorithm>(algo);
   auto ciph_algo = static_cast<security::ciphering_algorithm>(algo);
+
+  init_byte_buffer_segment_pool(1048576, byte_buffer_segment_pool_default_segment_size());
 
   if (algo == 0) {
     benchmark_pdcp_tx(params,

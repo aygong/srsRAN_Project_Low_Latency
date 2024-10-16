@@ -31,6 +31,7 @@ namespace srsran {
 
 class resource_grid_mapper;
 
+/// PDCCH modulator implementation.
 class pdcch_modulator_impl : public pdcch_modulator
 {
 private:
@@ -73,7 +74,7 @@ private:
   /// \param[out] mapper   Provides the destination resource grid.
   /// \param[in] d_pdcch Provides the block of complex-valued symbols to map.
   /// \param[in] config  Provides the mapper configuration.
-  void map(resource_grid_mapper& mapper, const re_buffer_reader& d_pdcch, const config_t& config);
+  void map(resource_grid_mapper& mapper, const re_buffer_reader<>& d_pdcch, const config_t& config);
 
 public:
   // See interface for the documentation.

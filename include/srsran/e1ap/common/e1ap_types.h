@@ -39,7 +39,7 @@ namespace srsran {
 
 /// \brief GNB-CU-CP-UE-E1AP-ID used to identify the UE in the CU-CP E1AP.
 /// \remark See TS 38.463 Section 9.3.1.4: GNB-CU-UE-E1AP-ID valid values: (0..2^32-1)
-constexpr static uint64_t MAX_NOF_CU_CP_E1AP_UES = ((uint64_t)1 << 32);
+static constexpr uint64_t MAX_NOF_CU_CP_E1AP_UES = ((uint64_t)1 << 32);
 enum class gnb_cu_cp_ue_e1ap_id_t : uint64_t { min = 0, max = MAX_NOF_CU_CP_E1AP_UES - 1, invalid = 0x1ffffffff };
 
 constexpr uint64_t gnb_cu_cp_ue_e1ap_id_to_uint(gnb_cu_cp_ue_e1ap_id_t id)
@@ -55,7 +55,7 @@ constexpr gnb_cu_cp_ue_e1ap_id_t int_to_gnb_cu_cp_ue_e1ap_id(uint64_t idx)
 
 /// \brief GNB-CU-UP-UE-E1AP-ID used to identify the UE in the CU-UP E1AP.
 /// \remark See TS 38.473 Section 9.3.1.5: GNB-CU-UP-UE-E1AP-ID valid values: (0..2^32-1)
-constexpr static uint64_t MAX_NOF_CU_UP_E1AP_UES = ((uint64_t)1 << 32);
+static constexpr uint64_t MAX_NOF_CU_UP_E1AP_UES = ((uint64_t)1 << 32);
 enum class gnb_cu_up_ue_e1ap_id_t : uint64_t { min = 0, max = MAX_NOF_CU_CP_E1AP_UES - 1, invalid = 0x1ffffffff };
 
 constexpr uint64_t gnb_cu_up_ue_e1ap_id_to_uint(gnb_cu_up_ue_e1ap_id_t id)
@@ -76,12 +76,6 @@ struct e1ap_cell_group_info_item {
   std::optional<std::string> rat_type;
 };
 
-struct e1ap_ng_ran_alloc_and_retention_prio {
-  uint8_t     prio_level;
-  std::string pre_emption_cap;
-  std::string pre_emption_vulnerability;
-};
-
 struct e1ap_gbr_qos_flow_info {
   uint64_t                max_flow_bit_rate_dl;
   uint64_t                max_flow_bit_rate_ul;
@@ -92,8 +86,8 @@ struct e1ap_gbr_qos_flow_info {
 };
 
 struct e1ap_qos_flow_level_qos_params {
-  qos_characteristics_t                 qos_characteristics;
-  e1ap_ng_ran_alloc_and_retention_prio  ng_ran_alloc_retention_prio;
+  qos_characteristics                   qos_desc;
+  alloc_and_retention_priority          ng_ran_alloc_retention;
   std::optional<e1ap_gbr_qos_flow_info> gbr_qos_flow_info;
   std::optional<bool>                   reflective_qos_attribute;
   std::optional<bool>                   add_qos_info;

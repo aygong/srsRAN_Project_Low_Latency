@@ -56,7 +56,7 @@ _POD_ERROR = "Error creating the pod"
     ),
 )
 @mark.test_mode
-# pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def test_ue(
     # Retina
     retina_manager: RetinaTestManager,
@@ -92,11 +92,12 @@ def test_ue(
                     "gnb_id": 1,
                     "log_level": "warning",
                     "pcap": False,
+                    "nof_antennas_dl": nof_ant,
+                    "nof_antennas_ul": nof_ant,
                 },
                 "templates": {
                     "cu": str(Path(__file__).joinpath("../test_mode/config_ue.yml").resolve()),
                     "du": tmp_file.name,
-                    "ru": tmp_file.name,
                 },
             },
         }
@@ -127,9 +128,10 @@ def test_ue(
                 fivegc_definition=fivegc_def,
                 start_info=StartInfo(
                     timeout=gnb_startup_timeout,
-                    post_commands=f"cell_cfg --nof_antennas_dl {nof_ant} --nof_antennas_ul {nof_ant}"
-                    + " "
-                    + extra_config,
+                    post_commands=(
+                        "",
+                        extra_config,
+                    ),
                 ),
             )
         )
@@ -184,10 +186,10 @@ def test_ru_not_crash(
     Run gnb with sanitizers in test mode ru dummy.
     It ignores warnings and KOs, so it will fail if the gnb+sanitizer fails
     """
-    _test_ru(retina_manager, retina_data, gnb, warning_as_errors=False, fail_if_kos=False)
+    _test_ru(retina_manager, retina_data, gnb, gnb_stop_timeout=150, warning_as_errors=False, fail_if_kos=False)
 
 
-# pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def _test_ru(
     # Retina
     retina_manager: RetinaTestManager,
@@ -215,6 +217,8 @@ def _test_ru(
                     "gnb_id": 1,
                     "log_level": "warning",
                     "pcap": False,
+                    "nof_antennas_dl": nof_ant,
+                    "nof_antennas_ul": nof_ant,
                 },
                 "templates": {
                     "cu": str(Path(__file__).joinpath("../test_mode/config_ru.yml").resolve()),
@@ -241,7 +245,7 @@ def _test_ru(
                 fivegc_definition=FiveGCDefinition(amf_ip=gnb_def.zmq_ip, amf_port=38412),
                 start_info=StartInfo(
                     timeout=gnb_startup_timeout,
-                    post_commands="amf --no_core 1",
+                    post_commands=("cu_cp amf --no_core 1",),
                 ),
             )
         )

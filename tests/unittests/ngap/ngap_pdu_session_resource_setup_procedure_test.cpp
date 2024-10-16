@@ -124,7 +124,8 @@ TEST_F(ngap_pdu_session_resource_setup_procedure_test,
 
   // tick timers
   // Status: NGAP does not receive new PDU Session Resource Setup Request until pdu_session_setup_timer has ended.
-  for (unsigned msec_elapsed = 0; msec_elapsed < cfg.pdu_session_setup_timeout.count() * 1000; ++msec_elapsed) {
+  for (unsigned msec_elapsed = 0; msec_elapsed < cu_cp_cfg.ue.pdu_session_setup_timeout.count() * 1000;
+       ++msec_elapsed) {
     this->tick();
   }
 
@@ -147,7 +148,7 @@ TEST_F(ngap_pdu_session_resource_setup_procedure_test,
   auto& ue = test_ues.at(ue_index);
 
   ngap_message pdu_session_resource_setup_request = generate_valid_pdu_session_resource_setup_request_message(
-      ue.amf_ue_id.value(), ue.ran_ue_id.value(), pdu_session_id);
+      ue.amf_ue_id.value(), ue.ran_ue_id.value(), {{pdu_session_id, {{uint_to_qos_flow_id(1), 9}}}});
   ngap->handle_message(pdu_session_resource_setup_request);
 
   // Check conversion in adapter
@@ -182,14 +183,12 @@ TEST_F(ngap_pdu_session_resource_setup_procedure_test, when_security_not_enabled
   ue_index_t ue_index = this->start_procedure(false);
   auto&      ue       = test_ues.at(ue_index);
 
-  ue.rrc_ue_security_handler.set_security_enabled(false);
-
   // Inject PDU Session Resource Setup Request
   pdu_session_id_t pdu_session_id = uint_to_pdu_session_id(test_rgen::uniform_int<uint16_t>(
       pdu_session_id_to_uint(pdu_session_id_t::min), pdu_session_id_to_uint(pdu_session_id_t::max)));
 
   ngap_message pdu_session_resource_setup_request = generate_valid_pdu_session_resource_setup_request_message(
-      ue.amf_ue_id.value(), ue.ran_ue_id.value(), pdu_session_id);
+      ue.amf_ue_id.value(), ue.ran_ue_id.value(), {{pdu_session_id, {{uint_to_qos_flow_id(1), 9}}}});
   ngap->handle_message(pdu_session_resource_setup_request);
 
   // Check that Error Indication has been sent to AMF

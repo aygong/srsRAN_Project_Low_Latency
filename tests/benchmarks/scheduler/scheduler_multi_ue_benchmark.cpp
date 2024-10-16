@@ -20,13 +20,12 @@
  *
  */
 
-#include "lib/du_manager/ran_resource_management/du_pucch_resource_manager.h"
+#include "lib/du/du_high/du_manager/ran_resource_management/du_pucch_resource_manager.h"
 #include "scheduler_test_doubles.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "srsran/adt/circular_array.h"
 #include "srsran/scheduler/scheduler_factory.h"
 #include "srsran/support/benchmark_utils.h"
-#include "srsran/support/math/gcd.h"
 #include <getopt.h>
 
 using namespace srsran;
@@ -89,12 +88,12 @@ public:
     sch(create_scheduler(scheduler_config{expert_cfg, cfg_notif, metric_notif})),
     next_sl_tx(builder_params.scs_common, 0)
   {
-    du_cell_cfgs                                       = {config_helpers::make_default_du_cell_config(builder_params)};
-    du_cell_cfgs[0].pucch_cfg.f2_params.max_code_rate  = max_pucch_code_rate::dot_35;
-    du_cell_cfgs[0].pucch_cfg.nof_csi_resources        = 4;
-    du_cell_cfgs[0].pucch_cfg.nof_sr_resources         = 2;
-    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f1_res_harq = 3;
-    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f2_res_harq = 6;
+    du_cell_cfgs                                      = {config_helpers::make_default_du_cell_config(builder_params)};
+    du_cell_cfgs[0].pucch_cfg.f2_params.max_code_rate = max_pucch_code_rate::dot_35;
+    du_cell_cfgs[0].pucch_cfg.nof_csi_resources       = 4;
+    du_cell_cfgs[0].pucch_cfg.nof_sr_resources        = 2;
+    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f0_or_f1_res_harq = 3;
+    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f2_res_harq       = 6;
 
     sched_cell_configuration_request_message cell_cfg_msg =
         test_helpers::make_default_sched_cell_configuration_request(builder_params);
@@ -236,7 +235,7 @@ private:
   sched_dummy_metric_notifier                      metric_notif;
   scheduler_expert_config                          expert_cfg;
   cell_config_builder_params                       builder_params;
-  std::vector<du_cell_config>                      du_cell_cfgs;
+  std::vector<srs_du::du_cell_config>              du_cell_cfgs;
   srslog::basic_logger&                            logger;
   std::optional<srs_du::du_pucch_resource_manager> pucch_res_mng;
 
@@ -255,9 +254,9 @@ void benchmark_tdd(benchmarker& bm, const bench_params& params)
   sched_cfg.ue.max_pdcch_alloc_attempts_per_slot = params.max_dl_grants_per_slot;
 
   cell_config_builder_params builder_params{};
-  builder_params.dl_arfcn             = 520002;
+  builder_params.dl_f_ref_arfcn       = 520002;
   builder_params.band                 = nr_band::n41;
-  builder_params.channel_bw_mhz       = bs_channel_bandwidth_fr1::MHz100;
+  builder_params.channel_bw_mhz       = bs_channel_bandwidth::MHz100;
   builder_params.scs_common           = subcarrier_spacing::kHz30;
   builder_params.tdd_ul_dl_cfg_common = tdd_ul_dl_config_common{builder_params.scs_common, {10, 7, 8, 2, 0}};
   builder_params.nof_dl_ports         = 4;

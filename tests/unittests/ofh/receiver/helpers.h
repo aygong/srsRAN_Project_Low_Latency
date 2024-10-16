@@ -34,9 +34,9 @@ namespace testing {
 /// PRACH buffer dummy implementation.
 class prach_buffer_dummy : public prach_buffer
 {
-  unsigned                 nof_symbols;
-  static_vector<cf_t, 839> buffer;
-  mutable bool             symbol_out_of_bounds;
+  unsigned                    nof_symbols;
+  static_vector<cbf16_t, 839> buffer;
+  mutable bool                symbol_out_of_bounds;
 
 public:
   prach_buffer_dummy(unsigned nof_symbols_, bool long_format = true) :
@@ -54,12 +54,12 @@ public:
 
   unsigned get_sequence_length() const override { return buffer.size(); }
 
-  span<cf_t> get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) override
+  span<cbf16_t> get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) override
   {
     return buffer;
   }
 
-  span<const cf_t>
+  span<const cbf16_t>
   get_symbol(unsigned i_port, unsigned i_td_occasion, unsigned i_fd_occasion, unsigned i_symbol) const override
   {
     if (i_symbol >= nof_symbols) {
@@ -74,12 +74,23 @@ public:
 /// Spy implementation of the resource grid writer that returns if the functions were called.
 class resource_grid_writer_bool_spy : public resource_grid_writer
 {
-  bool     grid_written     = false;
-  unsigned nof_prbs_written = 0;
+  static inline const cbf16_t init_value{-1.0, +1.0};
+
+  bool                 grid_written     = false;
+  unsigned             nof_prbs_written = 0;
+  std::vector<cbf16_t> grid_data;
 
 public:
+  resource_grid_writer_bool_spy() = default;
+  explicit resource_grid_writer_bool_spy(unsigned nof_prbs) : grid_data(nof_prbs * NOF_SUBCARRIERS_PER_RB)
+  {
+    for (auto& sample : grid_data) {
+      sample = init_value;
+    }
+  }
+
   unsigned get_nof_ports() const override { return 1; };
-  unsigned get_nof_subc() const override { return 51 * NOF_SUBCARRIERS_PER_RB; };
+  unsigned get_nof_subc() const override { return grid_data.size(); };
   unsigned get_nof_symbols() const override { return MAX_NSYMB_PER_SLOT; };
 
   span<const cf_t> put(unsigned                                               port,
@@ -93,41 +104,53 @@ public:
     return {};
   }
 
+  span<const cbf16_t> put(unsigned                                               port,
+                          unsigned                                               l,
+                          unsigned                                               k_init,
+                          const bounded_bitset<NOF_SUBCARRIERS_PER_RB * MAX_RB>& mask,
+                          span<const cbf16_t>                                    symbols) override
+  {
+    grid_written = true;
+    nof_prbs_written += symbols.size() / NOF_SUBCARRIERS_PER_RB;
+    return {};
+  }
+
   void put(unsigned port, unsigned l, unsigned k_init, span<const cf_t> symbols) override
   {
     grid_written = true;
     nof_prbs_written += symbols.size() / NOF_SUBCARRIERS_PER_RB;
   }
 
-  void put(unsigned port, unsigned l, unsigned k_init, unsigned stride, span<const cf_t> symbols) override
+  void put(unsigned port, unsigned l, unsigned k_init, unsigned stride, span<const cbf16_t> symbols) override
   {
     grid_written = true;
     nof_prbs_written += divide_ceil(symbols.size() * stride, NOF_SUBCARRIERS_PER_RB);
+  }
+
+  span<cbf16_t> get_view(unsigned port, unsigned l) override
+  {
+    grid_written = true;
+    return grid_data;
   }
 
   /// Returns true if the gris has been written, otherise false.
   bool has_grid_been_written() const { return grid_written; }
 
   /// Returns the number of PRBs written.
-  unsigned get_nof_prbs_written() const { return nof_prbs_written; }
-};
-
-class resource_grid_dummy_with_spy_writer : public resource_grid
-{
-  resource_grid_writer_bool_spy& writer;
-  resource_grid_reader_spy       reader;
-  resource_grid_mapper_dummy     mapper;
-
-public:
-  explicit resource_grid_dummy_with_spy_writer(resource_grid_writer_bool_spy& writer_) :
-    writer(writer_), reader(1, 14, 51)
+  unsigned get_nof_prbs_written() const
   {
+    if (!nof_prbs_written && grid_written) {
+      // Check how many REs are storing a value different from the initial one.
+      unsigned written_re_count = 0;
+      for (auto sample : grid_data) {
+        if (sample != init_value) {
+          ++written_re_count;
+        }
+      }
+      return written_re_count / NOF_SUBCARRIERS_PER_RB;
+    }
+    return nof_prbs_written;
   }
-
-  void                        set_all_zero() override {}
-  resource_grid_writer&       get_writer() override { return writer; }
-  const resource_grid_reader& get_reader() const override { return reader; }
-  resource_grid_mapper&       get_mapper() override { return mapper; }
 };
 
 } // namespace testing

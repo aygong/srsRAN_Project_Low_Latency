@@ -33,7 +33,8 @@ using namespace srsran;
 /// Mocking class of the surrounding layers invoked by the RLC TM Tx entity.
 class rlc_tx_tm_test_frame : public rlc_tx_upper_layer_data_notifier,
                              public rlc_tx_upper_layer_control_notifier,
-                             public rlc_tx_lower_layer_notifier
+                             public rlc_tx_lower_layer_notifier,
+                             public rlc_metrics_notifier
 {
 public:
   std::queue<byte_buffer_slice> sdu_queue;
@@ -42,7 +43,7 @@ public:
   uint32_t                      bsr_count   = 0;
 
   // rlc_tx_upper_layer_data_notifier interface
-  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn) override {}
+  void on_transmitted_sdu(uint32_t max_tx_pdcp_sn, uint32_t desired_buf_size) override {}
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override {}
   void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override {}
   void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override {}
@@ -57,6 +58,9 @@ public:
     this->bsr = bsr_;
     this->bsr_count++;
   }
+
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 /// Fixture class for RLC TM Tx tests
@@ -78,6 +82,9 @@ protected:
     // Create test frame
     tester = std::make_unique<rlc_tx_tm_test_frame>();
 
+    metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+        gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{1000}, tester.get(), ue_worker);
+
     // Create RLC TM TX entity
     rlc = std::make_unique<rlc_tx_tm_entity>(gnb_du_id_t::min,
                                              du_ue_index_t::MIN_DU_UE_INDEX,
@@ -86,9 +93,11 @@ protected:
                                              *tester,
                                              *tester,
                                              *tester,
+                                             *metrics_agg,
+                                             pcap,
                                              pcell_worker,
-                                             true,
-                                             pcap);
+                                             ue_worker,
+                                             timers);
   }
 
   void TearDown() override
@@ -97,11 +106,14 @@ protected:
     srslog::flush();
   }
 
-  srslog::basic_logger&                 logger = srslog::fetch_basic_logger("TEST", false);
-  manual_task_worker                    pcell_worker{128};
-  std::unique_ptr<rlc_tx_tm_test_frame> tester;
-  null_rlc_pcap                         pcap;
-  std::unique_ptr<rlc_tx_tm_entity>     rlc;
+  srslog::basic_logger&                   logger = srslog::fetch_basic_logger("TEST", false);
+  timer_manager                           timers;
+  manual_task_worker                      pcell_worker{128};
+  manual_task_worker                      ue_worker{128};
+  std::unique_ptr<rlc_tx_tm_test_frame>   tester;
+  null_rlc_pcap                           pcap;
+  std::unique_ptr<rlc_tx_tm_entity>       rlc;
+  std::unique_ptr<rlc_metrics_aggregator> metrics_agg;
 };
 
 TEST_F(rlc_tx_tm_test, create_new_entity)
@@ -118,7 +130,8 @@ TEST_F(rlc_tx_tm_test, test_tx)
 
   EXPECT_EQ(rlc->get_buffer_state(), 0);
 
-  byte_buffer sdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
+  byte_buffer sdu_buf =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
 
   // write SDU into upper end
   rlc->handle_sdu(sdu_buf.deep_copy().value(), false); // keep local copy for later comparison
@@ -151,7 +164,7 @@ TEST_F(rlc_tx_tm_test, test_tx)
 
   // write another SDU into upper end
   count++;
-  sdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
+  sdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
 
   rlc->handle_sdu(sdu_buf.deep_copy().value(), false); // keep local copy for later comparison
   pcell_worker.run_pending_tasks();
@@ -171,7 +184,8 @@ TEST_F(rlc_tx_tm_test, test_tx)
 
   // write another SDU into upper end
   count++;
-  byte_buffer sdu_buf2 = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
+  byte_buffer sdu_buf2 =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
 
   // write SDU into upper end
   rlc->handle_sdu(sdu_buf2.deep_copy().value(), false); // keep local copy for later comparison
@@ -210,7 +224,8 @@ TEST_F(rlc_tx_tm_test, discard_sdu_increments_discard_failure_counter)
 
   EXPECT_EQ(rlc->get_buffer_state(), 0);
 
-  byte_buffer sdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
+  byte_buffer sdu_buf =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
 
   // write SDU into upper end
   rlc->handle_sdu(sdu_buf.deep_copy().value(), false); // keep local copy for later comparison
@@ -224,8 +239,8 @@ TEST_F(rlc_tx_tm_test, discard_sdu_increments_discard_failure_counter)
   pcell_worker.run_pending_tasks();
   EXPECT_EQ(tester->bsr, sdu_size);
   EXPECT_EQ(tester->bsr_count, 1);
-  EXPECT_EQ(rlc->get_metrics().num_discarded_sdus, 0);
-  EXPECT_EQ(rlc->get_metrics().num_discard_failures, 1);
+  EXPECT_EQ(rlc->get_metrics().tx_high.num_discarded_sdus, 0);
+  EXPECT_EQ(rlc->get_metrics().tx_high.num_discard_failures, 1);
 
   // read PDU from lower end
   std::vector<uint8_t> tx_pdu(sdu_size);
@@ -247,7 +262,8 @@ TEST_F(rlc_tx_tm_test, test_tx_metrics)
 
   EXPECT_EQ(rlc->get_buffer_state(), 0);
 
-  byte_buffer sdu_buf = test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, count, sdu_size, count);
+  byte_buffer sdu_buf =
+      test_helpers::create_pdcp_pdu(pdcp_sn_size::size12bits, /* is_srb = */ true, count, sdu_size, count);
 
   // write SDU into upper end
   rlc->handle_sdu(sdu_buf.deep_copy().value(), false); // keep local copy for later comparison
@@ -263,8 +279,8 @@ TEST_F(rlc_tx_tm_test, test_tx_metrics)
       byte_buffer_chain::create(byte_buffer_slice::create(span<uint8_t>(tx_pdu.data(), nwritten)).value()).value();
 
   rlc_tx_metrics m = rlc->get_metrics();
-  ASSERT_EQ(m.mode, rlc_mode::tm);
-  ASSERT_EQ(m.mode_specific.tm.num_small_allocs, 1);
+  ASSERT_EQ(m.tx_low.mode, rlc_mode::tm);
+  ASSERT_EQ(m.tx_low.mode_specific.tm.num_small_allocs, 1);
 }
 
 int main(int argc, char** argv)

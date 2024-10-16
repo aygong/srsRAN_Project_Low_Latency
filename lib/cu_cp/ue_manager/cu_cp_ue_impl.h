@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "../adapters/cu_cp_adapters.h"
 #include "../adapters/ngap_adapters.h"
 #include "../adapters/rrc_ue_adapters.h"
 #include "../cell_meas_manager/measurement_context.h"
@@ -30,6 +29,7 @@
 #include "../up_resource_manager/up_resource_manager_impl.h"
 #include "cu_cp_ue_impl_interface.h"
 #include "ue_task_scheduler_impl.h"
+#include "srsran/ran/plmn_identity.h"
 #include <optional>
 #include <unordered_map>
 
@@ -39,10 +39,11 @@ namespace srs_cu_cp {
 
 /// \brief Context of a CU-CP UE.
 struct cu_cp_ue_context {
-  du_index_t  du_idx   = du_index_t::invalid;
-  gnb_du_id_t du_id    = gnb_du_id_t::invalid;
-  ue_index_t  ue_index = ue_index_t::invalid;
-  rnti_t      crnti    = rnti_t::INVALID_RNTI;
+  du_index_t    du_idx   = du_index_t::invalid;
+  plmn_identity plmn     = plmn_identity::test_value();
+  gnb_du_id_t   du_id    = gnb_du_id_t::invalid;
+  ue_index_t    ue_index = ue_index_t::invalid;
+  rnti_t        crnti    = rnti_t::INVALID_RNTI;
   /// \brief Flag to disable new UE reconfigurations. This can be used, for instance, to reconfigure UE contexts
   /// that are in the process of handover.
   bool reconfiguration_disabled = false;
@@ -56,6 +57,7 @@ public:
            const up_resource_manager_cfg& up_cfg,
            const security_manager_config& sec_cfg,
            ue_task_scheduler_impl         task_sched_,
+           plmn_identity                  plmn_,
            std::optional<gnb_du_id_t>     du_id_       = std::nullopt,
            std::optional<pci_t>           pci_         = std::nullopt,
            std::optional<rnti_t>          c_rnti_      = std::nullopt,
@@ -109,31 +111,17 @@ public:
   /// \return True if the DU UE context is created, false otherwise.
   [[nodiscard]] bool du_ue_created() const { return ue_ctxt.du_idx != du_index_t::invalid; }
 
-  /// \brief Set the RRC UE control message notifier of the UE.
-  /// \param[in] rrc_ue_notifier_ RRC UE control message notifier of the UE.
-  void set_rrc_ue_notifier(du_processor_rrc_ue_control_message_notifier& rrc_ue_notifier_);
+  /// \brief Set the RRC UE of the UE.
+  void set_rrc_ue(rrc_ue_interface& rrc_ue_);
 
-  /// \brief Set the RRC UE SRB notifier of the UE.
-  /// \param[in] rrc_ue_srb_notifier_ RRC UE SRB control notifier of the UE.
-  void set_rrc_ue_srb_notifier(du_processor_rrc_ue_srb_control_notifier& rrc_ue_srb_notifier_);
-
-  /// \brief Get the RRC UE PDU notifier of the UE.
-  ngap_rrc_ue_pdu_notifier& get_rrc_ue_pdu_notifier() override;
-
-  /// \brief Get the RRC UE control notifier of the UE.
-  ngap_rrc_ue_control_notifier& get_rrc_ue_control_notifier() override;
+  /// \brief Get the RRC UE notifier of the UE.
+  ngap_rrc_ue_notifier& get_ngap_rrc_ue_notifier() override;
 
   /// \brief Get the NGAP CU-CP UE notifier of the UE.
   ngap_cu_cp_ue_notifier& get_ngap_cu_cp_ue_notifier() { return ngap_cu_cp_ue_ev_notifier; }
 
   /// \brief Get the RRC UE CU-CP UE notifier of the UE.
   rrc_ue_cu_cp_ue_notifier& get_rrc_ue_cu_cp_ue_notifier() { return rrc_ue_cu_cp_ue_ev_notifier; }
-
-  /// \brief Get the RRC UE control message notifier of the UE.
-  du_processor_rrc_ue_control_message_notifier& get_rrc_ue_notifier();
-
-  /// \brief Get the RRC UE SRB control notifier of the UE.
-  du_processor_rrc_ue_srb_control_notifier& get_rrc_ue_srb_notifier();
 
   rrc_ue_context_update_notifier& get_rrc_ue_context_update_notifier() { return rrc_ue_cu_cp_ev_notifier; }
 
@@ -143,11 +131,14 @@ public:
   /// \brief Get the NGAP to RRC UE adapter of the UE.
   ngap_rrc_ue_adapter& get_ngap_rrc_ue_adapter() { return ngap_rrc_ue_ev_notifier; }
 
-  /// \brief Get the CU-CP to RRC UE adapter of the UE.
-  cu_cp_rrc_ue_adapter& get_cu_cp_rrc_ue_adapter() { return cu_cp_rrc_ue_ev_notifier; }
+  /// \brief Get the RRC UE to NGAP adapter of the UE.
+  rrc_ue_ngap_adapter& get_rrc_ue_ngap_adapter() { return rrc_ue_ngap_ev_notifier; }
 
   /// \brief Get the RRC to CU-CP adapter of the UE.
   rrc_ue_cu_cp_adapter& get_rrc_ue_cu_cp_adapter() { return rrc_ue_cu_cp_ev_notifier; }
+
+  /// \brief Get the RRC UE of the UE.
+  rrc_ue_interface* get_rrc_ue() { return rrc_ue; }
 
 private:
   // common context
@@ -161,16 +152,17 @@ private:
   du_cell_index_t  pcell_index = du_cell_index_t::invalid;
   pci_t            pci         = INVALID_PCI;
 
-  rrc_ue_cu_cp_ue_adapter                       rrc_ue_cu_cp_ue_ev_notifier;
-  du_processor_rrc_ue_control_message_notifier* rrc_ue_notifier     = nullptr;
-  du_processor_rrc_ue_srb_control_notifier*     rrc_ue_srb_notifier = nullptr;
+  rrc_ue_cu_cp_ue_adapter rrc_ue_cu_cp_ue_ev_notifier;
+
+  // rrc ue
+  rrc_ue_interface*   rrc_ue = nullptr;
+  rrc_ue_ngap_adapter rrc_ue_ngap_ev_notifier;
 
   // ngap ue context
   ngap_cu_cp_ue_adapter ngap_cu_cp_ue_ev_notifier;
   ngap_rrc_ue_adapter   ngap_rrc_ue_ev_notifier;
 
   // cu-cp ue context
-  cu_cp_rrc_ue_adapter         cu_cp_rrc_ue_ev_notifier;
   rrc_ue_cu_cp_adapter         rrc_ue_cu_cp_ev_notifier;
   cell_meas_manager_ue_context meas_context;
 };

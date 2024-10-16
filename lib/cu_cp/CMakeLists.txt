@@ -29,6 +29,7 @@ set(SOURCES
       cu_cp_controller/cu_cp_controller.cpp
       cu_cp_controller/amf_connection_manager.cpp
       cu_cp_controller/du_connection_manager.cpp
+      cu_cp_controller/cu_up_connection_manager.cpp
       cu_up_processor/cu_up_processor_impl.cpp
       cu_up_processor/cu_up_processor_factory.cpp
       cu_up_processor/cu_up_processor_repository.cpp
@@ -37,8 +38,10 @@ set(SOURCES
       du_processor/du_processor_factory.cpp
       du_processor/du_processor_repository.cpp
       metrics_handler/metrics_handler_impl.cpp
-      routine_managers/cu_cp_routine_manager.cpp
+      ngap_repository.cpp
       routines/amf_connection_setup_routine.cpp
+      routines/amf_connection_removal_routine.cpp
+      routines/initial_context_setup_routine.cpp
       routines/pdu_session_routine_helpers.cpp
       routines/pdu_session_resource_setup_routine.cpp
       routines/pdu_session_resource_release_routine.cpp
@@ -57,6 +60,7 @@ set(SOURCES
       ue_manager/cu_cp_ue_impl.cpp
       ue_manager/ue_manager_impl.cpp
       ue_manager/ue_task_scheduler_impl.cpp
+      paging/paging_message_handler.cpp
 )
 
 add_library(srsran_cu_cp STATIC ${SOURCES})
@@ -72,4 +76,9 @@ target_link_libraries(srsran_cu_cp
         srsran_ran
         srslog
         srsran_support
-        srsran_security)
+        srsran_security
+        srsran_e2
+        ${CMAKE_DL_LIBS}
+)
+
+add_to_exported_libs(srsran_cu_cp)

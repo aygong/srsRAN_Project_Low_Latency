@@ -36,10 +36,10 @@ rrc_reestablishment_procedure::rrc_reestablishment_procedure(
     const byte_buffer&                       du_to_cu_container_,
     rrc_ue_setup_proc_notifier&              rrc_ue_setup_notifier_,
     rrc_ue_reestablishment_proc_notifier&    rrc_ue_reest_notifier_,
-    rrc_ue_srb_handler&                      srb_notifier_,
+    rrc_ue_control_message_handler&          srb_notifier_,
     rrc_ue_context_update_notifier&          cu_cp_notifier_,
     rrc_ue_cu_cp_ue_notifier&                cu_cp_ue_notifier_,
-    rrc_ue_nas_notifier&                     nas_notifier_,
+    rrc_ue_ngap_notifier&                    ngap_notifier_,
     rrc_ue_event_manager&                    event_mng_,
     rrc_ue_logger&                           logger_) :
   reestablishment_request(request_),
@@ -50,7 +50,7 @@ rrc_reestablishment_procedure::rrc_reestablishment_procedure(
   srb_notifier(srb_notifier_),
   cu_cp_notifier(cu_cp_notifier_),
   cu_cp_ue_notifier(cu_cp_ue_notifier_),
-  nas_notifier(nas_notifier_),
+  ngap_notifier(ngap_notifier_),
   event_mng(event_mng_),
   logger(logger_)
 {
@@ -122,7 +122,7 @@ void rrc_reestablishment_procedure::operator()(coro_context<async_task<void>>& c
     logger.log_warning("\"{}\" for old_ue={} timed out after {}ms",
                        name(),
                        old_ue_reest_context.ue_index,
-                       context.cfg.rrc_procedure_timeout_ms);
+                       context.cfg.rrc_procedure_timeout_ms.count());
     logger.log_debug("\"{}\" for old_ue={} failed", name(), old_ue_reest_context.ue_index);
   }
 
@@ -143,7 +143,7 @@ async_task<void> rrc_reestablishment_procedure::handle_rrc_reestablishment_fallb
 
     // Reject RRC Reestablishment Request by sending RRC Setup
     CORO_AWAIT(launch_async<rrc_setup_procedure>(
-        context, du_to_cu_container, rrc_ue_setup_notifier, srb_notifier, nas_notifier, event_mng, logger));
+        context, du_to_cu_container, rrc_ue_setup_notifier, srb_notifier, ngap_notifier, event_mng, logger));
 
     if (old_ue_reest_context.ue_index != ue_index_t::invalid and !old_ue_reest_context.old_ue_fully_attached) {
       // The UE exists but still has not established an SRB2 and DRB. Request the release of the old UE.
@@ -237,8 +237,8 @@ bool rrc_reestablishment_procedure::verify_security_context()
 void rrc_reestablishment_procedure::transfer_reestablishment_context_and_update_keys()
 {
   // store capabilities if available
-  if (old_ue_reest_context.capabilities.has_value()) {
-    context.capabilities = old_ue_reest_context.capabilities.value();
+  if (old_ue_reest_context.capabilities_list.has_value()) {
+    context.capabilities_list = old_ue_reest_context.capabilities_list.value();
   }
 
   // Transfer UP context from old UE
@@ -249,7 +249,7 @@ void rrc_reestablishment_procedure::transfer_reestablishment_context_and_update_
   uint32_t ssb_arfcn = context.cfg.meas_timings.begin()->freq_and_timing.value().carrier_freq;
   cu_cp_ue_notifier.update_security_context(old_ue_reest_context.sec_context);
   cu_cp_ue_notifier.perform_horizontal_key_derivation(context.cell.pci, ssb_arfcn);
-  logger.log_debug("Refreshed keys horizontally. pci={} ssb-arfcn={}", context.cell.pci, ssb_arfcn);
+  logger.log_debug("Refreshed keys horizontally. pci={} ssb-arfcn_f_ref={}", context.cell.pci, ssb_arfcn);
 }
 
 void rrc_reestablishment_procedure::create_srb1()

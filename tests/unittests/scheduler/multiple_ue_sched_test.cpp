@@ -130,10 +130,13 @@ protected:
     test_logger.set_context(current_slot.sfn(), current_slot.slot_index());
     bench->sched_res = &bench->sch.slot_indication(current_slot, to_du_cell_index(0));
 
-    pucch_builder_params pucch_basic_params{
-        .nof_ue_pucch_f1_res_harq = 8, .nof_ue_pucch_f2_res_harq = 8, .nof_sr_resources = 8, .nof_csi_resources = 8};
-    pucch_basic_params.f1_params.nof_cyc_shifts = srsran::nof_cyclic_shifts::twelve;
-    pucch_basic_params.f1_params.occ_supported  = true;
+    srs_du::pucch_builder_params pucch_basic_params{.nof_ue_pucch_f0_or_f1_res_harq = 8,
+                                                    .nof_ue_pucch_f2_res_harq       = 8,
+                                                    .nof_sr_resources               = 8,
+                                                    .nof_csi_resources              = 8};
+    auto&                        f1_params = pucch_basic_params.f0_or_f1_params.emplace<srs_du::pucch_f1_params>();
+    f1_params.nof_cyc_shifts               = srs_du::nof_cyclic_shifts::twelve;
+    f1_params.occ_supported                = true;
     pucch_cfg_builder.setup(bench->cell_cfg, pucch_basic_params);
   }
 
@@ -199,10 +202,10 @@ protected:
     cell_config_builder_params cell_cfg{};
     if (mode == duplex_mode::TDD) {
       // Band 40.
-      cell_cfg.dl_arfcn       = 474000;
+      cell_cfg.dl_f_ref_arfcn = 474000;
       cell_cfg.scs_common     = srsran::subcarrier_spacing::kHz30;
-      cell_cfg.band           = band_helper::get_band_from_dl_arfcn(cell_cfg.dl_arfcn);
-      cell_cfg.channel_bw_mhz = bs_channel_bandwidth_fr1::MHz20;
+      cell_cfg.band           = band_helper::get_band_from_dl_arfcn(cell_cfg.dl_f_ref_arfcn);
+      cell_cfg.channel_bw_mhz = bs_channel_bandwidth::MHz20;
 
       const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(
           cell_cfg.channel_bw_mhz,
@@ -210,7 +213,7 @@ protected:
           cell_cfg.band.has_value() ? band_helper::get_freq_range(cell_cfg.band.value()) : frequency_range::FR1);
 
       std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-          band_helper::get_ssb_coreset0_freq_location(cell_cfg.dl_arfcn,
+          band_helper::get_ssb_coreset0_freq_location(cell_cfg.dl_f_ref_arfcn,
                                                       *cell_cfg.band,
                                                       nof_crbs,
                                                       cell_cfg.scs_common,
@@ -749,11 +752,11 @@ TEST_P(multiple_ue_sched_tester, when_scheduling_multiple_ue_in_small_bw_neither
 
   // Make custom cell configuration for TDD and FDD i.e. 10 Mhz for TDD and 5Mhz for FDD.
   auto builder_params           = create_custom_cell_cfg_builder_params(params.duplx_mode);
-  builder_params.channel_bw_mhz = bs_channel_bandwidth_fr1::MHz5;
+  builder_params.channel_bw_mhz = bs_channel_bandwidth::MHz5;
   if (params.duplx_mode == duplex_mode::TDD) {
-    builder_params.channel_bw_mhz = srsran::bs_channel_bandwidth_fr1::MHz10;
+    builder_params.channel_bw_mhz = srsran::bs_channel_bandwidth::MHz10;
   }
-  builder_params.band = band_helper::get_band_from_dl_arfcn(builder_params.dl_arfcn);
+  builder_params.band = band_helper::get_band_from_dl_arfcn(builder_params.dl_f_ref_arfcn);
 
   const unsigned nof_crbs = band_helper::get_n_rbs_from_bw(
       builder_params.channel_bw_mhz,
@@ -762,7 +765,7 @@ TEST_P(multiple_ue_sched_tester, when_scheduling_multiple_ue_in_small_bw_neither
                                       : frequency_range::FR1);
 
   std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-      band_helper::get_ssb_coreset0_freq_location(builder_params.dl_arfcn,
+      band_helper::get_ssb_coreset0_freq_location(builder_params.dl_f_ref_arfcn,
                                                   *builder_params.band,
                                                   nof_crbs,
                                                   builder_params.scs_common,
@@ -1275,6 +1278,38 @@ TEST_F(single_ue_sched_tester, srb0_retransmission_not_scheduled_if_csi_rs_is_pr
     ASSERT_FALSE(is_csi_muplxed_with_srb0_retx_pdsch)
         << fmt::format("CSI-RS being multiplexed with SRB0 retransmission");
   }
+}
+
+TEST_F(single_ue_sched_tester, test_ue_scheduling_with_empty_spcell_cfg)
+{
+  setup_sched(create_expert_config(10), create_custom_cell_config_request(srsran::duplex_mode::TDD));
+  // Add UE.
+  const auto& cell_cfg_params        = create_custom_cell_cfg_builder_params(srsran::duplex_mode::TDD);
+  auto        ue_creation_req        = test_helpers::create_empty_spcell_cfg_sched_ue_creation_request(cell_cfg_params);
+  ue_creation_req.starts_in_fallback = true;
+
+  ue_creation_req.ue_index = to_du_ue_index(0);
+  ue_creation_req.crnti    = to_rnti(allocate_rnti());
+  bench->sch.handle_ue_creation_request(ue_creation_req);
+  bench->ues[ue_creation_req.ue_index] = sched_test_ue{ue_creation_req.crnti, {}, {}, ue_creation_req};
+
+  run_slot();
+
+  // Push DL buffer status indication.
+  push_buffer_state_to_dl_ue(to_du_ue_index(0), 100, LCID_SRB0);
+
+  bool successfully_scheduled_srb0_bytes = false;
+  for (unsigned i = 0; i != 20; ++i) {
+    run_slot();
+    auto&       test_ue = get_ue(to_du_ue_index(0));
+    const auto* grant   = find_ue_pdsch(test_ue);
+    if (grant != nullptr) {
+      successfully_scheduled_srb0_bytes = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(successfully_scheduled_srb0_bytes)
+      << fmt::format("SRB0 not scheduled for UE with empty SpCell configuration");
 }
 
 // Dummy function overload of template <typename T> void testing::internal::PrintTo(const T& value, ::std::ostream* os).

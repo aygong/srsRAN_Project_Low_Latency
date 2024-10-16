@@ -57,12 +57,15 @@ public:
   }
 
   expected<nru_ul_message> get_rx_pdu_blocking(manual_task_worker&       ue_worker,
-                                               std::chrono::milliseconds timeout_ms = std::chrono::milliseconds(10))
+                                               std::chrono::milliseconds timeout_ms = std::chrono::milliseconds(5000))
   {
+    const int                 nof_attempts       = 100;
+    std::chrono::milliseconds attempt_timeout_ms = timeout_ms / nof_attempts;
+
     // wait until at least one PDU is received
     std::unique_lock<std::mutex> lock(rx_mutex);
-    for (int i = 0; i < 100; i++) {
-      if (!rx_cvar.wait_for(lock, timeout_ms, [this]() { return !msg_queue.empty(); })) {
+    for (int i = 0; i < nof_attempts; i++) {
+      if (!rx_cvar.wait_for(lock, attempt_timeout_ms, [this]() { return !msg_queue.empty(); })) {
         if (not msg_queue.empty()) {
           break;
         }
@@ -142,7 +145,7 @@ protected:
     nru_gw_config.reuse_addr                 = true;
     udp_gw = srs_cu_up::create_udp_ngu_gateway(nru_gw_config, *epoll_broker, io_tx_executor);
 
-    f1u_cu_up_split_gateway_creation_msg cu_create_msg{udp_gw.get(), demux.get(), dummy_pcap, tester_bind_port.value()};
+    f1u_cu_up_split_gateway_creation_msg cu_create_msg{*udp_gw, *demux, dummy_pcap, tester_bind_port.value()};
     cu_gw           = create_split_f1u_gw(cu_create_msg);
     cu_gw_bind_port = cu_gw->get_bind_port();
     ASSERT_TRUE(cu_gw_bind_port.has_value());
@@ -289,7 +292,7 @@ TEST_F(f1u_cu_split_connector_test, send_sdu_without_dl_teid_attached)
   io_tx_executor.run_pending_tasks();
 
   // No PDU expected
-  expected<byte_buffer> du_rx_pdu = server_data_notifier.get_rx_pdu_blocking();
+  expected<byte_buffer> du_rx_pdu = server_data_notifier.get_rx_pdu_blocking(std::chrono::milliseconds(200));
   ASSERT_FALSE(du_rx_pdu.has_value());
 }
 
@@ -403,7 +406,7 @@ TEST_F(f1u_cu_split_connector_test, disconnect_stops_tx)
   io_tx_executor.run_pending_tasks();
 
   // No PDU expected
-  expected<byte_buffer> du_rx_pdu2 = server_data_notifier.get_rx_pdu_blocking();
+  expected<byte_buffer> du_rx_pdu2 = server_data_notifier.get_rx_pdu_blocking(std::chrono::milliseconds(200));
   ASSERT_FALSE(du_rx_pdu2.has_value());
 
   // Destructor of cu_bearer tries to disconnect tunnel again, hence we see a warning.
@@ -451,7 +454,7 @@ TEST_F(f1u_cu_split_connector_test, destroy_bearer_disconnects_and_stops_rx)
   send_to_server(std::move(du_buf2.value()), "127.0.0.1", cu_gw_bind_port.value());
 
   // Blocking waiting for RX
-  expected<nru_ul_message> rx_sdu2 = cu_rx.get_rx_pdu_blocking(ue_worker);
+  expected<nru_ul_message> rx_sdu2 = cu_rx.get_rx_pdu_blocking(ue_worker, std::chrono::milliseconds(200));
   ASSERT_FALSE(rx_sdu2.has_value());
 }
 

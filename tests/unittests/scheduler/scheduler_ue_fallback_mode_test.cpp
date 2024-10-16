@@ -38,15 +38,15 @@ public:
     scheduler_test_bench(4, duplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30)
   {
     if (duplx_mode == duplex_mode::TDD) {
-      builder_params.dl_arfcn       = 520002;
+      builder_params.dl_f_ref_arfcn = 520002;
       builder_params.scs_common     = subcarrier_spacing::kHz30;
-      builder_params.band           = band_helper::get_band_from_dl_arfcn(builder_params.dl_arfcn);
-      builder_params.channel_bw_mhz = bs_channel_bandwidth_fr1::MHz10;
+      builder_params.band           = band_helper::get_band_from_dl_arfcn(builder_params.dl_f_ref_arfcn);
+      builder_params.channel_bw_mhz = bs_channel_bandwidth::MHz10;
       const unsigned nof_crbs       = band_helper::get_n_rbs_from_bw(
           builder_params.channel_bw_mhz, builder_params.scs_common, band_helper::get_freq_range(*builder_params.band));
       static const uint8_t                                   ss0_idx = 0;
       std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-          band_helper::get_ssb_coreset0_freq_location(builder_params.dl_arfcn,
+          band_helper::get_ssb_coreset0_freq_location(builder_params.dl_f_ref_arfcn,
                                                       *builder_params.band,
                                                       nof_crbs,
                                                       builder_params.scs_common,
@@ -123,7 +123,7 @@ public:
   void enqueue_random_number_of_rach_indications()
   {
     rach_indication_message rach_ind{to_du_cell_index(0), next_slot_rx(), {{0, 0, {}}}};
-    unsigned                nof_preambles = test_rgen::uniform_int<unsigned>(1, 10);
+    auto                    nof_preambles = test_rgen::uniform_int<unsigned>(1, 10);
     for (unsigned i = 0; i != nof_preambles; ++i) {
       rach_ind.occasions[0].preambles.push_back({i, to_rnti((uint16_t)rnti + 1 + i), phy_time_unit{}});
     }
@@ -136,7 +136,7 @@ public:
 TEST_P(scheduler_con_res_msg4_test,
        when_conres_ce_and_srb_pdu_are_enqueued_then_tc_rnti_is_used_and_multiplexing_with_csi_rs_is_avoided)
 {
-  const static unsigned msg4_size = 128;
+  static const unsigned msg4_size = 128;
 
   // Enqueue several RACH indications, so that RARs that need to be scheduled may fight for RB space with the Msg4.
   enqueue_random_number_of_rach_indications();
@@ -174,10 +174,10 @@ TEST_P(scheduler_con_res_msg4_test,
 
 TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is_used)
 {
-  const static unsigned msg4_size = 128;
+  static const unsigned msg4_size = 128;
   // TODO: Increase the crnti message size, once PUCCH scheduler handles multiple HARQ-ACKs falling in the same slot
   //  in fallback mode.
-  const static unsigned crnti_msg_size = 8;
+  static const unsigned crnti_msg_size = 8;
 
   // Enqueue ConRes CE + Msg4.
   this->sched->handle_dl_mac_ce_indication(dl_mac_ce_indication{ue_index, lcid_dl_sch_t::UE_CON_RES_ID});
@@ -185,12 +185,12 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is
 
   // Wait for ConRes + Msg4 PDCCH, PDSCH and PUCCH to be scheduled.
   ASSERT_TRUE(this->run_slot_until([this]() {
-    for (const auto& pucch : this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs) {
-      if (pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_1 and pucch.format_1.harq_ack_nof_bits > 0) {
-        return true;
-      }
-    }
-    return false;
+    return std::any_of(this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs.begin(),
+                       this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs.end(),
+                       [rnti = this->rnti](const pucch_info& pucch) {
+                         return pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_1 and
+                                pucch.format_1.harq_ack_nof_bits > 0;
+                       });
   }));
 
   // Enqueue SRB1 data; with the UE in fallback mode, and after the MSG4 has been delivered, both common and dedicated
@@ -237,18 +237,21 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is
           return true;
         }
       }
+      return false;
     }
     // Case of 3 PUCCH grants.
     else if (this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs.size() == 3) {
       for (const auto& pucch : this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs) {
         if (pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_1) {
-          if (pucch.format_1.sr_bits == sr_nof_bits::no_sr) {
-            if (pucch.format_1.harq_ack_nof_bits > 0) {
-              pucch.resources.second_hop_prbs.empty() ? pucch_res_ptrs.f1_ded_ptr    = &pucch
-                                                      : pucch_res_ptrs.f1_common_ptr = &pucch;
-            }
-          } else {
+          if (pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0 and
+              not pucch.resources.second_hop_prbs.empty()) {
+            pucch_res_ptrs.f1_common_ptr = &pucch;
+          } else if (pucch.format_1.sr_bits == sr_nof_bits::one and pucch.format_1.harq_ack_nof_bits > 0 and
+                     pucch.resources.second_hop_prbs.empty()) {
             pucch_res_ptrs.f1_ded_sr_ptr = &pucch;
+          } else if (pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0 and
+                     pucch.resources.second_hop_prbs.empty()) {
+            pucch_res_ptrs.f1_ded_ptr = &pucch;
           }
         }
         if (pucch_res_ptrs.f1_common_ptr != nullptr and pucch_res_ptrs.f1_ded_ptr != nullptr and
@@ -256,6 +259,7 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is
           return true;
         }
       }
+      return false;
     }
 
     return false;
@@ -276,7 +280,7 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is
 
 TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_ss_is_used)
 {
-  const static unsigned msg4_size = 128;
+  static const unsigned msg4_size = 128;
 
   // Enqueue ConRes CE + Msg4.
   this->sched->handle_dl_mac_ce_indication(dl_mac_ce_indication{ue_index, lcid_dl_sch_t::UE_CON_RES_ID});

@@ -54,7 +54,8 @@ rlc_rx_am_config cfg_18bit_status_limit = {/*sn_field_length=*/rlc_am_sn_size::s
 /// Mocking class of the surrounding layers invoked by the RLC AM Rx entity.
 class rlc_rx_am_test_frame : public rlc_rx_upper_layer_data_notifier,
                              public rlc_tx_am_status_handler,
-                             public rlc_tx_am_status_notifier
+                             public rlc_tx_am_status_notifier,
+                             public rlc_metrics_notifier
 {
 public:
   std::queue<byte_buffer_chain> sdu_queue;
@@ -73,9 +74,11 @@ public:
   }
 
   // rlc_tx_am_status_handler interface
-  virtual void on_status_pdu(rlc_am_status_pdu status_) override { this->status = std::move(status_); }
+  void on_status_pdu(rlc_am_status_pdu status_) override { this->status = std::move(status_); }
   // rlc_tx_am_status_notifier interface
-  virtual void on_status_report_changed() override { this->status_trigger_counter++; }
+  void on_status_report_changed() override { this->status_trigger_counter++; }
+  // rlc_metrics_notifier
+  void report_metrics(const rlc_metrics& metrics) override {}
 };
 
 /// Fixture class for RLC AM Rx tests.
@@ -98,16 +101,19 @@ protected:
     // Create test frame
     tester = std::make_unique<rlc_rx_am_test_frame>(config.sn_field_length);
 
+    metrics_agg = std::make_unique<rlc_metrics_aggregator>(
+        gnb_du_id_t{}, du_ue_index_t{}, rb_id_t{}, timer_duration{1000}, tester.get(), ue_worker);
+
     // Create RLC AM RX entity
     rlc = std::make_unique<rlc_rx_am_entity>(gnb_du_id_t::min,
                                              du_ue_index_t::MIN_DU_UE_INDEX,
                                              srb_id_t::srb0,
                                              config,
                                              *tester,
-                                             timer_factory{timers, ue_worker},
+                                             *metrics_agg,
+                                             pcap,
                                              ue_worker,
-                                             true,
-                                             pcap);
+                                             timers);
 
     // Bind AM Tx/Rx interconnect
     rlc->set_status_handler(tester.get());
@@ -154,7 +160,7 @@ protected:
     ASSERT_GT(segment_size, 0) << "Invalid argument: Cannot create PDUs with zero-sized SDU segments";
 
     sdu = test_helpers::create_pdcp_pdu(
-        pdcp_sn_size::size12bits, sn, sdu_size, first_byte); // 12-bit PDCP SN allows smaller SDUs
+        pdcp_sn_size::size12bits, /* is_srb = */ false, sn, sdu_size, first_byte); // 12-bit PDCP SN allows smaller SDUs
     pdu_list.clear();
     byte_buffer_view rest = {sdu};
 
@@ -412,14 +418,15 @@ protected:
     ue_worker.run_pending_tasks();
   }
 
-  srslog::basic_logger&                 logger  = srslog::fetch_basic_logger("TEST", false);
-  rlc_rx_am_config                      config  = GetParam();
-  rlc_am_sn_size                        sn_size = config.sn_field_length;
-  timer_manager                         timers;
-  manual_task_worker                    ue_worker{128};
-  std::unique_ptr<rlc_rx_am_test_frame> tester;
-  null_rlc_pcap                         pcap;
-  std::unique_ptr<rlc_rx_am_entity>     rlc;
+  srslog::basic_logger&                   logger  = srslog::fetch_basic_logger("TEST", false);
+  rlc_rx_am_config                        config  = GetParam();
+  rlc_am_sn_size                          sn_size = config.sn_field_length;
+  timer_manager                           timers;
+  manual_task_worker                      ue_worker{128};
+  std::unique_ptr<rlc_rx_am_test_frame>   tester;
+  null_rlc_pcap                           pcap;
+  std::unique_ptr<rlc_rx_am_entity>       rlc;
+  std::unique_ptr<rlc_metrics_aggregator> metrics_agg;
 };
 
 class rlc_rx_am_test_with_limit : public rlc_rx_am_test
@@ -1433,7 +1440,7 @@ TEST_P(rlc_rx_am_test, rx_reverse_with_reversed_segmentation)
 
 std::string test_param_info_to_string(const ::testing::TestParamInfo<rlc_rx_am_config>& info)
 {
-  constexpr static const char* options[] = {"12bit", "18bit"};
+  static constexpr const char* options[] = {"12bit", "18bit"};
   return options[info.index];
 }
 
@@ -1444,7 +1451,7 @@ INSTANTIATE_TEST_SUITE_P(rlc_rx_am_test_each_sn_size,
 
 std::string test_param_info_to_string_status_limit(const ::testing::TestParamInfo<rlc_rx_am_config>& info)
 {
-  constexpr static const char* options[] = {"12bit", "18bit", "12bit_status_limit", "18bit_status_limit"};
+  static constexpr const char* options[] = {"12bit", "18bit", "12bit_status_limit", "18bit_status_limit"};
   return options[info.index];
 }
 

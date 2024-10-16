@@ -21,6 +21,7 @@
  */
 
 #include "mac_ul_ue_manager.h"
+#include "srsran/srslog/srslog.h"
 
 using namespace srsran;
 
@@ -42,7 +43,7 @@ bool mac_ul_ue_manager::add_ue(const mac_ue_create_request& request)
 
   // > Add UE Bearers
   if (not addmod_bearers(request.ue_index, request.bearers)) {
-    log_proc_failure(logger, request.ue_index, request.crnti, "UE Create Request", "Failed to add/mod UE bearers");
+    logger.warning("ue={}: \"UE Creation\" failed. Cause: Failed to add/mod UE bearers", request.ue_index);
     return false;
   }
 
@@ -52,7 +53,7 @@ bool mac_ul_ue_manager::add_ue(const mac_ue_create_request& request)
 void mac_ul_ue_manager::remove_ue(du_ue_index_t ue_index)
 {
   if (not ue_db.contains(ue_index)) {
-    log_proc_failure(logger, ue_index, "UE Remove Request", "Invalid RNTI");
+    logger.warning("ue={}: \"UE Removal\" failed. Cause: UE with provided ID does not exist", ue_index);
     return;
   }
   ue_db.erase(ue_index);
@@ -61,8 +62,11 @@ void mac_ul_ue_manager::remove_ue(du_ue_index_t ue_index)
 bool mac_ul_ue_manager::addmod_bearers(du_ue_index_t                                  ue_index,
                                        const std::vector<mac_logical_channel_config>& ul_logical_channels)
 {
+  if (ul_logical_channels.empty()) {
+    return true;
+  }
   if (not ue_db.contains(ue_index)) {
-    logger.error("ue={} Interrupting DEMUX update. Cause: The provided index does not exist", ue_index);
+    logger.error("ue={}: Interrupting DEMUX update. Cause: The provided UE ID does not exist", ue_index);
     return false;
   }
   mac_ul_ue_context& u = ue_db[ue_index];
@@ -71,11 +75,16 @@ bool mac_ul_ue_manager::addmod_bearers(du_ue_index_t                            
     u.ul_bearers.insert(channel.lcid, channel.ul_bearer);
   }
 
+  u.rrc_config_pending = true;
+
   return true;
 }
 
 bool mac_ul_ue_manager::remove_bearers(du_ue_index_t ue_index, span<const lcid_t> lcids)
 {
+  if (lcids.empty()) {
+    return true;
+  }
   if (not ue_db.contains(ue_index)) {
     logger.error("ue={} Interrupting DEMUX update. Cause: The provided index does not exist", ue_index);
     return false;
@@ -85,5 +94,20 @@ bool mac_ul_ue_manager::remove_bearers(du_ue_index_t ue_index, span<const lcid_t
   for (lcid_t lcid : lcids) {
     u.ul_bearers.erase(lcid);
   }
+
+  u.rrc_config_pending = true;
+
   return true;
+}
+
+void mac_ul_ue_manager::handle_ue_config_applied(du_ue_index_t ue_index)
+{
+  if (not ue_db.contains(ue_index)) {
+    // The UE was destroyed in the meantime.
+    return;
+  }
+  mac_ul_ue_context& u = ue_db[ue_index];
+
+  // Mark the configuration as complete
+  u.rrc_config_pending = false;
 }

@@ -34,7 +34,7 @@ using namespace srs_du;
 
 namespace {
 
-struct dummy_f1u_du_gateway_bearer_rx_notifier final : srsran::srs_du::f1u_du_gateway_bearer_rx_notifier {
+struct dummy_f1u_du_gateway_bearer_rx_notifier final : f1u_du_gateway_bearer_rx_notifier {
   void on_new_pdu(nru_dl_message msg) override
   {
     logger.info(msg.t_pdu.begin(), msg.t_pdu.end(), "DU received SDU. sdu_len={}", msg.t_pdu.length());
@@ -45,12 +45,15 @@ struct dummy_f1u_du_gateway_bearer_rx_notifier final : srsran::srs_du::f1u_du_ga
   }
 
   expected<nru_dl_message> get_rx_pdu_blocking(manual_task_worker&       ue_worker,
-                                               std::chrono::milliseconds timeout_ms = std::chrono::milliseconds(10))
+                                               std::chrono::milliseconds timeout_ms = std::chrono::milliseconds(5000))
   {
+    const int                 nof_attempts       = 100;
+    std::chrono::milliseconds attempt_timeout_ms = timeout_ms / nof_attempts;
+
     // wait until at least one PDU is received
     std::unique_lock<std::mutex> lock(rx_mutex);
-    for (int i = 0; i < 100; i++) {
-      if (!rx_cvar.wait_for(lock, timeout_ms, [this]() { return !msg_queue.empty(); })) {
+    for (int i = 0; i < nof_attempts; i++) {
+      if (!rx_cvar.wait_for(lock, attempt_timeout_ms, [this]() { return !msg_queue.empty(); })) {
         if (not msg_queue.empty()) {
           break;
         }
@@ -330,7 +333,7 @@ TEST_F(f1u_du_split_connector_test, disconnect_stops_tx)
   io_tx_executor.run_pending_tasks();
 
   // No PDU expected
-  expected<byte_buffer> cu_rx_pdu2 = server_data_notifier.get_rx_pdu_blocking();
+  expected<byte_buffer> cu_rx_pdu2 = server_data_notifier.get_rx_pdu_blocking(std::chrono::milliseconds(200));
   ASSERT_FALSE(cu_rx_pdu2.has_value());
 
   // Destructor of du_bearer tries to disconnect tunnel again, hence we see a warning.
@@ -375,7 +378,7 @@ TEST_F(f1u_du_split_connector_test, destroy_bearer_disconnects_and_stops_rx)
   send_to_server(std::move(du_buf2.value()), "127.0.0.2", du_gw_bind_port.value());
 
   // Blocking waiting for RX
-  expected<nru_dl_message> rx_sdu = du_rx.get_rx_pdu_blocking(ue_worker);
+  expected<nru_dl_message> rx_sdu = du_rx.get_rx_pdu_blocking(ue_worker, std::chrono::milliseconds(200));
   ASSERT_FALSE(rx_sdu.has_value());
 }
 

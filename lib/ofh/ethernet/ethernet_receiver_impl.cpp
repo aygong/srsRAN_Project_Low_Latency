@@ -64,7 +64,7 @@ receiver_impl::receiver_impl(const std::string&    interface,
   }
 
   if (interface.size() > (IFNAMSIZ - 1)) {
-    report_error("The Ethernet receiver interface name '{}' exceeds the maximum allowed length");
+    report_error("The Ethernet receiver interface name '{}' exceeds the maximum allowed length", interface);
   }
 
   if (is_promiscuous_mode_enabled) {
@@ -165,7 +165,7 @@ void receiver_impl::receive()
   trace_point tp = ofh_tracer.now();
 
   auto exp_buffer = buffer_pool.reserve();
-  if (not exp_buffer.has_value()) {
+  if (!exp_buffer.has_value()) {
     logger.warning("No buffer is available for receiving an Ethernet packet");
     return;
   }

@@ -368,7 +368,7 @@ private:
 template <typename T>
 class slotted_vector
 {
-  constexpr static size_t absent_value = std::numeric_limits<size_t>::max();
+  static constexpr size_t absent_value = std::numeric_limits<size_t>::max();
 
 public:
   using value_type     = T;
@@ -474,7 +474,7 @@ public:
 
   /// Erase object pointed by the given iterator. Iterator must point to valid element.
   /// \param it container iterator
-  void erase(iterator it) noexcept { erase(this->extract_iterator_index(it)); }
+  void erase(iterator it) noexcept { erase(extract_iterator_index(it)); }
 
   /// Clear all elements of the container
   void clear() noexcept

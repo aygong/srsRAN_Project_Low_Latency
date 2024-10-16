@@ -22,12 +22,11 @@
 
 #pragma once
 
-#include "srsran/adt/detail/operations.h"
 #include "srsran/adt/detail/type_storage.h"
 #include "srsran/adt/expected.h"
+#include "srsran/adt/noop_functor.h"
 #include "srsran/adt/span.h"
 #include "srsran/support/srsran_assert.h"
-
 #include <array>
 #include <type_traits>
 #include <vector>
@@ -198,7 +197,7 @@ class ring_buffer_impl
   static_assert(std::is_same<Container, std::vector<T>>::value or is_std_array<Container>::value,
                 "Invalid container type. Only std::vector and std::array are supported");
 
-  constexpr static bool has_static_size = is_std_array<Container>::value;
+  static constexpr bool has_static_size = is_std_array<Container>::value;
 
   using raw_container    = typename detail::rebind_buffer_storage<Container>::type;
   using buffer_type      = ring_buffer_storage<raw_container, ForcePower2Size>;

@@ -28,19 +28,21 @@
 #include "equalize_zf_1xn.h"
 #include "equalize_zf_2xn.h"
 #include "srsran/adt/interval.h"
+#include "srsran/phy/support/re_buffer.h"
+#include "srsran/phy/upper/equalization/modular_ch_est_list.h"
 
 using namespace srsran;
 
 /// Assert that the dimensions of the equalizer input and output data structures match.
 static inline void assert_sizes(span<const cf_t>                      eq_symbols,
                                 span<const float>                     eq_noise_vars,
-                                const channel_equalizer::re_list&     ch_symbols,
+                                const re_buffer_reader<cbf16_t>&      ch_symbols,
                                 const channel_equalizer::ch_est_list& ch_estimates,
                                 span<const float>                     noise_var_estimates)
 {
   // Rx symbols dimensions.
-  unsigned ch_symb_nof_re       = ch_symbols.get_dimension_size(channel_equalizer::re_list::dims::re);
-  unsigned ch_symb_nof_rx_ports = ch_symbols.get_dimension_size(channel_equalizer::re_list::dims::slice);
+  unsigned ch_symb_nof_re       = ch_symbols.get_nof_re();
+  unsigned ch_symb_nof_rx_ports = ch_symbols.get_nof_slices();
 
   // Output symbols dimensions.
   unsigned eq_symb_nof_re = eq_symbols.size();
@@ -52,9 +54,9 @@ static inline void assert_sizes(span<const cf_t>                      eq_symbols
   unsigned eq_nvars_nof_re = eq_noise_vars.size();
 
   // Channel estimates dimensions.
-  unsigned ch_ests_nof_re        = ch_estimates.get_dimension_size(channel_equalizer::ch_est_list::dims::re);
-  unsigned ch_ests_nof_rx_ports  = ch_estimates.get_dimension_size(channel_equalizer::ch_est_list::dims::rx_port);
-  unsigned ch_ests_nof_tx_layers = ch_estimates.get_dimension_size(channel_equalizer::ch_est_list::dims::tx_layer);
+  unsigned ch_ests_nof_re        = ch_estimates.get_nof_re();
+  unsigned ch_ests_nof_rx_ports  = ch_estimates.get_nof_rx_ports();
+  unsigned ch_ests_nof_tx_layers = ch_estimates.get_nof_tx_layers();
 
   // Assert that the number of Resource Elements is the same for both inputs.
   srsran_assert(ch_symb_nof_re == ch_ests_nof_re,
@@ -99,7 +101,7 @@ template <unsigned NOF_PORTS>
 void equalize_zf_single_tx_layer(unsigned                              nof_ports,
                                  span<cf_t>                            eq_symbols,
                                  span<float>                           eq_noise_vars,
-                                 const channel_equalizer::re_list&     ch_symbols,
+                                 const re_buffer_reader<cbf16_t>&      ch_symbols,
                                  const channel_equalizer::ch_est_list& ch_estimates,
                                  span<const float>                     noise_var,
                                  float                                 tx_scaling)
@@ -119,7 +121,7 @@ template <>
 void equalize_zf_single_tx_layer<1>(unsigned /**/,
                                     span<cf_t>                            eq_symbols,
                                     span<float>                           eq_noise_vars,
-                                    const channel_equalizer::re_list&     ch_symbols,
+                                    const re_buffer_reader<cbf16_t>&      ch_symbols,
                                     const channel_equalizer::ch_est_list& ch_estimates,
                                     span<const float>                     noise_var,
                                     float                                 tx_scaling)
@@ -128,12 +130,69 @@ void equalize_zf_single_tx_layer<1>(unsigned /**/,
   equalize_zf_1xn<1>(eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var, tx_scaling);
 }
 
+template <unsigned NOF_PORTS>
+void equalize_zf_single_tx_layer_reduction(span<cf_t>                            eq_symbols,
+                                           span<float>                           eq_noise_vars,
+                                           const re_buffer_reader<cbf16_t>&      ch_symbols,
+                                           const channel_equalizer::ch_est_list& ch_estimates,
+                                           span<const float>                     noise_var,
+                                           float                                 tx_scaling)
+{
+  static constexpr unsigned nof_layers = 1;
+  unsigned                  nof_ports  = noise_var.size();
+
+  // Function for checking if a noise variance is valid.
+  const auto func_valid_noise_var = [](float nvar) {
+    return (nvar > 0) && (nvar < std::numeric_limits<float>::infinity());
+  };
+
+  // Count the number of valid noise variances.
+  unsigned nof_valid_noise_var = std::count_if(noise_var.begin(), noise_var.end(), func_valid_noise_var);
+
+  // No valid noise variances, fill output with invalid data.
+  if (nof_valid_noise_var == 0) {
+    srsvec::zero(eq_symbols);
+    srsvec::fill(eq_noise_vars, std::numeric_limits<float>::infinity());
+    return;
+  }
+
+  // Exclude the ports that are invalid.
+  if (nof_valid_noise_var != nof_ports) {
+    // Reduce ports.
+    static_vector<float, NOF_PORTS>              reduced_noise_var(nof_valid_noise_var);
+    modular_re_buffer_reader<cbf16_t, NOF_PORTS> reduced_ch_symbols(nof_ports, ch_symbols.get_nof_re());
+    modular_ch_est_list<NOF_PORTS>               reduced_ch_estimates(ch_symbols.get_nof_re(), nof_ports, nof_layers);
+    for (unsigned i_port = 0, i_reduced_port = 0; i_port != nof_ports; ++i_port) {
+      if (func_valid_noise_var(noise_var[i_port])) {
+        reduced_noise_var[i_reduced_port] = noise_var[i_port];
+        reduced_ch_symbols.set_slice(i_reduced_port, ch_symbols.get_slice(i_port));
+        reduced_ch_estimates.set_channel(ch_estimates.get_channel(i_port, 0), i_reduced_port, 0);
+        ++i_reduced_port;
+      }
+    }
+
+    // Equalize. The number of ports must be at least one less than before.
+    equalize_zf_single_tx_layer<NOF_PORTS - 1>(nof_valid_noise_var,
+                                               eq_symbols,
+                                               eq_noise_vars,
+                                               reduced_ch_symbols,
+                                               reduced_ch_estimates,
+                                               reduced_noise_var,
+                                               tx_scaling);
+    return;
+  }
+
+  // Perform equalization for all ports.
+  equalize_zf_single_tx_layer<NOF_PORTS>(
+      nof_valid_noise_var, eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var, tx_scaling);
+}
+
 /// Calls the equalizer function for receive spatial diversity with the appropriate number of receive ports.
 template <unsigned NOF_PORTS>
 void equalize_mmse_single_tx_layer(unsigned                              nof_ports,
                                    span<cf_t>                            eq_symbols,
                                    span<float>                           eq_noise_vars,
-                                   const channel_equalizer::re_list&     ch_symbols,
+                                   const re_buffer_reader<cbf16_t>&      ch_symbols,
                                    const channel_equalizer::ch_est_list& ch_estimates,
                                    span<const float>                     noise_var,
                                    float                                 tx_scaling)
@@ -153,7 +212,7 @@ template <>
 void equalize_mmse_single_tx_layer<1>(unsigned /**/,
                                       span<cf_t>                            eq_symbols,
                                       span<float>                           eq_noise_vars,
-                                      const channel_equalizer::re_list&     ch_symbols,
+                                      const re_buffer_reader<cbf16_t>&      ch_symbols,
                                       const channel_equalizer::ch_est_list& ch_estimates,
                                       span<const float>                     noise_var,
                                       float                                 tx_scaling)
@@ -162,12 +221,12 @@ void equalize_mmse_single_tx_layer<1>(unsigned /**/,
   equalize_mmse_1xn<1>(eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var, tx_scaling);
 }
 
-void channel_equalizer_generic_impl::equalize(span<cf_t>         eq_symbols,
-                                              span<float>        eq_noise_vars,
-                                              const re_list&     ch_symbols,
-                                              const ch_est_list& ch_estimates,
-                                              span<const float>  noise_var_estimates,
-                                              float              tx_scaling)
+void channel_equalizer_generic_impl::equalize(span<cf_t>                       eq_symbols,
+                                              span<float>                      eq_noise_vars,
+                                              const re_buffer_reader<cbf16_t>& ch_symbols,
+                                              const ch_est_list&               ch_estimates,
+                                              span<const float>                noise_var_estimates,
+                                              float                            tx_scaling)
 {
   // Make sure that the input and output symbol lists and channel estimate dimensions are valid.
   assert_sizes(eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var_estimates);
@@ -175,8 +234,8 @@ void channel_equalizer_generic_impl::equalize(span<cf_t>         eq_symbols,
   srsran_assert(tx_scaling > 0, "Tx scaling factor must be positive.");
 
   // Channel dimensions.
-  unsigned nof_rx_ports  = ch_estimates.get_dimension_size(ch_est_list::dims::rx_port);
-  unsigned nof_tx_layers = ch_estimates.get_dimension_size(ch_est_list::dims::tx_layer);
+  unsigned nof_rx_ports  = ch_estimates.get_nof_rx_ports();
+  unsigned nof_tx_layers = ch_estimates.get_nof_tx_layers();
 
   // Select the most pessimistic noise variance.
   float noise_var = *std::max_element(noise_var_estimates.begin(), noise_var_estimates.end());
@@ -185,8 +244,8 @@ void channel_equalizer_generic_impl::equalize(span<cf_t>         eq_symbols,
   if (type == channel_equalizer_algorithm_type::zf) {
     // Single transmit layer and any number of receive ports.
     if (nof_tx_layers == 1) {
-      equalize_zf_single_tx_layer<MAX_PORTS>(
-          nof_rx_ports, eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var_estimates, tx_scaling);
+      equalize_zf_single_tx_layer_reduction<MAX_PORTS>(
+          eq_symbols, eq_noise_vars, ch_symbols, ch_estimates, noise_var_estimates, tx_scaling);
       return;
     }
 
@@ -215,7 +274,7 @@ void channel_equalizer_generic_impl::equalize(span<cf_t>         eq_symbols,
 
   srsran_assertion_failure(
       "Invalid combination of channel spatial topology (i.e., {} Rx ports, {} Tx layers) and algorithm (i.e., {}).",
-      ch_estimates.get_dimension_size(ch_est_list::dims::rx_port),
-      ch_estimates.get_dimension_size(ch_est_list::dims::tx_layer),
+      ch_estimates.get_nof_rx_ports(),
+      ch_estimates.get_nof_tx_layers(),
       to_string(type));
 }
