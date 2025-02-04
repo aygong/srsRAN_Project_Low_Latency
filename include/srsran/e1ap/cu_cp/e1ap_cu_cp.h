@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,10 +22,10 @@
 
 #pragma once
 
-#include "e1ap_cu_cp_bearer_context_update.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/e1ap/common/e1_setup_messages.h"
 #include "srsran/e1ap/common/e1ap_common.h"
+#include "srsran/e1ap/cu_cp/e1ap_cu_cp_bearer_context_update.h"
 #include "srsran/support/async/async_task.h"
 
 namespace srsran {

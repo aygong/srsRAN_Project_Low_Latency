@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -49,6 +49,11 @@ public:
     } else {
       pdcp_rx_handler->handle_pdu(std::move(sdu));
     }
+  }
+
+  void on_desired_buffer_size_notification(uint32_t desired_buffer_size) override
+  {
+    pdcp_tx_handler->handle_desired_buffer_size_notification(desired_buffer_size);
   }
 
   void on_transmit_notification(uint32_t highest_pdcp_sn) override

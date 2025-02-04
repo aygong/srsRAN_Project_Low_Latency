@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
 #include "srsran/adt/span.h"
 #include "srsran/fapi/messages.h"
 #include "srsran/ran/dmrs.h"
@@ -30,7 +29,8 @@
 #include "srsran/ran/pdcch/dci_packing.h"
 #include "srsran/ran/ptrs/ptrs.h"
 #include "srsran/ran/srs/srs_configuration.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
+#include "srsran/support/shared_transport_block.h"
 #include <algorithm>
 
 namespace srsran {
@@ -1007,17 +1007,9 @@ public:
 
   /// Adds a new PDU to the Tx_Data.request message and returns a reference to the builder.
   /// \note These parameters are specified in SCF-222 v4.0 section 3.4.6 in table Tx_Data.request message body.
-  tx_data_request_builder& add_pdu_custom_payload(uint16_t pdu_index, uint8_t cw_index, span<const uint8_t> payload)
+  tx_data_request_builder& add_pdu(uint16_t pdu_index, uint8_t cw_index, const shared_transport_block& payload)
   {
-    auto& pdu = msg.pdus.emplace_back();
-
-    pdu.pdu_index = pdu_index;
-    pdu.cw_index  = cw_index;
-
-    // Fill custom TLV. This TLV always uses a pointer to the payload.
-    pdu.tlv_custom.length  = units::bytes(payload.size());
-    pdu.tlv_custom.payload = payload.data();
-
+    msg.pdus.emplace_back(pdu_index, cw_index, payload);
     return *this;
   }
 
@@ -1385,7 +1377,7 @@ public:
         pdu.pucch_format = uci_pucch_pdu_format_0_1::format_type::format_1;
         break;
       default:
-        srsran_assert(0, "PUCCH format={} is not supported by this PDU", type);
+        srsran_assert(0, "PUCCH format={} is not supported by this PDU", fmt::underlying(type));
         break;
     }
 
@@ -1505,7 +1497,7 @@ public:
         pdu.pucch_format = uci_pucch_pdu_format_2_3_4::format_type::format_4;
         break;
       default:
-        srsran_assert(0, "PUCCH format={} is not supported by this PDU", type);
+        srsran_assert(0, "PUCCH format={} is not supported by this PDU", fmt::underlying(type));
         break;
     }
 
@@ -2097,9 +2089,9 @@ public:
     return *this;
   }
 
-  /// Sets the PUCCH PDU format 2 parameters and returns a reference to the builder.
+  /// Sets the PUCCH PDU scrambling parameters for DM-RS and returns a reference to the builder.
   /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table PUCCH PDU.
-  ul_pucch_pdu_builder& set_format2_parameters(uint16_t nid0_pucch_dmrs_scrambling)
+  ul_pucch_pdu_builder& set_dmrs_scrambling(uint16_t nid0_pucch_dmrs_scrambling)
   {
     pdu.nid0_pucch_dmrs_scrambling = nid0_pucch_dmrs_scrambling;
 
@@ -2127,9 +2119,11 @@ public:
 
   /// Sets the PUCCH PDU DMRS parameters and returns a reference to the builder.
   /// \note These parameters are specified in SCF-222 v4.0 section 3.4.3.3 in table PUCCH PDU.
-  ul_pucch_pdu_builder& set_dmrs_parameters(bool add_dmrs_flag, uint8_t m0_pucch_dmrs_cyclic_shift)
+  ul_pucch_pdu_builder&
+  set_dmrs_parameters(bool add_dmrs_flag, uint16_t nid0_pucch_dmrs_scrambling, uint8_t m0_pucch_dmrs_cyclic_shift)
   {
     pdu.add_dmrs_flag              = add_dmrs_flag;
+    pdu.nid0_pucch_dmrs_scrambling = nid0_pucch_dmrs_scrambling;
     pdu.m0_pucch_dmrs_cyclic_shift = m0_pucch_dmrs_cyclic_shift;
 
     return *this;

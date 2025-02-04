@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,10 @@
  *
  */
 
-#include "lib/scheduler/ue_scheduling/ue_cell.h"
+#include "lib/scheduler/ue_context/ue_cell.h"
+#include "lib/scheduler/ue_context/ue_drx_controller.h"
+#include "lib/scheduler/ue_context/ul_logical_channel_manager.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include <gtest/gtest.h>
 
@@ -31,7 +34,7 @@ class ue_cell_tester : public ::testing::Test
 {
 protected:
   ue_cell_tester() :
-    sched_cfg(test_helpers::make_default_sched_cell_configuration_request()),
+    sched_cfg(sched_config_helper::make_default_sched_cell_configuration_request()),
     expert_cfg(config_helpers::make_default_scheduler_expert_config()),
     cell_cfg(expert_cfg, sched_cfg),
     serv_cell_cfg(config_helpers::create_default_initial_ue_serving_cell_config()),
@@ -91,11 +94,19 @@ protected:
   serving_cell_config                      serv_cell_cfg;
   ue_cell_configuration                    ue_cc_cfg;
   cell_harq_manager                        cell_harqs{1, MAX_NOF_HARQS};
+  ul_logical_channel_manager               ul_lc_ch_mng;
+  srslog::basic_logger&                    logger = srslog::fetch_basic_logger("SCHED");
+  ue_drx_controller                        drx_controller{cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs,
+                                   cell_cfg.ul_cfg_common.init_ul_bwp.rach_cfg_common->ra_con_res_timer,
+                                   std::nullopt,
+                                   ul_lc_ch_mng,
+                                   {},
+                                   logger};
 };
 
 TEST_F(ue_cell_tester, when_dl_nof_prb_allocated_increases_estimated_dl_rate_increases)
 {
-  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs};
+  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs, drx_controller};
 
   double current_rate = 0;
 
@@ -120,7 +131,7 @@ TEST_F(ue_cell_tester, when_mcs_increases_estimated_dl_rate_increases)
   // Maximum MCS value for 64QAM MCS table.
   const sch_mcs_index max_mcs = 28;
 
-  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs};
+  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs, drx_controller};
 
   double current_rate = 0;
 
@@ -144,7 +155,7 @@ TEST_F(ue_cell_tester, when_mcs_increases_estimated_dl_rate_increases)
 
 TEST_F(ue_cell_tester, when_ul_nof_prb_allocated_increases_estimated_ul_rate_increases)
 {
-  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs};
+  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs, drx_controller};
 
   double current_rate = 0;
 
@@ -169,7 +180,7 @@ TEST_F(ue_cell_tester, when_mcs_increases_estimated_ul_rate_increases)
   // Maximum MCS value for 64QAM MCS table.
   const sch_mcs_index max_mcs = 28;
 
-  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs};
+  ue_cell ue_cc{to_du_ue_index(0), to_rnti(0x4601), ue_cc_cfg, cell_harqs, drx_controller};
 
   double current_rate = 0;
 

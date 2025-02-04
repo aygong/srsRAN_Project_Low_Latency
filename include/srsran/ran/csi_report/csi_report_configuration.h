@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #pragma once
+
 #include "srsran/adt/bounded_bitset.h"
 
 namespace srsran {
@@ -57,7 +58,7 @@ enum class csi_report_quantities {
   other
 };
 
-/// Collects Chanel State Information (CSI) report configuration parameters.
+/// Collects Channel State Information (CSI) report configuration parameters.
 struct csi_report_configuration {
   /// \brief Number of CSI-RS resources in the corresponding resource set.
   ///

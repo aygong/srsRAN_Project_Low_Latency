@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -32,6 +32,6 @@ struct du_appconfig;
 void configure_cli11_with_du_appconfig_schema(CLI::App& app, du_appconfig& parsed_cfg);
 
 /// Auto derive DU parameters after the parsing.
-void autoderive_du_parameters_after_parsing(CLI::App& app, du_appconfig& parsed_cfg);
+void autoderive_du_parameters_after_parsing(CLI::App& app, du_appconfig& du_cfg);
 
 } // namespace srsran

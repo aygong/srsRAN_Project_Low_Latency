@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,13 +22,12 @@
 
 #pragma once
 
-#include "meas_types.h"
 #include "srsran/adt/byte_buffer.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/slotted_array.h"
 #include "srsran/pdcp/pdcp_config.h"
 #include "srsran/ran/cu_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
+#include "srsran/rrc/meas_types.h"
 #include "srsran/security/security.h"
 #include <string>
 #include <vector>
@@ -114,7 +113,9 @@ struct rrc_reconfiguration_procedure_request {
   std::optional<rrc_radio_bearer_config> radio_bearer_cfg;
   byte_buffer                            secondary_cell_group;
   std::optional<rrc_meas_cfg>            meas_cfg;
-  std::optional<rrc_recfg_v1530_ies>     non_crit_ext;
+  // Optional measurement gap config to include in Reconfiguration.
+  byte_buffer                        meas_gap_cfg;
+  std::optional<rrc_recfg_v1530_ies> non_crit_ext;
 };
 
 struct rrc_ue_capability_transfer_request {

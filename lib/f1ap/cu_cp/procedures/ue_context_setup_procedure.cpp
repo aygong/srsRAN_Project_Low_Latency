@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -143,7 +143,9 @@ bool ue_context_setup_procedure::create_ue_rrc_context(const f1ap_ue_context_set
     }
 
     // Add RRC notifier to F1AP UE context.
-    ue_ctxt_list.add_rrc_notifier(outcome->ue_index, outcome->f1ap_rrc_notifier);
+    ue_ctxt_list.add_srb0_rrc_notifier(outcome->ue_index, outcome->f1ap_srb0_notifier);
+    ue_ctxt_list.add_srb1_rrc_notifier(outcome->ue_index, outcome->f1ap_srb1_notifier);
+    ue_ctxt_list.add_srb2_rrc_notifier(outcome->ue_index, outcome->f1ap_srb2_notifier);
 
     logger.debug("ue={} Added RRC UE notifier", outcome->ue_index);
   }
@@ -222,9 +224,10 @@ static void fill_asn1_ue_context_setup_request(asn1::f1ap::ue_context_setup_requ
 {
   asn1_request->gnb_cu_ue_f1ap_id = gnb_cu_ue_f1ap_id_to_uint(ue_ids.cu_ue_f1ap_id);
 
-  asn1_request->gnb_du_ue_f1ap_id_present = ue_ids.du_ue_f1ap_id != gnb_du_ue_f1ap_id_t::invalid;
+  asn1_request->gnb_du_ue_f1ap_id_present =
+      ue_ids.du_ue_f1ap_id && ue_ids.du_ue_f1ap_id != gnb_du_ue_f1ap_id_t::invalid;
   if (asn1_request->gnb_du_ue_f1ap_id_present) {
-    asn1_request->gnb_du_ue_f1ap_id = gnb_du_ue_f1ap_id_to_uint(ue_ids.du_ue_f1ap_id);
+    asn1_request->gnb_du_ue_f1ap_id = gnb_du_ue_f1ap_id_to_uint(*ue_ids.du_ue_f1ap_id);
   }
 
   asn1_request->sp_cell_id    = cgi_to_asn1(request.sp_cell_id);

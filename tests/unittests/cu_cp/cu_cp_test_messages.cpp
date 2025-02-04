@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -55,11 +55,10 @@ srsran::srs_cu_cp::generate_pdu_session_resource_setup(ue_index_t ue_index,
 
     cu_cp_pdu_session_res_setup_item item;
     item.pdu_session_id = pdu_session_id;
-    bool ret            = item.pdu_session_nas_pdu.resize(2);
-    (void)ret;
+    (void)item.pdu_session_nas_pdu.resize(2);
     item.pdu_session_nas_pdu[0] = 0xaa;
     item.pdu_session_nas_pdu[1] = 0xbb;
-    item.s_nssai.sst            = 1;
+    item.s_nssai.sst            = slice_service_type{1};
 
     item.pdu_session_aggregate_maximum_bit_rate_dl = 100;
     item.pdu_session_aggregate_maximum_bit_rate_ul = 100;

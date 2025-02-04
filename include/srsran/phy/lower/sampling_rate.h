@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -176,12 +176,12 @@ namespace fmt {
 template <>
 struct formatter<srsran::sampling_rate> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
   template <typename FormatContext>
-  auto format(srsran::sampling_rate srate, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::sampling_rate srate, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{:.2f}MHz", srate.to_MHz());
   }

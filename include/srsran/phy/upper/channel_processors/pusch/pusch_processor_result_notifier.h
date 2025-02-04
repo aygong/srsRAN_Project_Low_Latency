@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_decoder_result.h"
 #include "srsran/phy/upper/channel_processors/uci/uci_status.h"
 #include "srsran/phy/upper/channel_state_information.h"

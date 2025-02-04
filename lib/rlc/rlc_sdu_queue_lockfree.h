@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,6 +25,7 @@
 #include "rlc_bearer_logger.h"
 #include "srsran/adt/spsc_queue.h"
 #include "srsran/rlc/rlc_tx.h"
+#include "fmt/std.h"
 
 namespace srsran {
 
@@ -47,13 +48,13 @@ namespace srsran {
 class rlc_sdu_queue_lockfree
 {
 public:
-  explicit rlc_sdu_queue_lockfree(uint16_t capacity_, uint32_t byte_limit_, rlc_bearer_logger& logger_) :
+  explicit rlc_sdu_queue_lockfree(uint32_t capacity_, uint32_t byte_limit_, rlc_bearer_logger& logger_) :
     logger(logger_), capacity(capacity_), byte_limit(byte_limit_)
   {
     sdu_states = std::make_unique<std::atomic<uint32_t>[]>(capacity);
     sdu_sizes  = std::make_unique<std::atomic<size_t>[]>(capacity);
 
-    for (uint16_t i = 0; i < capacity; i++) {
+    for (uint32_t i = 0; i < capacity; i++) {
       sdu_states[i].store(STATE_FREE, std::memory_order_relaxed);
     }
 
@@ -287,7 +288,7 @@ private:
 
   rlc_bearer_logger& logger;
 
-  const uint16_t capacity;
+  const uint32_t capacity;
   const uint32_t byte_limit;
 
   /// Combined atomic state of the queue reflecting the number of SDUs and the number of bytes.
@@ -324,13 +325,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::rlc_sdu_queue_lockfree::state_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::rlc_sdu_queue_lockfree::state_t& state, FormatContext& ctx)
+  auto format(const srsran::rlc_sdu_queue_lockfree::state_t& state, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "queued_sdus={} queued_bytes={}", state.n_sdus, state.n_bytes);
   }

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -88,8 +88,6 @@ void ngap_ue_context_release_procedure::send_ue_context_release_complete()
   asn1_ue_context_release_complete->ran_ue_ngap_id = ran_ue_id_to_uint(ue_ids.ran_ue_id);
 
   fill_asn1_ue_context_release_complete(asn1_ue_context_release_complete, ue_context_release_complete);
-
-  logger.log_info("Sending UeContextReleaseComplete");
 
   amf_notifier.on_new_message(ngap_msg);
 }

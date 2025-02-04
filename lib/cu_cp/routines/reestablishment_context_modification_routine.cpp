@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -139,7 +139,7 @@ void reestablishment_context_modification_routine::operator()(coro_context<async
                                   {} /* TODO: include meas config in context*/,
                                   true /* Reestablish SRBs */,
                                   true /* Reestablish DRBs */,
-                                  false /* don't update keys */,
+                                  std::nullopt /* don't update keys */,
                                   {},
                                   logger)) {
         logger.warning("ue={}: \"{}\" Failed to fill RrcReconfiguration", ue_index, name());

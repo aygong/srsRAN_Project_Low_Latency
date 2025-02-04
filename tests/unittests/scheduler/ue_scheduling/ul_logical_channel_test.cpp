@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,7 @@
  *
  */
 
-#include "lib/scheduler/ue_scheduling/ul_logical_channel_manager.h"
+#include "lib/scheduler/ue_context/ul_logical_channel_manager.h"
 #include <gtest/gtest.h>
 #include <random>
 

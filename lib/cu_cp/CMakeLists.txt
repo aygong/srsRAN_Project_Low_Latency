@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -52,7 +52,7 @@ set(SOURCES
       routines/ue_transaction_info_release_routine.cpp
       routines/ue_amf_context_release_request_routine.cpp
       routines/mobility/mobility_helpers.cpp
-      routines/mobility/inter_du_handover_routine.cpp
+      routines/mobility/intra_cu_handover_routine.cpp
       routines/mobility/inter_cu_handover_target_routine.cpp
       routines/mobility/handover_reconfiguration_routine.cpp
       task_schedulers/cu_up_task_scheduler.cpp
@@ -72,6 +72,7 @@ target_link_libraries(srsran_cu_cp
         srsran_e1ap_cu_cp
         srsran_f1ap_cu
         srsran_ngap
+        srsran_nrppa
         srsran_rrc
         srsran_ran
         srslog
@@ -81,4 +82,5 @@ target_link_libraries(srsran_cu_cp
         ${CMAKE_DL_LIBS}
 )
 
-add_to_exported_libs(srsran_cu_cp)
+add_library(srsran_o_cu_cp o_cu_cp_factory.cpp o_cu_cp_impl.cpp)
+target_link_libraries(srsran_o_cu_cp PRIVATE srsran_cu_cp)

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -54,7 +54,7 @@ class cpu_architecture_info
   static cpu_description discover_cpu_architecture();
 
   /// Stores the CPU description.
-  static const cpu_description cpu_desc;
+  const cpu_description cpu_desc{discover_cpu_architecture()};
 
   /// Default constructor.
   cpu_architecture_info() = default;

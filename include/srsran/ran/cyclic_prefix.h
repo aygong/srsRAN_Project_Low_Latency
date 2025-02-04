@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,7 @@
 #pragma once
 
 #include "srsran/ran/phy_time_unit.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include <algorithm>
 
 namespace srsran {
@@ -125,12 +125,12 @@ namespace fmt {
 template <>
 struct formatter<srsran::cyclic_prefix> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
   template <typename FormatContext>
-  auto format(srsran::cyclic_prefix cp, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::cyclic_prefix cp, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{}", cp.to_string());
   }

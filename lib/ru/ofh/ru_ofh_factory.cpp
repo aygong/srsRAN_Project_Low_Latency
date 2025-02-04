@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -36,20 +36,21 @@ static ofh::sector_configuration generate_sector_configuration(const ru_ofh_conf
   // Prepare sector configuration.
   ofh::sector_configuration ofh_sector_config;
 
-  ofh_sector_config.interface                   = sector_cfg.interface;
-  ofh_sector_config.is_promiscuous_mode_enabled = sector_cfg.is_promiscuous_mode_enabled;
-  ofh_sector_config.mtu_size                    = sector_cfg.mtu_size;
-  ofh_sector_config.mac_dst_address             = sector_cfg.mac_dst_address;
-  ofh_sector_config.mac_src_address             = sector_cfg.mac_src_address;
-  ofh_sector_config.tci_cp                      = sector_cfg.tci_cp;
-  ofh_sector_config.tci_up                      = sector_cfg.tci_up;
-  ofh_sector_config.tx_window_timing_params     = sector_cfg.tx_window_timing_params;
-  ofh_sector_config.rx_window_timing_params     = sector_cfg.rx_window_timing_params;
-  ofh_sector_config.cp                          = sector_cfg.cp;
-  ofh_sector_config.sector_id                   = sector_id;
-  ofh_sector_config.scs                         = sector_cfg.scs;
-  ofh_sector_config.bw                          = sector_cfg.bw;
-  ofh_sector_config.nof_antennas_ul             = sector_cfg.nof_antennas_ul;
+  ofh_sector_config.interface                    = sector_cfg.interface;
+  ofh_sector_config.is_promiscuous_mode_enabled  = sector_cfg.is_promiscuous_mode_enabled;
+  ofh_sector_config.is_link_status_check_enabled = sector_cfg.is_link_status_check_enabled;
+  ofh_sector_config.mtu_size                     = sector_cfg.mtu_size;
+  ofh_sector_config.mac_dst_address              = sector_cfg.mac_dst_address;
+  ofh_sector_config.mac_src_address              = sector_cfg.mac_src_address;
+  ofh_sector_config.tci_cp                       = sector_cfg.tci_cp;
+  ofh_sector_config.tci_up                       = sector_cfg.tci_up;
+  ofh_sector_config.tx_window_timing_params      = sector_cfg.tx_window_timing_params;
+  ofh_sector_config.rx_window_timing_params      = sector_cfg.rx_window_timing_params;
+  ofh_sector_config.cp                           = sector_cfg.cp;
+  ofh_sector_config.sector_id                    = sector_id;
+  ofh_sector_config.scs                          = sector_cfg.scs;
+  ofh_sector_config.bw                           = sector_cfg.bw;
+  ofh_sector_config.nof_antennas_ul              = sector_cfg.nof_antennas_ul;
   ofh_sector_config.ru_operating_bw = sector_cfg.ru_operating_bw ? sector_cfg.ru_operating_bw.value() : sector_cfg.bw;
   ofh_sector_config.prach_eaxc      = sector_cfg.prach_eaxc;
   ofh_sector_config.dl_eaxc         = sector_cfg.dl_eaxc;
@@ -140,8 +141,8 @@ std::unique_ptr<radio_unit> srsran::create_ofh_ru(const ru_ofh_configuration& co
                sector_cfg.is_downlink_broadcast_enabled,
                (sector_cfg.ru_operating_bw && sector_cfg.bw != *sector_cfg.ru_operating_bw)
                    ? fmt::format(".\nOperating a {}MHz cell over a RU with instantaneous bandwidth of {}MHz",
-                                 sector_cfg.bw,
-                                 *sector_cfg.ru_operating_bw)
+                                 fmt::underlying(sector_cfg.bw),
+                                 fmt::underlying(*sector_cfg.ru_operating_bw))
                    : fmt::format(""));
   }
 

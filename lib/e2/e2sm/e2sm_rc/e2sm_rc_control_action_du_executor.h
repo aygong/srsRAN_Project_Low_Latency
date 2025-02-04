@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
 #include "srsran/asn1/asn1_utils.h"
 #include "srsran/du/du_high/du_manager/du_configurator.h"
 #include "srsran/e2/e2.h"

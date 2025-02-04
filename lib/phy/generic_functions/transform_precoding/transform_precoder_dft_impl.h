@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -60,6 +60,9 @@ public:
 
   // See interface for documentation.
   void deprecode_ofdm_symbol(span<cf_t> out, span<const cf_t> in) override;
+
+  // See interface for documentation.
+  void deprecode_ofdm_symbol_noise(span<float> out, span<const float> in) override;
 
 private:
   /// Collection of valid DFT processors.

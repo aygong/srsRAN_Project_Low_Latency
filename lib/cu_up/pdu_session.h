@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -60,7 +60,7 @@ struct pdu_session {
   {
     if (not stopped) {
       gtpu_rx_demux.remove_tunnel(local_teid);
-      n3_teid_allocator.release_teid(local_teid);
+      (void)n3_teid_allocator.release_teid(local_teid);
 
       gtpu->stop();
 
@@ -80,6 +80,9 @@ struct pdu_session {
   // Adapters between SDAP and GTPU
   gtpu_sdap_adapter gtpu_to_sdap_adapter;
   sdap_gtpu_adapter sdap_to_gtpu_adapter;
+
+  // Adapters between GTP-U and UDP GW
+  gtpu_network_gateway_adapter gtpu_to_udp_adapter;
 
   pdcp_f1u_adapter      pdcp_to_f1u_adapter;
   pdu_session_id_t      pdu_session_id; //< PDU session ID (0-255)

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -30,7 +30,7 @@ namespace srsran {
 /// Logical Channel Group as per TS38.331.
 enum lcg_id_t : uint8_t { MAX_LCG_ID = 7, MAX_NOF_LCGS = 8, LCG_ID_INVALID = 8 };
 
-inline lcg_id_t uint_to_lcg_id(std::underlying_type_t<lcg_id_t> val)
+constexpr lcg_id_t uint_to_lcg_id(std::underlying_type_t<lcg_id_t> val)
 {
   return static_cast<lcg_id_t>(val);
 }

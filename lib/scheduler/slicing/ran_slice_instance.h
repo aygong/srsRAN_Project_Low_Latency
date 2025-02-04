@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "../../scheduler/cell/resource_grid.h"
+#include "../cell/resource_grid.h"
 #include "../config/cell_configuration.h"
 #include "../ue_scheduling/ue_repository.h"
 #include "ran_slice_id.h"
@@ -106,6 +106,9 @@ public:
                : MAX_SLOTS_SINCE_LAST_PXSCH;
   }
 
+  float average_pdsch_rbs_per_slot() const { return avg_pdsch_rbs_per_slot; }
+  float average_pusch_rbs_per_slot() const { return avg_pusch_rbs_per_slot; }
+
   ran_slice_id_t            id;
   const cell_configuration* cell_cfg;
   slice_rrm_policy_config   cfg;
@@ -127,6 +130,10 @@ private:
 
   // Last slot that the PUSCH was allocated.
   slot_point last_pusch_alloc_slot;
+
+  // Track average number of RBs scheduler per slice.
+  float avg_pdsch_rbs_per_slot = 0;
+  float avg_pusch_rbs_per_slot = 0;
 
   slice_ue_repository slice_ues;
 };

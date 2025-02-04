@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,8 @@
 #include "srsran/ran/pusch/pusch_antenna_ports_mapping.h"
 
 using namespace srsran;
+
+#ifndef SRSRAN_HAS_ENTERPRISE
 
 // Current range of supported number of layers.
 static constexpr interval<unsigned, true> nof_layers_range(1, 1);
@@ -122,3 +124,4 @@ unsigned srsran::get_pusch_precoding_info_row_index(unsigned                    
   // Unhandled case.
   return 0;
 }
+#endif // SRSRAN_HAS_ENTERPRISE

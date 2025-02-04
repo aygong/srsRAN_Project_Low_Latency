@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "ring_memory_allocator.h"
 #include "srsran/support/compiler.h"
 #include "srsran/support/error_handling.h"
+#include "srsran/support/memory_pool/ring_memory_allocator.h"
 
 namespace srsran {
 

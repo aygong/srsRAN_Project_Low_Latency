@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -36,14 +36,13 @@ struct formatter<srsran::pusch_tpmi_select_info> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::pusch_tpmi_select_info& info, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::pusch_tpmi_select_info& info, FormatContext& ctx) const
   {
     unsigned max_nof_layers = info.get_max_nof_layers();
 
@@ -125,15 +124,9 @@ TEST_P(PuschTpmiSelectFixture, VectorTest)
   unsigned nof_rx_ports   = test_case.channel_matrix.get_nof_rx_ports();
   unsigned max_nof_layers = std::min(nof_tx_ports, nof_rx_ports);
 
-  // Only one layer is currently supported.
-  if (max_nof_layers > 2) {
-    GTEST_SKIP();
-  }
-
   // Get UL-SCH information parameters.
-  pusch_tpmi_select_info info = get_tpmi_select_info(test_case.channel_matrix,
-                                                     test_case.noise_variance,
-                                                     tx_scheme_codebook_subset::fully_and_partial_and_non_coherent);
+  pusch_tpmi_select_info info = get_tpmi_select_info(
+      test_case.channel_matrix, test_case.noise_variance, max_nof_layers, test_case.codebook_subset);
 
   // Compare with expected.
   ASSERT_EQ(info, test_case.info);

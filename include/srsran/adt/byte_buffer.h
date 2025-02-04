@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,8 @@
 
 #pragma once
 
-#include "srsran/adt/detail/byte_buffer_range_helpers.h"
+#include "srsran/adt/byte_buffer_view.h"
+#include "srsran/adt/detail/byte_buffer_memory_resource.h"
 #include "srsran/adt/detail/intrusive_ptr.h"
 #include "srsran/adt/expected.h"
 #include "fmt/format.h"
@@ -48,106 +49,11 @@ size_t get_byte_buffer_segment_pool_capacity();
 /// allocation in the caller thread.
 size_t get_byte_buffer_segment_pool_current_size_approx();
 
-/// \brief Non-owning view to a byte sequence.
-///
-/// The underlying byte sequence is not contiguous in memory. Instead, it is represented as an intrusive linked list of
-/// byte buffer segments, where each segment contains a span of bytes.
-class byte_buffer_view
-{
-  /// Checks whether type is a byte_buffer/byte_buffer_slice.
-  template <typename ByteBufferType>
-  using is_owning_byte_buffer_type =
-      std::conditional_t<std::is_same<std::decay_t<ByteBufferType>, byte_buffer_view>::value,
-                         std::false_type,
-                         is_byte_buffer_range<ByteBufferType>>;
+/// \brief Default byte buffer segment pool.
+byte_buffer_memory_resource& get_default_byte_buffer_segment_pool();
 
-public:
-  using value_type     = uint8_t;
-  using iterator       = detail::byte_buffer_segment_list_byte_iterator;
-  using const_iterator = detail::byte_buffer_segment_list_byte_const_iterator;
-
-  byte_buffer_view() = default;
-
-  /// Conversion from a pair of iterators.
-  byte_buffer_view(iterator it_begin_, iterator it_end_) : it(it_begin_), it_end(it_end_) {}
-
-  /// Conversion from byte_buffer-like type (e.g. byte_buffer, byte_buffer_slice) to byte_buffer_view.
-  template <typename ByteBufferType, std::enable_if_t<is_owning_byte_buffer_type<ByteBufferType>::value, int> = 0>
-  byte_buffer_view(const ByteBufferType& buffer) : it(buffer.begin()), it_end(buffer.end())
-  {
-  }
-  template <typename ByteBufferType, std::enable_if_t<is_owning_byte_buffer_type<ByteBufferType>::value, int> = 0>
-  byte_buffer_view(const ByteBufferType& buffer, size_t start, size_t sz) : it(buffer.begin() + start), it_end(it + sz)
-  {
-  }
-
-  /// Get iterator pointing at the first byte of the view.
-  iterator       begin() { return it; }
-  const_iterator begin() const { return it; }
-
-  /// Get iterator pointing at the end of the view.
-  iterator       end() { return it_end; }
-  const_iterator end() const { return it_end; }
-
-  /// Checks whether the view is empty.
-  bool empty() const { return it == it_end; }
-
-  /// Checks the length in bytes of the view.
-  size_t length() const { return it_end - it; }
-
-  /// Index-based random access to bytes of the view.
-  const uint8_t& operator[](size_t i) const { return *(it + i); }
-  uint8_t&       operator[](size_t i) { return *(it + i); }
-
-  /// Returns another sub-view with dimensions specified in arguments.
-  byte_buffer_view view(size_t offset, size_t size) const
-  {
-    srsran_assert(offset + size <= length(), "Invalid view dimensions.");
-    return {it + offset, it + offset + size};
-  }
-
-  /// Split byte buffer view into two contiguous views, with break point defined by "offset".
-  /// \param offset index at which view is split into two contiguous views.
-  /// \return pair of contiguous views.
-  std::pair<byte_buffer_view, byte_buffer_view> split(size_t offset)
-  {
-    auto it_split = begin() + offset;
-    return {{begin(), it_split}, {it_split, end()}};
-  }
-
-  /// Returns a non-owning list of segments that compose the byte_buffer.
-  const_byte_buffer_segment_span_range segments() const { return {it, length()}; }
-
-  /// Returns a non-owning list of segments that compose the byte_buffer.
-  /// The segments are not const, so that the callee can modify the bytes, but not layout of the buffer.
-  byte_buffer_segment_span_range modifiable_segments() { return {it, length()}; };
-
-  /// \brief Equality comparison between byte buffer view and another range.
-  template <typename T>
-  friend bool operator==(const byte_buffer_view& lhs, const T& r)
-  {
-    return detail::compare_byte_buffer_range(lhs, r);
-  }
-  template <typename T, std::enable_if_t<not is_byte_buffer_range<T>::value, int> = 0>
-  friend bool operator==(const T& r, const byte_buffer_view& rhs)
-  {
-    return detail::compare_byte_buffer_range(rhs, r);
-  }
-  template <typename T>
-  friend bool operator!=(const byte_buffer_view& lhs, const T& r)
-  {
-    return not(lhs == r);
-  }
-  template <typename T, std::enable_if_t<not is_byte_buffer_range<T>::value, int> = 0>
-  friend bool operator!=(const T& r, const byte_buffer_view& rhs)
-  {
-    return not(rhs == r);
-  }
-
-protected:
-  iterator it;
-  iterator it_end;
-};
+/// \brief Default byte buffer segment pool with fallback to the heap on failure to allocate.
+byte_buffer_memory_resource& get_default_fallback_byte_buffer_segment_pool();
 
 class byte_buffer_slice;
 
@@ -173,8 +79,8 @@ class byte_buffer
     node_t* segment_in_cb_memory_block = nullptr;
     /// Intrusive ptr reference counter.
     intrusive_ptr_atomic_ref_counter ref_count;
-    /// Whether failures to allocate segments using pool should fallback to malloc.
-    bool malloc_fallback = false;
+    /// Memory resource used to allocate/deallocate segments.
+    byte_buffer_memory_resource* segment_pool;
 
     void destroy_node(node_t* node) const;
 
@@ -208,21 +114,23 @@ public:
   /// Explicit copy ctor. User should use copy() method for copy assignments.
   explicit byte_buffer(const byte_buffer&) noexcept = default;
 
-  /// Creates a byte_buffer with contents provided by a span of bytes.
-  static expected<byte_buffer> create(span<const uint8_t> bytes)
-  {
-    byte_buffer buf;
-    if (not buf.append(bytes)) {
-      return make_unexpected(default_error_t{});
-    }
-    return buf;
-  }
+  /// Move constructor.
+  byte_buffer(byte_buffer&& other) noexcept = default;
 
-  /// Creates a byte_buffer with data initialized via a initializer list.
-  static expected<byte_buffer> create(std::initializer_list<uint8_t> lst)
-  {
-    return create(span<const uint8_t>(lst.begin(), lst.size()));
-  }
+  /// Creates an empty byte_buffer with a custom segment memory pool.
+  static expected<byte_buffer> create(byte_buffer_memory_resource& segment_pool);
+
+  /// Creates a byte_buffer with contents provided by a span of bytes.
+  /// \param[in] bytes span of bytes to assign to the byte_buffer.
+  /// \param[in] segment_pool memory pool used to allocate segments.
+  static expected<byte_buffer>
+  create(span<const uint8_t> bytes, byte_buffer_memory_resource& segment_pool = get_default_byte_buffer_segment_pool());
+
+  /// Creates a byte_buffer with data initialized via an initializer list.
+  /// \param[in] lst initializer list with bytes to assign to the byte_buffer.
+  /// \param[in] pool memory pool used to allocate segments.
+  static expected<byte_buffer> create(const std::initializer_list<uint8_t>& lst,
+                                      byte_buffer_memory_resource& pool = get_default_byte_buffer_segment_pool());
 
   /// Creates a byte_buffer with data assigned from a range of bytes.
   template <typename It>
@@ -234,9 +142,6 @@ public:
     }
     return buf;
   }
-
-  /// Move constructor.
-  byte_buffer(byte_buffer&& other) noexcept = default;
 
   /// Creates a byte_buffer that in case it fails to allocate from the default pool, it resorts to malloc as fallback.
   byte_buffer(fallback_allocation_tag tag, span<const uint8_t> other = {}) noexcept;
@@ -258,14 +163,14 @@ public:
 
   /// Append bytes of a iterator range.
   template <typename Iterator>
-  SRSRAN_NODISCARD bool append(Iterator begin, Iterator end)
+  [[nodiscard]] bool append(Iterator begin, Iterator end)
   {
-    static_assert(std::is_same<std::decay_t<decltype(*begin)>, uint8_t>::value or
-                      std::is_same<std::decay_t<decltype(*begin)>, const uint8_t>::value,
+    static_assert(std::is_same_v<std::decay_t<decltype(*begin)>, uint8_t> or
+                      std::is_same_v<std::decay_t<decltype(*begin)>, const uint8_t>,
                   "Iterator value type is not uint8_t");
     using iter_category = typename std::iterator_traits<Iterator>::iterator_category;
 
-    if (std::is_same<iter_category, std::random_access_iterator_tag>::value) {
+    if constexpr (std::is_same_v<iter_category, std::random_access_iterator_tag>) {
       return append(span<const uint8_t>(&*begin, &*end));
     }
     // TODO: use segment-wise copy if it is a byte buffer-like type.
@@ -278,22 +183,22 @@ public:
   }
 
   /// Appends bytes to the byte buffer. This function may retrieve new segments from a memory pool.
-  SRSRAN_NODISCARD bool append(span<const uint8_t> bytes);
+  [[nodiscard]] bool append(span<const uint8_t> bytes);
 
   /// Appends an initializer list of bytes.
-  SRSRAN_NODISCARD bool append(const std::initializer_list<uint8_t>& bytes);
+  [[nodiscard]] bool append(const std::initializer_list<uint8_t>& bytes);
 
   /// Appends bytes from another byte_buffer. This function may allocate new segments.
-  SRSRAN_NODISCARD bool append(const byte_buffer& other);
+  [[nodiscard]] bool append(const byte_buffer& other);
 
   /// Appends bytes from another rvalue byte_buffer. This function may allocate new segments.
-  SRSRAN_NODISCARD bool append(byte_buffer&& other);
+  [[nodiscard]] bool append(byte_buffer&& other);
 
   /// Appends bytes to the byte buffer. This function may allocate new segments.
-  SRSRAN_NODISCARD bool append(uint8_t byte)
+  [[nodiscard]] bool append(uint8_t byte)
   {
     if (empty() or ctrl_blk_ptr->segments.tail->tailroom() == 0) {
-      if (not append_segment(DEFAULT_FIRST_SEGMENT_HEADROOM)) {
+      if (not append_segment(DEFAULT_FIRST_SEGMENT_HEADROOM, byte_buffer_segment_pool_default_segment_size())) {
         return false;
       }
     }
@@ -303,20 +208,20 @@ public:
   }
 
   /// Appends a view of bytes into current byte buffer.
-  SRSRAN_NODISCARD bool append(const byte_buffer_view& view);
+  [[nodiscard]] bool append(const byte_buffer_view& view);
 
   /// Appends an owning view of bytes into current byte buffer.
-  SRSRAN_NODISCARD bool append(const byte_buffer_slice& view);
+  [[nodiscard]] bool append(const byte_buffer_slice& slice);
 
   /// Prepends bytes to byte_buffer. This function may allocate new segments.
-  SRSRAN_NODISCARD bool prepend(span<const uint8_t> bytes);
+  [[nodiscard]] bool prepend(span<const uint8_t> bytes);
 
   /// \brief Prepend data of byte buffer to this byte buffer.
-  SRSRAN_NODISCARD bool prepend(const byte_buffer& other);
+  [[nodiscard]] bool prepend(const byte_buffer& other);
 
   /// \brief Prepend data of r-value byte buffer to this byte buffer. The segments of the provided byte buffer can get
   /// "stolen" if the byte buffer is the last reference to the segments.
-  SRSRAN_NODISCARD bool prepend(byte_buffer&& other);
+  [[nodiscard]] bool prepend(byte_buffer&& other);
 
   /// Prepends space in byte_buffer. This function may allocate new segments.
   /// \param nof_bytes Number of bytes to reserve at header.
@@ -363,10 +268,10 @@ public:
   bool is_contiguous() const { return empty() or ctrl_blk_ptr->segments.head == ctrl_blk_ptr->segments.tail; }
 
   /// Moves the bytes stored in different segments of the byte_buffer into first segment.
-  SRSRAN_NODISCARD bool linearize();
+  [[nodiscard]] bool linearize();
 
   /// Set byte_buffer length. Note: It doesn't initialize newly created bytes.
-  SRSRAN_NODISCARD bool resize(size_t new_sz);
+  [[nodiscard]] bool resize(size_t new_sz);
 
   /// Returns a non-owning list of segments that compose the byte_buffer.
   byte_buffer_segment_span_range segments()
@@ -384,7 +289,7 @@ public:
   {
     return detail::compare_byte_buffer_range(lhs, r);
   }
-  template <typename T, std::enable_if_t<std::is_convertible<T, span<const uint8_t>>::value, int> = 0>
+  template <typename T, std::enable_if_t<std::is_convertible_v<T, span<const uint8_t>>, int> = 0>
   friend bool operator==(const T& r, const byte_buffer& rhs)
   {
     return detail::compare_byte_buffer_range(rhs, r);
@@ -394,7 +299,7 @@ public:
   {
     return !(lhs == r);
   }
-  template <typename T, std::enable_if_t<std::is_convertible<T, span<const uint8_t>>::value, int> = 0>
+  template <typename T, std::enable_if_t<std::is_convertible_v<T, span<const uint8_t>>, int> = 0>
   friend bool operator!=(const T& r, const byte_buffer& rhs)
   {
     return !(rhs == r);
@@ -403,19 +308,21 @@ public:
 private:
   bool has_ctrl_block() const { return ctrl_blk_ptr != nullptr; }
 
-  SRSRAN_NODISCARD node_t* add_head_segment(size_t headroom, bool use_fallback = false);
+  [[nodiscard]] bool default_construct_unsafe(byte_buffer_memory_resource& segment_pool, unsigned sz_hint);
 
-  SRSRAN_NODISCARD node_t* create_segment(size_t headroom);
+  [[nodiscard]] bool append(span<const uint8_t> bytes, byte_buffer_memory_resource& segment_pool);
 
-  SRSRAN_NODISCARD bool append_segment(size_t headroom_suggestion);
+  [[nodiscard]] node_t* add_head_segment(size_t headroom, byte_buffer_memory_resource& segment_pool, size_t sz_hint);
 
-  SRSRAN_NODISCARD bool prepend_segment(size_t headroom_suggestion);
+  [[nodiscard]] node_t* create_segment(size_t headroom, size_t sz_hint);
+
+  [[nodiscard]] bool append_segment(size_t headroom_suggestion, size_t sz_hint);
+
+  [[nodiscard]] bool prepend_segment(size_t headroom_suggestion, size_t sz_hint);
 
   /// \brief Removes last segment of the byte_buffer.
   /// Note: This operation is O(N), as it requires recomputing the tail.
   void pop_last_segment();
-
-  static void warn_alloc_failure();
 
   intrusive_ptr<control_block> ctrl_blk_ptr;
 };
@@ -611,22 +518,22 @@ public:
   byte_buffer_view view() const { return *buffer; }
 
   /// Appends bytes.
-  SRSRAN_NODISCARD bool append(byte_buffer_view bytes) { return buffer->append(bytes); }
+  [[nodiscard]] bool append(byte_buffer_view bytes) { return buffer->append(bytes); }
 
   /// Appends initializer list of bytes.
-  SRSRAN_NODISCARD bool append(const std::initializer_list<uint8_t>& bytes)
+  [[nodiscard]] bool append(const std::initializer_list<uint8_t>& bytes)
   {
     return buffer->append(span<const uint8_t>{bytes.begin(), bytes.size()});
   }
 
   /// Appends span of bytes.
-  SRSRAN_NODISCARD bool append(span<const uint8_t> bytes) { return buffer->append(bytes); }
+  [[nodiscard]] bool append(span<const uint8_t> bytes) { return buffer->append(bytes); }
 
   /// Appends a single byte.
-  SRSRAN_NODISCARD bool append(uint8_t byte) { return buffer->append(byte); }
+  [[nodiscard]] bool append(uint8_t byte) { return buffer->append(byte); }
 
   /// Appends the specified amount of zeros.
-  SRSRAN_NODISCARD bool append_zeros(size_t nof_zeros);
+  [[nodiscard]] bool append_zeros(size_t nof_zeros);
 
   /// Checks last appended byte.
   uint8_t& back() { return buffer->back(); }
@@ -685,41 +592,13 @@ span<const uint8_t> to_span(const byte_buffer& src, span<uint8_t> tmp_mem);
 
 namespace fmt {
 
-/// \brief Custom formatter for byte_buffer_view.
-template <>
-struct formatter<srsran::byte_buffer_view> {
-  enum { hexadecimal, binary } mode = hexadecimal;
-
-  template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
-  {
-    auto it = ctx.begin();
-    while (it != ctx.end() and *it != '}') {
-      if (*it == 'b') {
-        mode = binary;
-      }
-      ++it;
-    }
-    return it;
-  }
-
-  template <typename FormatContext>
-  auto format(const srsran::byte_buffer_view& buf, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
-  {
-    if (mode == hexadecimal) {
-      return format_to(ctx.out(), "{:0>2x}", fmt::join(buf.begin(), buf.end(), " "));
-    }
-    return format_to(ctx.out(), "{:0>8b}", fmt::join(buf.begin(), buf.end(), " "));
-  }
-};
-
 /// \brief Custom formatter for byte_buffer.
 template <>
 struct formatter<srsran::byte_buffer> {
   enum { hexadecimal, binary } mode = hexadecimal;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     auto it = ctx.begin();
     while (it != ctx.end() and *it != '}') {
@@ -732,7 +611,7 @@ struct formatter<srsran::byte_buffer> {
   }
 
   template <typename FormatContext>
-  auto format(const srsran::byte_buffer& buf, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::byte_buffer& buf, FormatContext& ctx) const
   {
     if (mode == hexadecimal) {
       return format_to(ctx.out(), "{:0>2x}", fmt::join(buf.begin(), buf.end(), " "));
@@ -745,7 +624,7 @@ struct formatter<srsran::byte_buffer> {
 template <>
 struct formatter<srsran::byte_buffer_slice> : public formatter<srsran::byte_buffer_view> {
   template <typename FormatContext>
-  auto format(const srsran::byte_buffer_slice& buf, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::byte_buffer_slice& buf, FormatContext& ctx) const
   {
     return formatter<srsran::byte_buffer_view>::format(buf.view(), ctx);
   }

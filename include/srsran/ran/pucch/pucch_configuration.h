@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,9 +25,8 @@
 
 #pragma once
 
-#include "pucch_mapping.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
+#include "srsran/ran/pucch/pucch_mapping.h"
 #include "srsran/ran/sr_configuration.h"
 #include <cstdint>
 #include <variant>
@@ -49,7 +48,7 @@ constexpr size_t MAX_NOF_UE_PUCCH_RESOURCES = 128;
 constexpr size_t MAX_NOF_PUCCH_RESOURCES_PER_PUCCH_RESOURCE_SET = 32;
 
 /// Options for \c occ-Length in \c PUCCH-format4, in \c PUCCH-Config, TS 38.331.
-enum class pucch_f4_occ_len { n2, n4 };
+enum class pucch_f4_occ_len { n2 = 2, n4 = 4 };
 
 /// Options for \c occ-Index in \c PUCCH-format4, in \c PUCCH-Config, TS 38.331.
 enum class pucch_f4_occ_idx { n0, n1, n2, n3 };
@@ -131,7 +130,7 @@ struct pucch_format_1_cfg {
   bool operator!=(const pucch_format_1_cfg& rhs) const { return !(rhs == *this); }
 };
 
-/// Configuration for \c PUCCH-format2, in \c PUCCH-Config, TS 38.331.
+/// Configuration for \c PUCCH-format2 or \c PUCCH-format3, in \c PUCCH-Config, TS 38.331.
 struct pucch_format_2_3_cfg {
   uint8_t nof_prbs;
   uint8_t nof_symbols;

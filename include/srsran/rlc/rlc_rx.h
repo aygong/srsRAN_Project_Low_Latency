@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,7 @@
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/byte_buffer_chain.h"
 #include "srsran/ran/du_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 
 /*
  * This file will hold the interfaces and notifiers for the RLC entity.
@@ -46,6 +46,7 @@
  *    inherit or a notifier that the RLC will keep as a member.
  *
  */
+
 namespace srsran {
 
 /***************************************

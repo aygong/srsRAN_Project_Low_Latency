@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -26,6 +26,7 @@ add_subdirectory(test_utils)
 add_subdirectory(support)
 add_subdirectory(cell)
 add_subdirectory(common_scheduling)
+add_subdirectory(ue_context)
 add_subdirectory(ue_scheduling)
 add_subdirectory(uci_and_pucch)
 add_subdirectory(policy)
@@ -39,11 +40,12 @@ target_link_libraries(sched_no_ue_test srsran_sched
         srslog
         mac_configuration_helpers
         sched_config
+        sched_test_doubles
         gtest)
 add_test(sched_no_ue_test sched_no_ue_test)
 
 add_executable(pdcch_resource_allocator_test pdcch/pdcch_resource_allocator_test.cpp)
-target_link_libraries(pdcch_resource_allocator_test srsran_sched srslog mac_configuration_helpers sched_config gtest gtest_main)
+target_link_libraries(pdcch_resource_allocator_test srsran_sched srslog mac_configuration_helpers sched_config scheduler_test_utils gtest gtest_main)
 add_test(pdcch_resource_allocator_test pdcch_resource_allocator_test)
 
 add_executable(scheduler_test
@@ -51,14 +53,18 @@ add_executable(scheduler_test
         scheduler_ue_removal_test.cpp
         scheduler_tdd_test.cpp
         scheduler_ue_fallback_mode_test.cpp
-        scheduler_ta_cmd_test.cpp)
+        scheduler_ta_cmd_test.cpp
+        multi_cell_scheduler_test.cpp
+        multi_slice_scheduler_test.cpp
+        scheduler_qos_test.cpp
+)
 target_link_libraries(scheduler_test
         srsran_sched
         sched_config
         scheduler_test_suite
+        sched_test_doubles
         gtest
         gtest_main)
-gtest_discover_tests(scheduler_test)
 add_test(scheduler_test scheduler_test)
 
 add_executable(scheduler_test_doubles_test test_doubles/test_pucch_res_test_builder_helper.cpp)
@@ -86,15 +92,7 @@ add_executable(scheduler_metrics_handler_test scheduler_metrics_handler_test.cpp
 target_link_libraries(scheduler_metrics_handler_test
         srsran_sched
         sched_config
+        sched_test_doubles
         gtest
         gtest_main)
-gtest_discover_tests(scheduler_metrics_handler_test)
-
-add_executable(multi_cell_scheduler_test multi_cell_scheduler_test.cpp)
-target_link_libraries(multi_cell_scheduler_test
-        srsran_sched
-        sched_config
-        scheduler_test_suite
-        gtest
-        gtest_main)
-gtest_discover_tests(multi_cell_scheduler_test)
+add_test(scheduler_metrics_handler_test scheduler_metrics_handler_test)

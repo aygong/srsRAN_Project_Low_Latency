@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,6 @@
 
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/byte_buffer.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/carrier_configuration.h"
 #include "srsran/ran/du_types.h"
 #include "srsran/ran/pci.h"
@@ -32,9 +31,9 @@
 #include "srsran/ran/ssb_configuration.h"
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/scheduler/config/bwp_configuration.h"
+#include "srsran/scheduler/result/dci_info.h"
 #include "srsran/scheduler/sched_consts.h"
 #include "srsran/scheduler/scheduler_configurator.h"
-#include "srsran/scheduler/scheduler_dci.h"
 
 namespace srsran {
 

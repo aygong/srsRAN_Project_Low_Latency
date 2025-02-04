@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -74,7 +74,7 @@ def test_smoke_sequentially(
         common_scs=30,
         bandwidth=50,
         noise_spd=0,
-        sleep_between_movement_steps=2,
+        sleep_between_movement_steps=1,
         always_download_artifacts=False,
     )
 

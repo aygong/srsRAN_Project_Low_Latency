@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,43 +26,27 @@
 
 #include "test_utils/config_generators.h"
 #include "test_utils/result_test_helpers.h"
-#include "test_utils/scheduler_test_bench.h"
+#include "test_utils/scheduler_test_simulator.h"
+#include "tests/test_doubles/scheduler/cell_config_builder_profiles.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
+#include "srsran/ran/duplex_mode.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
 
-class base_scheduler_conres_test : public scheduler_test_bench
+class base_scheduler_conres_test : public scheduler_test_simulator
 {
 public:
   base_scheduler_conres_test(duplex_mode duplx_mode = duplex_mode::FDD) :
-    scheduler_test_bench(4, duplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30)
+    scheduler_test_simulator(4, duplx_mode == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30)
   {
-    if (duplx_mode == duplex_mode::TDD) {
-      builder_params.dl_f_ref_arfcn = 520002;
-      builder_params.scs_common     = subcarrier_spacing::kHz30;
-      builder_params.band           = band_helper::get_band_from_dl_arfcn(builder_params.dl_f_ref_arfcn);
-      builder_params.channel_bw_mhz = bs_channel_bandwidth::MHz10;
-      const unsigned nof_crbs       = band_helper::get_n_rbs_from_bw(
-          builder_params.channel_bw_mhz, builder_params.scs_common, band_helper::get_freq_range(*builder_params.band));
-      static const uint8_t                                   ss0_idx = 0;
-      std::optional<band_helper::ssb_coreset0_freq_location> ssb_freq_loc =
-          band_helper::get_ssb_coreset0_freq_location(builder_params.dl_f_ref_arfcn,
-                                                      *builder_params.band,
-                                                      nof_crbs,
-                                                      builder_params.scs_common,
-                                                      builder_params.scs_common,
-                                                      ss0_idx,
-                                                      builder_params.max_coreset0_duration);
-      if (!ssb_freq_loc.has_value()) {
-        report_error("Unable to derive a valid SSB pointA and k_SSB for cell id ({}).\n", builder_params.pci);
-      }
-      builder_params.offset_to_point_a = ssb_freq_loc->offset_to_point_A;
-      builder_params.k_ssb             = ssb_freq_loc->k_ssb;
-      builder_params.coreset0_index    = ssb_freq_loc->coreset0_idx;
-    }
+    builder_params =
+        duplx_mode == duplex_mode::TDD ? cell_config_builder_profiles::tdd() : cell_config_builder_profiles::fdd();
+    builder_params.channel_bw_mhz = bs_channel_bandwidth::MHz20;
+
     // Create cell config with space for two PDCCHs in the SearchSpace#1.
     sched_cell_configuration_request_message cell_cfg_req =
-        test_helpers::make_default_sched_cell_configuration_request(builder_params);
+        sched_config_helper::make_default_sched_cell_configuration_request(builder_params);
     cell_cfg_req.dl_cfg_common.init_dl_bwp.pdcch_common.search_spaces[1].set_non_ss0_nof_candidates(
         std::array<uint8_t, 5>{0, 0, 2, 0, 0});
     add_cell(cell_cfg_req);
@@ -73,11 +57,11 @@ public:
                   "This test assumes a setup with ZP CSI-RS enabled");
 
     // Create a UE with a DRB active.
-    auto ue_cfg               = test_helpers::create_default_sched_ue_creation_request(builder_params, {});
+    auto ue_cfg               = sched_config_helper::create_default_sched_ue_creation_request(builder_params, {});
     ue_cfg.ue_index           = ue_index;
     ue_cfg.crnti              = rnti;
     ue_cfg.starts_in_fallback = true;
-    scheduler_test_bench::add_ue(ue_cfg, true);
+    scheduler_test_simulator::add_ue(ue_cfg, true);
   }
 
   ~base_scheduler_conres_test() { srslog::flush(); }
@@ -111,7 +95,8 @@ struct conres_test_params {
 /// Formatter for test params.
 void PrintTo(const conres_test_params& value, ::std::ostream* os)
 {
-  *os << fmt::format("LCID={}, mode={}", value.msg4_lcid, value.duplx_mode == duplex_mode::TDD ? "TDD" : "FDD");
+  *os << fmt::format(
+      "LCID={}, mode={}", fmt::underlying(value.msg4_lcid), value.duplx_mode == duplex_mode::TDD ? "TDD" : "FDD");
 }
 
 class scheduler_con_res_msg4_test : public base_scheduler_conres_test,
@@ -172,6 +157,12 @@ TEST_P(scheduler_con_res_msg4_test,
   ASSERT_TRUE(this->last_sched_res_list[to_du_cell_index(0)]->dl.csi_rs.empty());
 }
 
+static bool is_f1_pucch(const pucch_info& pucch, bool is_common, bool has_sr)
+{
+  return pucch.format == pucch_format::FORMAT_1 and ((pucch.format_1.sr_bits != sr_nof_bits::no_sr) == has_sr) and
+         pucch.format_1.harq_ack_nof_bits > 0 and (pucch.resources.second_hop_prbs.empty() != is_common);
+};
+
 TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is_used)
 {
   static const unsigned msg4_size = 128;
@@ -216,66 +207,55 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_pucch_is
 
   ASSERT_TRUE(this->run_slot_until([this, &pucch_res_ptrs]() {
     // Depending on the SR and CSI slots, we can have different combinations of PUCCH grants. There must be at least one
-    // PUCCH F1 grant using common resources, plus:
+    // PUCCH F1 grant using common resources, and:
+    // - No PUCCH F1 ded.
     // - 1 PUCCH F1 ded. with 1 HARQ-ACK bit and NO SR.
     // - 1 PUCCH F1 ded. with 1 HARQ-ACK bit and NO SR and 1 PUCCH F1 ded. with 1 HARQ-ACK bit and SR.
     // - 1 PUCCH F2 ded. with 1 HARQ-ACK bit and CSI, with optional SR.
 
-    // Case of 2 PUCCH grants.
-    if (this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs.size() == 2) {
-      for (const auto& pucch : this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs) {
-        if (pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_1 and
-            pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0) {
-          pucch.resources.second_hop_prbs.empty() ? pucch_res_ptrs.f1_ded_ptr    = &pucch
-                                                  : pucch_res_ptrs.f1_common_ptr = &pucch;
-        } else if (pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_2 and
-                   pucch.format_2.harq_ack_nof_bits > 0) {
+    const auto& pucchs     = this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs;
+    unsigned    nof_pucchs = pucchs.size();
+
+    if (nof_pucchs == 1) {
+      if (pucchs[0].crnti == rnti and is_f1_pucch(pucchs[0], true, false)) {
+        pucch_res_ptrs.f1_common_ptr = &pucchs[0];
+      }
+    } else if (nof_pucchs == 2) {
+      for (const auto& pucch : pucchs) {
+        if (pucch.crnti != rnti) {
+          continue;
+        }
+        if (is_f1_pucch(pucch, true, false)) {
+          pucch_res_ptrs.f1_common_ptr = &pucch;
+        } else if (is_f1_pucch(pucch, false, false)) {
+          pucch_res_ptrs.f1_ded_ptr = &pucch;
+        } else if (pucch.format == pucch_format::FORMAT_2 and pucch.format_2.harq_ack_nof_bits > 0) {
           pucch_res_ptrs.f2_ptr = &pucch;
         }
-        if (pucch_res_ptrs.f1_common_ptr != nullptr and
-            (pucch_res_ptrs.f1_ded_ptr != nullptr or pucch_res_ptrs.f2_ptr != nullptr)) {
-          return true;
-        }
       }
-      return false;
-    }
-    // Case of 3 PUCCH grants.
-    else if (this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs.size() == 3) {
-      for (const auto& pucch : this->last_sched_res_list[to_du_cell_index(0)]->ul.pucchs) {
+    } else if (nof_pucchs == 3) {
+      for (const auto& pucch : pucchs) {
         if (pucch.crnti == rnti and pucch.format == pucch_format::FORMAT_1) {
-          if (pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0 and
-              not pucch.resources.second_hop_prbs.empty()) {
+          if (is_f1_pucch(pucch, true, false)) {
             pucch_res_ptrs.f1_common_ptr = &pucch;
-          } else if (pucch.format_1.sr_bits == sr_nof_bits::one and pucch.format_1.harq_ack_nof_bits > 0 and
-                     pucch.resources.second_hop_prbs.empty()) {
+          } else if (is_f1_pucch(pucch, false, true)) {
             pucch_res_ptrs.f1_ded_sr_ptr = &pucch;
-          } else if (pucch.format_1.sr_bits == sr_nof_bits::no_sr and pucch.format_1.harq_ack_nof_bits > 0 and
-                     pucch.resources.second_hop_prbs.empty()) {
+          } else if (is_f1_pucch(pucch, false, false)) {
             pucch_res_ptrs.f1_ded_ptr = &pucch;
           }
         }
-        if (pucch_res_ptrs.f1_common_ptr != nullptr and pucch_res_ptrs.f1_ded_ptr != nullptr and
-            pucch_res_ptrs.f1_ded_sr_ptr != nullptr) {
-          return true;
-        }
       }
-      return false;
     }
 
-    return false;
+    return pucch_res_ptrs.f1_common_ptr != nullptr;
   }));
-  // TODO: Once PUCCH scheduler avoids multiplexing SR and HARQ-ACK for common PUCCH resources, uncomment the following.
-  //  ASSERT_EQ(std::count_if(this->last_sched_res->ul.pucchs.begin(),
-  //                          this->last_sched_res->ul.pucchs.end(),
-  //                          [this](const pucch_info& pucch) { return pucch.crnti == rnti; }),
-  //            1)
-  //      << "In case of common PUCCH scheduling, multiplexing with SR or CSI should be avoided";
 
-  const bool two_pucch_grants = pucch_res_ptrs.f1_common_ptr != nullptr and
-                                (pucch_res_ptrs.f1_ded_ptr != nullptr or pucch_res_ptrs.f2_ptr != nullptr);
-  const bool three_pucch_grants = pucch_res_ptrs.f1_common_ptr != nullptr and pucch_res_ptrs.f1_ded_ptr != nullptr and
-                                  pucch_res_ptrs.f1_ded_sr_ptr != nullptr;
-  ASSERT_TRUE(two_pucch_grants or three_pucch_grants) << "Invalid PUCCH grants combination";
+  ASSERT_TRUE(pucch_res_ptrs.f1_common_ptr != nullptr);
+  if (pucch_res_ptrs.f1_ded_sr_ptr != nullptr) {
+    ASSERT_TRUE(pucch_res_ptrs.f1_ded_ptr != nullptr);
+  } else {
+    ASSERT_FALSE((pucch_res_ptrs.f1_ded_ptr != nullptr) and (pucch_res_ptrs.f2_ptr != nullptr));
+  }
 }
 
 TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_ss_is_used)
@@ -302,8 +282,8 @@ TEST_P(scheduler_con_res_msg4_test, while_ue_is_in_fallback_then_common_ss_is_us
   }
   ASSERT_TRUE(is_common_ss_used) << "UE in fallback should use common SS";
   // PDCCH monitoring must be active in this slot.
-  ASSERT_TRUE(ss_used != nullptr and pdcch_helper::is_pdcch_monitoring_active(next_slot, *ss_used))
-      << fmt::format("Common SS id={} is not monitored at slot={}", ss_used->get_id(), next_slot.slot_index());
+  ASSERT_TRUE(ss_used != nullptr and pdcch_helper::is_pdcch_monitoring_active(next_slot, *ss_used)) << fmt::format(
+      "Common SS id={} is not monitored at slot={}", fmt::underlying(ss_used->get_id()), next_slot.slot_index());
 }
 
 INSTANTIATE_TEST_SUITE_P(scheduler_con_res_msg4_test,

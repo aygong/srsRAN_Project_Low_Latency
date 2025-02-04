@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #include "srsran/phy/generic_functions/generic_functions_factories.h"
 #include "srsran/srsvec/compare.h"
 #include "srsran/srsvec/dot_prod.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_test.h"
 #include <cmath>
 #include <getopt.h>

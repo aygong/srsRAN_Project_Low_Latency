@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -20,5 +20,3 @@
 
 add_library(ngap_test_doubles ngap_test_message_validators.cpp)
 target_link_libraries(ngap_test_doubles srsran_support srslog ngap_asn1)
-
-add_to_exported_libs(ngap_test_doubles)

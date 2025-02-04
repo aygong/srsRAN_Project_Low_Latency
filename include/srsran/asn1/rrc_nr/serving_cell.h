@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "bwp_cfg.h"
+#include "srsran/asn1/rrc_nr/bwp_cfg.h"
 
 namespace asn1 {
 namespace rrc_nr {

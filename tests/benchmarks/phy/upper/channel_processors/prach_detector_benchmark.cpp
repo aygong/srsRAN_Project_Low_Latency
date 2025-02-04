@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -213,7 +213,7 @@ int main(int argc, char** argv)
 
     // Measurement description.
     fmt::memory_buffer meas_description;
-    fmt::format_to(meas_description, "{}", config);
+    fmt::format_to(std::back_inserter(meas_description), "{}", config);
 
     // Run the benchmark.
     perf_meas.new_measure(

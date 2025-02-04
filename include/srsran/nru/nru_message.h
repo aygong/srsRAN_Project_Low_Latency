@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,6 @@
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/byte_buffer_chain.h"
 #include "srsran/adt/static_vector.h"
-
 #include <cstdint>
 #include <optional>
 

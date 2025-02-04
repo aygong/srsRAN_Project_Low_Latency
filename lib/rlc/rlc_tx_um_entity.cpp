@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -64,8 +64,8 @@ rlc_tx_um_entity::rlc_tx_um_entity(gnb_du_id_t                          du_id,
   srsran_assert(config.pdcp_sn_len == pdcp_sn_size::size12bits || config.pdcp_sn_len == pdcp_sn_size::size18bits,
                 "Cannot create RLC TX AM, unsupported pdcp_sn_len={}. du={} ue={} {}",
                 config.pdcp_sn_len,
-                du_id,
-                ue_index,
+                fmt::underlying(du_id),
+                fmt::underlying(ue_index),
                 rb_id);
 
   logger.log_info("RLC UM configured. {}", cfg);
@@ -130,11 +130,6 @@ size_t rlc_tx_um_entity::pull_pdu(span<uint8_t> mac_sdu_buf)
     logger.log_debug("Cannot fit SDU into grant_len={}. head_len_full={}", grant_len, head_len_full);
     return 0;
   }
-
-  // Multiple threads can read from the SDU queue and change the
-  // RLC UM TX state (current SDU, tx_next and next_so).
-  // As such we need to lock to access these variables.
-  std::lock_guard<std::mutex> lock(mutex);
 
   // Get a new SDU, if none is currently being transmitted
   if (sdu.buf.empty()) {
@@ -321,8 +316,6 @@ void rlc_tx_um_entity::update_mac_buffer_state()
 // TS 38.322 v16.2.0 Sec 5.5
 uint32_t rlc_tx_um_entity::get_buffer_state()
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   // minimum bytes needed to tx all queued SDUs + each header
   rlc_sdu_queue_lockfree::state_t queue_state = sdu_queue.get_state();
   uint32_t                        queue_bytes = queue_state.n_bytes + queue_state.n_sdus * head_len_full;

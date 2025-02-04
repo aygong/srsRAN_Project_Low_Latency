@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #include "srsran_scheduler_adapter.h"
+#include "srsran/scheduler/result/sched_result.h"
 #include "srsran/scheduler/scheduler_factory.h"
 
 using namespace srsran;
@@ -32,6 +33,7 @@ static sched_ue_creation_request_message make_scheduler_ue_creation_request(cons
   ret.ue_index           = request.ue_index;
   ret.crnti              = request.crnti;
   ret.starts_in_fallback = request.initial_fallback;
+  ret.ul_ccch_slot_rx    = request.ul_ccch_slot_rx;
   ret.cfg                = request.sched_cfg;
   ret.tag_config         = request.mac_cell_group_cfg.tag_config;
   return ret;
@@ -200,6 +202,7 @@ void srsran_scheduler_adapter::handle_ul_phr_indication(const mac_phr_ce_info& p
   ind.cell_index = phr.cell_index;
   ind.ue_index   = phr.ue_index;
   ind.rnti       = phr.rnti;
+  ind.slot_rx    = phr.slot_rx;
   ind.phr        = phr.phr;
   sched_impl->handle_ul_phr_indication(ind);
 }
@@ -235,24 +238,25 @@ void srsran_scheduler_adapter::handle_error_indication(slot_point               
 void srsran_scheduler_adapter::sched_config_notif_adapter::on_ue_config_complete(du_ue_index_t ue_index,
                                                                                  bool          ue_creation_result)
 {
-  srsran_sanity_check(is_du_ue_index_valid(ue_index), "Invalid ue index={}", ue_index);
+  srsran_sanity_check(is_du_ue_index_valid(ue_index), "Invalid ue index={}", fmt::underlying(ue_index));
 
   // Remove continuation of task in ctrl executor.
   if (not parent.ctrl_exec.defer([this, ue_index, ue_creation_result]() {
         parent.sched_cfg_notif_map[ue_index].ue_config_ready.set(ue_creation_result);
       })) {
-    parent.logger.error("ue={}: Unable to finish UE configuration. Cause: DU task queue is full.", ue_index);
+    parent.logger.error("ue={}: Unable to finish UE configuration. Cause: DU task queue is full.",
+                        fmt::underlying(ue_index));
   }
 }
 
 void srsran_scheduler_adapter::sched_config_notif_adapter::on_ue_delete_response(du_ue_index_t ue_index)
 {
-  srsran_sanity_check(is_du_ue_index_valid(ue_index), "Invalid ue index={}", ue_index);
+  srsran_sanity_check(is_du_ue_index_valid(ue_index), "Invalid ue index={}", fmt::underlying(ue_index));
 
   // Continuation of ue remove task dispatched to the ctrl executor.
   if (not parent.ctrl_exec.defer(
           [this, ue_index]() { parent.sched_cfg_notif_map[ue_index].ue_config_ready.set(true); })) {
-    parent.logger.error("ue={}: Unable to remove UE. Cause: DU task queue is full.", ue_index);
+    parent.logger.error("ue={}: Unable to remove UE. Cause: DU task queue is full.", fmt::underlying(ue_index));
   }
 }
 
@@ -283,8 +287,9 @@ void srsran_scheduler_adapter::cell_handler::handle_rach_indication(const mac_ra
     for (const auto& preamble : occasion.preambles) {
       rnti_t alloc_tc_rnti = parent->rnti_mng.allocate();
       if (alloc_tc_rnti == rnti_t::INVALID_RNTI) {
-        parent->logger.warning(
-            "cell={} preamble id={}: Ignoring PRACH. Cause: Failed to allocate TC-RNTI.", cell_idx, preamble.index);
+        parent->logger.warning("cell={} preamble id={}: Ignoring PRACH. Cause: Failed to allocate TC-RNTI.",
+                               fmt::underlying(cell_idx),
+                               preamble.index);
         continue;
       }
       auto& sched_preamble        = sched_occasion.preambles.emplace_back();

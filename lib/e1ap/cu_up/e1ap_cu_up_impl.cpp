@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,6 +29,7 @@
 #include "procedures/e1ap_cu_up_setup_procedure.h"
 #include "srsran/e1ap/common/e1ap_message.h"
 #include "srsran/ran/bcd_helper.h"
+#include "srsran/support/format/fmt_to_c_str.h"
 #include "srsran/support/timers.h"
 #include <memory>
 
@@ -91,7 +92,8 @@ void e1ap_cu_up_impl::handle_bearer_context_inactivity_notification(
     const e1ap_bearer_context_inactivity_notification& msg)
 {
   if (!ue_ctxt_list.contains(msg.ue_index)) {
-    logger.error("ue={}: Dropping BearerContextInactivityNotification. UE does not exist", msg.ue_index);
+    logger.error("ue={}: Dropping BearerContextInactivityNotification. UE does not exist",
+                 fmt::underlying(msg.ue_index));
     return;
   }
 

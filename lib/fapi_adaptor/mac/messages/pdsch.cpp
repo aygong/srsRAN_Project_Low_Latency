@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,6 +26,7 @@
 #include "srsran/phy/upper/channel_coding/ldpc/ldpc.h"
 #include "srsran/ran/sch/sch_constants.h"
 #include "srsran/ran/sch/tbs_calculator.h"
+#include "srsran/scheduler/result/pdsch_info.h"
 #include <numeric>
 
 using namespace srsran;

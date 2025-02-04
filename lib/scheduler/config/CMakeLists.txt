@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -19,7 +19,6 @@
 #
 
 set(SOURCES serving_cell_config_factory.cpp
-        logical_channel_config_factory.cpp
         sched_cell_config_helpers.cpp
         scheduler_cell_config_validator.cpp
         scheduler_ue_config_validator.cpp

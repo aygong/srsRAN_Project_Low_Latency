@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,10 +22,9 @@
 
 #pragma once
 
-#include "unique_thread.h"
 #include "srsran/adt/concurrent_queue.h"
-#include "srsran/adt/optional.h"
 #include "srsran/support/executors/task_executor.h"
+#include "srsran/support/executors/unique_thread.h"
 #include <unordered_map>
 #include <variant>
 
@@ -192,10 +191,10 @@ public:
   void stop();
 
   /// Add new execution context to repository.
-  SRSRAN_NODISCARD bool add_execution_context(std::unique_ptr<task_execution_context> ctxt);
+  [[nodiscard]] bool add_execution_context(std::unique_ptr<task_execution_context> ctxt);
 
   /// Returns a table of all executors stored in the repository.
-  SRSRAN_NODISCARD const executor_table& executors() const { return executor_list; }
+  [[nodiscard]] const executor_table& executors() const { return executor_list; }
 
 private:
   srslog::basic_logger& logger;

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,11 +23,11 @@
 #pragma once
 
 #include "srsran/adt/expected.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/span.h"
 #include "srsran/ran/bs_channel_bandwidth.h"
 #include "srsran/ran/nr_band.h"
 #include "srsran/ran/subcarrier_spacing.h"
+#include <optional>
 
 namespace srsran {
 

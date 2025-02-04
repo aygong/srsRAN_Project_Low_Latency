@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -72,7 +72,7 @@ struct formatter<srsran::rnti_t> {
   }
 
   template <typename FormatContext>
-  auto format(srsran::rnti_t rnti, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::rnti_t rnti, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{:#x}", to_value(rnti));
   }

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/phy/support/support_factories.h"
 #include "srsran/phy/upper/sequence_generators/sequence_generator_factories.h"
 #include "srsran/phy/upper/signal_processors/ptrs/ptrs_pdsch_generator.h"
 #include <memory>
@@ -43,6 +44,7 @@ public:
 /// \param[in] pseudo_random_gen_factory Pseudo-random sequence generator factory.
 /// \return A PT-RS for PDSCH generator factory instance.
 std::shared_ptr<ptrs_pdsch_generator_factory>
-create_ptrs_pdsch_generator_generic_factory(std::shared_ptr<pseudo_random_generator_factory> pseudo_random_gen_factory);
+create_ptrs_pdsch_generator_generic_factory(std::shared_ptr<pseudo_random_generator_factory> pseudo_random_gen_factory,
+                                            std::shared_ptr<resource_grid_mapper_factory>    rg_mapper_factory);
 
 } // namespace srsran

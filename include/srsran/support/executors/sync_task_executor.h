@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -41,13 +41,13 @@ public:
   {
   }
 
-  bool execute(unique_task task) override
+  [[nodiscard]] bool execute(unique_task task) override
   {
     std::mutex              mutex;
     std::condition_variable cvar;
     bool                    done = false;
 
-    bool ret = get(executor).execute([&mutex, &cvar, &done, task = std::move(task)]() {
+    bool ret = get(executor).execute([&mutex, &cvar, &done, &task]() {
       task();
 
       mutex.lock();
@@ -70,7 +70,7 @@ public:
     return ret;
   }
 
-  bool defer(unique_task task) override { return execute(std::move(task)); }
+  [[nodiscard]] bool defer(unique_task task) override { return execute(std::move(task)); }
 
 private:
   template <typename U>

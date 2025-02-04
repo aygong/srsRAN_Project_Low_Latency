@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,6 @@
 /// \brief Configuration structs passed to scheduler implementation.
 
 #include "srsran/adt/interval.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/direct_current_offset.h"
 #include "srsran/ran/pdcch/aggregation_level.h"
 #include "srsran/ran/pdsch/pdsch_mcs.h"
@@ -36,6 +35,7 @@
 #include "srsran/ran/slot_pdu_capacity_constants.h"
 #include <chrono>
 #include <variant>
+#include <vector>
 
 namespace srsran {
 
@@ -50,6 +50,18 @@ struct time_rr_scheduler_expert_config {};
 
 /// \brief Policy scheduler expert parameters.
 using policy_scheduler_expert_config = std::variant<time_rr_scheduler_expert_config, time_pf_scheduler_expert_config>;
+
+struct ul_power_control {
+  /// Enable closed-loop PUSCH power control.
+  bool enable_pusch_cl_pw_control = false;
+  /// Target PUSCH SINR to be achieved with Close-loop power control, in dB.
+  /// Only relevant if \c enable_closed_loop_pw_control is set to true.
+  float target_pusch_sinr{10.0f};
+  /// Path-loss at which the Target PUSCH SINR is expected to be achieved, in dB.
+  /// This is used to compute the path loss compensation for PUSCH fractional power control.
+  /// Only relevant if \c enable_closed_loop_pw_control is set to true.
+  float path_loss_for_target_pusch_sinr{70.0f};
+};
 
 /// \brief UE scheduling statically configurable expert parameters.
 struct scheduler_ue_expert_config {
@@ -73,14 +85,34 @@ struct scheduler_ue_expert_config {
   interval<unsigned> pdsch_nof_rbs{1, MAX_NOF_PRBS};
   /// Set boundaries, in number of RBs, for UE PUSCH grants.
   interval<unsigned> pusch_nof_rbs{1, MAX_NOF_PRBS};
+  /// \defgroup ta_manager_params
+  /// \brief Time Advance (TA) manager parameters.
+  ///
+  /// These parameters define the behaviour of the Time Advance manager and on how the Time Advance Command (\f$T_A\f$)
+  /// is triggered.
+  ///
+  /// The TA measurement is reported from the physical layer, averaged over a \ref ta_measurement_slot_period and
+  /// outliers are filtered out. The final estimated TA is rounded to the nearest TA unit.
+  ///
+  /// \remark T_A is defined in TS 38.213, clause 4.2.
+  /// @{
   /// Measurements periodicity in nof. slots over which the new Timing Advance Command is computed.
   unsigned ta_measurement_slot_period{80};
-  /// Timing Advance Command (T_A) offset threshold above which Timing Advance Command is triggered. Possible valid
-  /// values {0,...,32}. If set to less than zero, issuing of TA Command is disabled.
-  /// \remark T_A is defined in TS 38.213, clause 4.2.
+  /// \brief Timing Advance Command (T_A) offset threshold.
+  ///
+  /// A TA command is triggered if the estimated TA is equal to or greater than this threshold. Possible valid values
+  /// are {0,...,32}.
+  ///
+  /// If set to less than zero, issuing of TA Command is disabled.
   int8_t ta_cmd_offset_threshold;
+  /// \brief Timing Advance target in units of TA.
+  ///
+  /// Offsets the target TA measurements so the signal from the UE is kept delayed. This parameter is useful for
+  /// avoiding negative TA when the UE is getting away.
+  float ta_target;
   /// UL SINR threshold (in dB) above which reported N_TA update measurement is considered valid.
   float ta_update_measurement_ul_sinr_threshold;
+  /// @}
   /// Direct Current (DC) offset, in number of subcarriers, used in PUSCH, by default. The gNB may supersede this DC
   /// offset value through RRC messaging. See TS38.331 - "txDirectCurrentLocation".
   dc_offset_t initial_ul_dc_offset{dc_offset_t::center};
@@ -122,6 +154,8 @@ struct scheduler_ue_expert_config {
   crb_interval pusch_crb_limits{0, MAX_NOF_PRBS};
   /// Expert parameters to be passed to the policy scheduler.
   policy_scheduler_expert_config strategy_cfg = time_rr_scheduler_expert_config{};
+  /// Expert PUCCH/PUSCH power control parameters.
+  ul_power_control ul_power_ctrl = ul_power_control{};
 };
 
 /// \brief System Information scheduling statically configurable expert parameters.
@@ -156,8 +190,9 @@ struct scheduler_expert_config {
   scheduler_ra_expert_config     ra;
   scheduler_paging_expert_config pg;
   scheduler_ue_expert_config     ue;
-  bool                           log_broadcast_messages;
-  std::chrono::milliseconds      metrics_report_period;
+  bool                           log_broadcast_messages       = false;
+  bool                           log_high_latency_diagnostics = false;
+  std::chrono::milliseconds      metrics_report_period{1000};
 };
 
 } // namespace srsran

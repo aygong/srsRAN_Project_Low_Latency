@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -61,16 +61,19 @@ public:
 class downlink_pdu_validator_dummy : public downlink_pdu_validator
 {
 public:
-  bool is_valid(const ssb_processor::pdu_t& pdu) const override { return true; }
-  bool is_valid(const pdcch_processor::pdu_t& pdu) const override { return true; }
-  bool is_valid(const pdsch_processor::pdu_t& pdu) const override { return true; }
-  bool is_valid(const nzp_csi_rs_generator::config_t& config) const override { return true; }
+  bool                    is_valid(const ssb_processor::pdu_t& pdu) const override { return true; }
+  bool                    is_valid(const pdcch_processor::pdu_t& pdu) const override { return true; }
+  error_type<std::string> is_valid(const pdsch_processor::pdu_t& pdu) const override { return default_success_t(); }
+  bool                    is_valid(const nzp_csi_rs_generator::config_t& config) const override { return true; }
 };
 
 class uplink_pdu_validator_dummy : public uplink_pdu_validator
 {
 public:
-  bool                    is_valid(const prach_detector::configuration& config) const override { return true; }
+  error_type<std::string> is_valid(const prach_detector::configuration& config) const override
+  {
+    return default_success_t();
+  }
   error_type<std::string> is_valid(const pucch_processor::format0_configuration& config) const override
   {
     return default_success_t();
@@ -92,7 +95,10 @@ public:
     return default_success_t();
   }
   error_type<std::string> is_valid(const pusch_processor::pdu_t& pdu) const override { return default_success_t(); }
-  bool                    is_valid(const srs_estimator_configuration& config) const override { return true; }
+  error_type<std::string> is_valid(const srs_estimator_configuration& config) const override
+  {
+    return default_success_t();
+  }
 };
 
 class resource_grid_pool_dummy : public resource_grid_pool, private shared_resource_grid::pool_interface
@@ -100,7 +106,7 @@ class resource_grid_pool_dummy : public resource_grid_pool, private shared_resou
 public:
   explicit resource_grid_pool_dummy() {}
 
-  shared_resource_grid allocate_resource_grid(const resource_grid_context& context) override
+  shared_resource_grid allocate_resource_grid(slot_point slot) override
   {
     unsigned expected_available_ref_count = 0;
     bool     available                    = ref_count.compare_exchange_strong(expected_available_ref_count, 1);
@@ -145,7 +151,7 @@ public:
     dl_processor.emplace_back(1);
   }
 
-  downlink_processor& get_processor(slot_point slot, unsigned sector_id) override
+  downlink_processor_controller& get_processor_controller(slot_point slot) override
   {
     return dl_processor[slot.slot_index()];
   }
@@ -172,7 +178,7 @@ protected:
   uplink_pdu_validator_dummy          ul_pdu_validator;
   slot_error_message_notifier_spy     error_notifier_spy;
   manual_task_worker                  worker;
-  fapi_to_phy_translator_config       config = {sector_id, headroom_in_slots, scs, scs, &prach_cfg, &carrier_cfg, {0}};
+  fapi_to_phy_translator_config       config = {sector_id, headroom_in_slots, scs, scs, prach_cfg, carrier_cfg, {0}};
   fapi_to_phy_translator_dependencies dependencies = {
       &srslog::fetch_basic_logger("FAPI"),
       &dl_processor_pool,

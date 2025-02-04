@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,10 @@
 
 #include "f1ap_du_ue_context_modification_procedure.h"
 #include "../../asn1_helpers.h"
+#include "proc_logger.h"
 #include "srsran/asn1/f1ap/common.h"
 #include "srsran/f1ap/f1ap_message.h"
+#include "srsran/support/async/async_no_op_task.h"
 
 using namespace srsran;
 using namespace srs_du;
@@ -50,12 +52,21 @@ void f1ap_du_ue_context_modification_procedure::operator()(coro_context<async_ta
   // "If the UE CONTEXT MODIFICATION REQUEST message contains the RRC-Container IE, the gNB-DU shall send the
   // corresponding RRC message to the UE."
   if (du_response.result and req->rrc_container_present) {
-    auto* srb = ue.bearers.find_srb(srb_id_t::srb1);
-    if (srb != nullptr) {
-      srb->handle_pdu(req->rrc_container.copy());
-    } else {
-      du_response.result = false;
+    CORO_AWAIT_VALUE(bool result, handle_rrc_container());
+    if (not result and req->rrc_delivery_status_request_present) {
+      // Note: Even if lower layers do not notify RRC container delivery, the procedure moves forward. We can rely on
+      // RLC RLF in case something goes wrong.
+      logger.warning(
+          "{}: Ignoring RRC Delivery status request. Cause: Lower layers have not confirmed RRC container delivery",
+          f1ap_log_prefix{ue.context, name()});
     }
+  }
+
+  if (req->tx_action_ind_present) {
+    // "If the UE CONTEXT MODIFICATION REQUEST message contains the Transmission Action Indicator IE, the gNB-DU
+    // shall stop or restart (if already stopped) data transmission for the UE, according to the value of this IE.
+    // It is up to gNB-DU implementation when to stop or restart the UE scheduling.
+    CORO_AWAIT(handle_tx_action_indicator());
   }
 
   if (du_response.result) {
@@ -71,6 +82,15 @@ void f1ap_du_ue_context_modification_procedure::create_du_request(const asn1::f1
 {
   // Construct DU request.
   du_request.ue_index = ue.context.ue_index;
+
+  if (msg->sp_cell_id_present) {
+    // > [TS 38.473, 8.3.4.2] "If the SpCell ID IE is included in the UE CONTEXT MODIFICATION REQUEST message, the
+    // gNB-DU shall replace any previously received value and regard it as a reconfiguration with sync as defined in
+    // TS 38.331"
+    auto plmn = plmn_identity::from_bytes(msg->sp_cell_id.plmn_id.to_bytes());
+    auto nci  = nr_cell_identity::create(msg->sp_cell_id.nr_cell_id.to_number());
+    du_request.spcell_id.emplace(plmn.value(), nci.value());
+  }
 
   // > Set whether full configuration is required.
   // [TS 38.473, section 8.3.4.2] If the Full Configuration IE is contained in the UE CONTEXT MODIFICATION REQUEST
@@ -100,6 +120,12 @@ void f1ap_du_ue_context_modification_procedure::create_du_request(const asn1::f1
   }
 
   if (msg->cu_to_du_rrc_info_present) {
+    // >> measConfig IE.
+    // [TS 38.473, 8.3.4.2] If the MeasConfig IE is included in the CU to DU RRC Information IE in the UE CONTEXT
+    // MODIFICATION REQUEST message, the gNB-DU shall deduce that changes to the measurements’ configuration need to be
+    // applied.
+    du_request.meas_cfg = msg->cu_to_du_rrc_info.meas_cfg.copy();
+
     // >> Pass UE capabilities.
     du_request.ue_cap_rat_list = msg->cu_to_du_rrc_info.ue_cap_rat_container_list.copy();
   }
@@ -143,10 +169,16 @@ void f1ap_du_ue_context_modification_procedure::send_ue_context_modification_res
   resp->srbs_modified_list_present               = false;
   resp->full_cfg_present                         = false;
 
-  // > DU-to-CU RRC Container.
-  if (not du_response.du_to_cu_rrc_container.empty()) {
+  // > cellGroupConfig IE.
+  if (not du_response.cell_group_cfg.empty()) {
     resp->du_to_cu_rrc_info_present        = true;
-    resp->du_to_cu_rrc_info.cell_group_cfg = du_response.du_to_cu_rrc_container.copy();
+    resp->du_to_cu_rrc_info.cell_group_cfg = du_response.cell_group_cfg.copy();
+  }
+
+  // > measGapConfig IE.
+  if (not du_response.meas_gap_cfg.empty()) {
+    resp->du_to_cu_rrc_info_present      = true;
+    resp->du_to_cu_rrc_info.meas_gap_cfg = du_response.meas_gap_cfg.copy();
   }
 
   // > Full Config IE.
@@ -169,4 +201,30 @@ void f1ap_du_ue_context_modification_procedure::send_ue_context_modification_fai
   resp->cause.set_radio_network().value = asn1::f1ap::cause_radio_network_opts::unspecified;
 
   ue.f1ap_msg_notifier.on_new_message(f1ap_msg);
+}
+
+async_task<bool> f1ap_du_ue_context_modification_procedure::handle_rrc_container()
+{
+  // Time waiting for RRC container delivery.
+  static constexpr std::chrono::milliseconds rrc_container_delivery_timeout{120};
+
+  f1c_bearer* srb1 = ue.bearers.find_srb(srb_id_t::srb1);
+  if (srb1 == nullptr) {
+    logger.error("{}: Failed to find SRB1 bearer to send RRC container.", f1ap_log_prefix{ue.context, name()});
+    return launch_no_op_task(false);
+  }
+
+  // If RRC delivery status is requested, we wait for the PDU delivery and report the status afterwards.
+  return srb1->handle_pdu_and_await_transmission(
+      req->rrc_container.copy(), req->rrc_delivery_status_request_present, rrc_container_delivery_timeout);
+}
+
+async_task<void> f1ap_du_ue_context_modification_procedure::handle_tx_action_indicator()
+{
+  if (req->tx_action_ind.value == asn1::f1ap::tx_action_ind_opts::stop) {
+    return ue.du_handler.request_ue_drb_deactivation(ue.context.ue_index);
+  }
+  logger.error("{}: Ignoring Transmission Action Indicator IE with \"restart\" value. Cause: Feature not supported",
+               f1ap_log_prefix{ue.context, name()});
+  return launch_no_op_task();
 }

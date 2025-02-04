@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "s3g.h"
-#include "security.h"
-#include "ssl.h"
-#include "zuc.h"
 #include "srsran/adt/byte_buffer.h"
+#include "srsran/security/s3g.h"
+#include "srsran/security/security.h"
+#include "srsran/security/ssl.h"
+#include "srsran/security/zuc.h"
 
 namespace srsran {
 namespace security {

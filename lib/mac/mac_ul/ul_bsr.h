@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,7 @@
 #include "srsran/adt/span.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/adt/to_array.h"
-#include "srsran/mac/bsr_format.h"
+#include "srsran/mac/bsr_config.h"
 
 namespace srsran {
 

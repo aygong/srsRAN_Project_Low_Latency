@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,16 +22,16 @@
 
 #pragma once
 
-#include "f1ap_du_ue_config.h"
-#include "f1c_bearer.h"
 #include "srsran/adt/expected.h"
 #include "srsran/f1ap/du/f1ap_du_connection_manager.h"
+#include "srsran/f1ap/du/f1ap_du_ue_config.h"
 #include "srsran/f1ap/du/f1ap_du_ue_context_update.h"
+#include "srsran/f1ap/du/f1c_bearer.h"
 #include "srsran/f1ap/f1ap_message_handler.h"
 #include "srsran/f1u/du/f1u_bearer.h"
 #include "srsran/mac/mac_paging_information_handler.h"
 #include "srsran/ran/du_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/support/async/async_task.h"
 #include "srsran/support/timers.h"
@@ -173,6 +173,11 @@ public:
 
   /// Called when the F1-C interface shutdowns unexpectedly.
   virtual void on_f1c_disconnection() = 0;
+
+  /// Request the reset of UE transaction information.
+  ///
+  /// \param[in] List of UEs for which to reset the context. If list is empty, all UEs are removed.
+  virtual async_task<void> request_reset(const std::vector<du_ue_index_t>& ues_to_reset) = 0;
 
   /// \brief Search for an unused DU UE index.
   virtual du_ue_index_t find_free_ue_index() = 0;

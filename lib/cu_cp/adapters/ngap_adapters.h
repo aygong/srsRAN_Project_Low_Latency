@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -119,6 +119,18 @@ public:
   {
     srsran_assert(cu_cp_handler != nullptr, "CU-CP NGAP handler must not be nullptr");
     return cu_cp_handler->handle_ue_index_allocation_request(cgi);
+  }
+
+  void on_dl_ue_associated_nrppa_transport_pdu(ue_index_t ue_index, const byte_buffer& nrppa_pdu) override
+  {
+    srsran_assert(cu_cp_handler != nullptr, "CU-CP NGAP handler must not be nullptr");
+    cu_cp_handler->handle_dl_ue_associated_nrppa_transport_pdu(ue_index, nrppa_pdu);
+  }
+
+  void on_dl_non_ue_associated_nrppa_transport_pdu(const byte_buffer& nrppa_pdu) override
+  {
+    srsran_assert(cu_cp_handler != nullptr, "CU-CP NGAP handler must not be nullptr");
+    cu_cp_handler->handle_dl_non_ue_associated_nrppa_transport_pdu(nrppa_pdu);
   }
 
   void on_n2_disconnection() override

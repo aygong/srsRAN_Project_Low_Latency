@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -31,7 +31,8 @@ slice_scheduler::slice_scheduler(const cell_configuration& cell_cfg_, ue_reposit
   cell_cfg(cell_cfg_),
   logger(srslog::fetch_basic_logger("SCHED")),
   current_slot(to_numerology_value(cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs), 0),
-  ues(ues_)
+  ues(ues_),
+  valid_pusch_td_list_per_slot(get_fairly_distributed_pusch_td_resource_indices(cell_cfg))
 {
   // Create a number of slices equal to the number of configured RRM Policy members + 1 (default SRB slice) + 1 (default
   // DRB slice).
@@ -62,18 +63,6 @@ slice_scheduler::slice_scheduler(const cell_configuration& cell_cfg_, ue_reposit
     slice_scheduler_ue_expert_cfg.strategy_cfg = rrm.policy_sched_cfg;
     slices.back().policy                       = create_scheduler_strategy(slice_scheduler_ue_expert_cfg);
     ++id_count;
-  }
-
-  // NOTE: Below derivation assumes that only pusch-ConfigCommon includes pusch-TimeDomainAllocationList.
-  // NOTE: [Implementation-defined] In case of FDD, we use only single value of k2.
-  unsigned nof_slots = cell_cfg.is_tdd() ? nof_slots_per_tdd_period(*cell_cfg.tdd_cfg_common) : 1;
-  valid_pusch_td_list_per_slot.resize(nof_slots);
-  for (unsigned slot_period_idx = 0, e = nof_slots; slot_period_idx != e; ++slot_period_idx) {
-    slot_point pdcch_slot{to_numerology_value(cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs), slot_period_idx};
-    if (cell_cfg.is_dl_enabled(pdcch_slot)) {
-      // TODO: Revisit when PUSCH time domain resource list is also defined in UE dedicated configuration.
-      valid_pusch_td_list_per_slot[slot_period_idx] = get_pusch_td_resource_indices(cell_cfg, pdcch_slot);
-    }
   }
 }
 
@@ -155,7 +144,6 @@ void slice_scheduler::reconf_ue(du_ue_index_t ue_idx)
   if (u == nullptr) {
     return;
   }
-  add_impl(*u);
 
   // Check if any UE HARQs need to be cancelled in case the UE got removed from the respective slice.
   ue_cell& ue_cell = *u->find_cell(cell_cfg.cell_index);
@@ -210,7 +198,7 @@ ue* slice_scheduler::fetch_ue_to_update(du_ue_index_t ue_idx)
 {
   if (not ues.contains(ue_idx)) {
     // UE should be added to the repository at this stage.
-    logger.warning("ue={}: Not configuring UE to slice scheduler. Cause: No UE context found", ue_idx);
+    logger.warning("ue={}: Not configuring UE to slice scheduler. Cause: No UE context found", fmt::underlying(ue_idx));
     return nullptr;
   }
 
@@ -226,8 +214,8 @@ ue* slice_scheduler::fetch_ue_to_update(du_ue_index_t ue_idx)
   const ue_cell* ue_cc = u.find_cell(cell_cfg.cell_index);
   if (ue_cc == nullptr) {
     logger.warning("ue={}: Not adding UE to slice scheduler. Cause: No UE context found in cell {}",
-                   ue_cfg.ue_index,
-                   cell_cfg.cell_index);
+                   fmt::underlying(ue_cfg.ue_index),
+                   fmt::underlying(cell_cfg.cell_index));
     return nullptr;
   }
   if (ue_cc->is_in_fallback_mode()) {
@@ -349,7 +337,9 @@ slice_scheduler::priority_type slice_scheduler::ran_slice_sched_context::get_pri
   delay_prio = std::min(delay_prio, delay_prio_bitmask);
 
   // Round-robin across slices with the same slice and delay priorities.
-  priority_type rr_prio = ((inst.id.value() + current_slot_count) % nof_slices) & ((1U << rr_bitsize) - 1U);
+  float          rbs_per_slot = is_dl ? inst.average_pdsch_rbs_per_slot() : inst.average_pusch_rbs_per_slot();
+  const unsigned rr_prio_max  = (1U << rr_bitsize) - 1U;
+  priority_type  rr_prio      = rr_prio_max - std::min((unsigned)std::round(rbs_per_slot), rr_prio_max);
 
   return (slot_dist << (delay_prio_bitsize + rr_bitsize + slice_prio_bitsize)) +
          (slice_prio << (delay_prio_bitsize + rr_bitsize)) + (delay_prio << rr_bitsize) + rr_prio;

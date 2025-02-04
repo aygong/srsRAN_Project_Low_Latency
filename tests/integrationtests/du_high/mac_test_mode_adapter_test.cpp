@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,7 @@
  *
  */
 
-#include "lib/du/du_high/adapters/mac_test_mode_adapter.h"
+#include "lib/du/du_high/test_mode/mac_test_mode_adapter.h"
 #include "tests/unittests/mac/mac_test_helpers.h"
 #include "srsran/ran/csi_report/csi_report_config_helpers.h"
 #include "srsran/ran/csi_report/csi_report_on_pucch_helpers.h"
@@ -158,7 +158,7 @@ static mac_uci_pdu make_random_uci_with_csi(rnti_t test_rnti = to_rnti(0x4601))
 class base_mac_test_mode_test
 {
 protected:
-  base_mac_test_mode_test(const test_params& params_) : params(params_), adapter{params.test_ue_cfg, phy}
+  base_mac_test_mode_test(const test_params& params_) : params(params_), adapter{params.test_ue_cfg, phy, 1}
   {
     adapter.connect(std::make_unique<mac_dummy>(mac_events, adapter.get_phy_notifier()));
 

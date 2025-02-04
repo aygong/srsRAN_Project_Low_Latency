@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -28,5 +28,3 @@ add_library(srsran_e1ap_cu_cp
         ue_context/e1ap_cu_cp_ue_context.cpp)
 target_include_directories(srsran_e1ap_cu_cp PRIVATE ..)
 target_link_libraries(srsran_e1ap_cu_cp e1ap_asn1 srsran_e1ap_common srsran_cu_cp)
-
-add_to_exported_libs(srsran_e1ap_cu_cp)

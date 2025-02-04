@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -49,7 +49,7 @@ e1ap_cu_up_connection_handler::e1ap_cu_up_connection_handler(e1_connection_clien
 {
 }
 
-SRSRAN_NODISCARD e1ap_message_notifier* e1ap_cu_up_connection_handler::connect_to_cu_cp()
+e1ap_message_notifier* e1ap_cu_up_connection_handler::connect_to_cu_cp()
 {
   e1ap_notifier =
       e1_client_handler.handle_cu_up_connection_request(std::make_unique<e1ap_rx_pdu_adapter>(e1ap_pdu_handler));

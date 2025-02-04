@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -83,5 +83,5 @@ async_task<void> ue_deletion_procedure::stop_ue_bearer_traffic()
   // chance that the CU-UP will keep pushing new F1-U PDUs to the DU. To avoid dangling references during UE removal,
   // we start by first disconnecting the DRBs from the F1-U interface.
 
-  return ue->handle_traffic_stop_request();
+  return ue->handle_activity_stop_request(true);
 }

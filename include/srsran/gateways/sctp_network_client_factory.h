@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,10 +27,13 @@
 
 namespace srsran {
 
+class task_executor;
+
 /// Configuration of an SCTP client.
 struct sctp_network_client_config {
   sctp_network_gateway_config sctp;
   io_broker&                  broker;
+  task_executor&              io_rx_executor;
 };
 
 /// Creates an SCTP network client.

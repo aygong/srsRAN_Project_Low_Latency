@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -103,10 +103,7 @@ def test_android(
 )
 @mark.parametrize(
     "band, common_scs, bandwidth",
-    (
-        param(3, 15, 10, id="band:%s-scs:%s-bandwidth:%s"),
-        param(78, 30, 20, id="band:%s-scs:%s-bandwidth:%s"),
-    ),
+    (param(78, 30, 20, id="band:%s-scs:%s-bandwidth:%s"),),
 )
 @mark.android
 @mark.flaky(
@@ -202,10 +199,108 @@ def test_android_hp(
 
 
 @mark.parametrize(
+    "reattach_count",
+    (param(0, id="reattach:%s"),),
+)
+@mark.parametrize(
+    "band, common_scs, bandwidth",
+    (param(3, 15, 10, id="band:%s-scs:%s-bandwidth:%s"),),
+)
+@mark.android_drx
+@mark.flaky(
+    reruns=2,
+    only_rerun=["failed to start", "Exception calling application", "Attach timeout reached", "Some packages got lost"],
+)
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def test_android_drx(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue: UEStub,  # pylint: disable=invalid-name
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+    band: int,
+    common_scs: int,
+    bandwidth: int,
+    reattach_count: int,
+):
+    """
+    Android high performance Pings
+    """
+
+    _ping(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=(ue,),
+        gnb=gnb,
+        fivegc=fivegc,
+        band=band,
+        common_scs=common_scs,
+        bandwidth=bandwidth,
+        sample_rate=None,
+        global_timing_advance=-1,
+        time_alignment_calibration="auto",
+        warning_as_errors=False,
+        always_download_artifacts=True,
+        reattach_count=reattach_count,
+        enable_drx=True,
+        ping_interval=0.1,
+    )
+
+
+@mark.parametrize(
+    "reattach_count",
+    (param(0, id="reattach:%s"),),
+)
+@mark.parametrize(
+    "band, common_scs, bandwidth",
+    (param(3, 15, 10, id="band:%s-scs:%s-bandwidth:%s"),),
+)
+@mark.android_drx
+@mark.flaky(
+    reruns=2,
+    only_rerun=["failed to start", "Exception calling application", "Attach timeout reached", "Some packages got lost"],
+)
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def test_android_no_drx(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue: UEStub,  # pylint: disable=invalid-name
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+    band: int,
+    common_scs: int,
+    bandwidth: int,
+    reattach_count: int,
+):
+    """
+    Android high performance Pings
+    """
+
+    _ping(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=(ue,),
+        gnb=gnb,
+        fivegc=fivegc,
+        band=band,
+        common_scs=common_scs,
+        bandwidth=bandwidth,
+        sample_rate=None,
+        global_timing_advance=-1,
+        time_alignment_calibration="auto",
+        warning_as_errors=False,
+        always_download_artifacts=True,
+        reattach_count=reattach_count,
+        enable_drx=False,
+        ping_interval=0.1,
+    )
+
+
+@mark.parametrize(
     "band, common_scs, bandwidth, ciphering",
     (
         param(3, 15, 5, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
-        param(3, 15, 10, False, marks=mark.test, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
+        param(3, 15, 10, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 20, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 50, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 50, True, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
@@ -260,11 +355,73 @@ def test_zmq_32(
     )
 
 
+@mark.example
+def test_example(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue_4: Tuple[UEStub, ...],
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+):
+    """
+    ZMQ Pings
+    """
+
+    _ping(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=ue_4,
+        gnb=gnb,
+        fivegc=fivegc,
+        band=3,
+        common_scs=15,
+        bandwidth=10,
+        sample_rate=None,  # default from testbed
+        global_timing_advance=0,
+        time_alignment_calibration=0,
+        ue_stop_timeout=3,
+        enable_security_mode=False,
+        post_command=("cu_cp --inactivity_timer=600", ""),
+    )
+
+
+@mark.example_srsue
+def test_example_srsue(
+    retina_manager: RetinaTestManager,
+    retina_data: RetinaTestData,
+    ue: Tuple[UEStub, ...],
+    fivegc: FiveGCStub,
+    gnb: GNBStub,
+):
+    """
+    ZMQ Pings
+    """
+
+    _ping(
+        retina_manager=retina_manager,
+        retina_data=retina_data,
+        ue_array=(ue,),
+        gnb=gnb,
+        fivegc=fivegc,
+        band=3,
+        common_scs=15,
+        bandwidth=10,
+        sample_rate=11520000,
+        global_timing_advance=0,
+        time_alignment_calibration=0,
+        common_search_space_enable=True,
+        prach_config_index=1,
+        pdsch_mcs_table="qam64",
+        pusch_mcs_table="qam64",
+        ue_stop_timeout=3,
+    )
+
+
 @mark.parametrize(
     "band, common_scs, bandwidth, ciphering",
     (
         param(3, 15, 5, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
-        param(3, 15, 10, False, marks=mark.test, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
+        param(3, 15, 10, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 20, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 50, False, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
         param(3, 15, 50, True, id="band:%s-scs:%s-bandwidth:%s-ciphering:%s"),
@@ -478,6 +635,12 @@ def _ping(
     plmn: Optional[PLMN] = None,
     enable_security_mode: bool = False,
     ims_mode: str = "",
+    enable_drx: bool = False,
+    common_search_space_enable: bool = False,
+    prach_config_index=-1,
+    pdsch_mcs_table: str = "qam256",
+    pusch_mcs_table: str = "qam256",
+    ping_interval: float = 1.0,
 ):
     logging.info("Ping Test")
 
@@ -494,6 +657,11 @@ def _ping(
         log_ip_level="debug",
         enable_security_mode=enable_security_mode,
         ims_mode=ims_mode,
+        enable_drx=enable_drx,
+        common_search_space_enable=common_search_space_enable,
+        prach_config_index=prach_config_index,
+        pdsch_mcs_table=pdsch_mcs_table,
+        pusch_mcs_table=pusch_mcs_table,
     )
     configure_artifacts(
         retina_data=retina_data,
@@ -504,13 +672,13 @@ def _ping(
     ue_attach_info_dict = ue_start_and_attach(ue_array, gnb, fivegc)
 
     try:
-        ping(ue_attach_info_dict, fivegc, ping_count)
+        ping(ue_attach_info_dict, fivegc, ping_count, ping_interval=ping_interval)
 
         # reattach and repeat if requested
         for _ in range(reattach_count):
             ue_stop(ue_array, retina_data)
             ue_attach_info_dict = ue_start_and_attach(ue_array, gnb, fivegc)
-            ping(ue_attach_info_dict, fivegc, ping_count)
+            ping(ue_attach_info_dict, fivegc, ping_count, ping_interval=ping_interval)
     except Failed as err:
         if not ims_mode or ims_mode == "enabled":
             raise err from None

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,6 +26,7 @@
 #include "rlc_tx_entity.h"
 #include "srsran/support/executors/task_executor.h"
 #include "fmt/format.h"
+#include <mutex>
 
 namespace srsran {
 
@@ -56,9 +57,6 @@ private:
   rlc_sdu_queue_lockfree sdu_queue;
   rlc_sdu                sdu;
   uint32_t               next_so = 0; // The segment offset for the next generated PDU
-
-  // Mutexes
-  std::mutex mutex;
 
   /// TX counter modulus
   const uint32_t mod;
@@ -144,13 +142,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::rlc_tx_um_state> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::rlc_tx_um_state& st, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::rlc_tx_um_state& st, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "tx_next={}", st.tx_next);
   }

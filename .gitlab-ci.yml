@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -53,15 +53,21 @@ stages:
   - rf
   - manual
   - documentation
+  # release
+  - pre private
   - private
+  - post private
   - public
+  - post public
   - release
+  - post release
 
 variables:
   SLACK_CHANNEL_OK: "#ci_gnb"
   SLACK_CHANNEL_FAIL: "#ci_gnb"
   SLACK_CHANNEL_INFO_MSG: "#ci_gnb_verbose"
   AUTOREBASER_PRS_IN_QUEUE: 1
+  MR_PLUGIN_REF: main
 
 ################################################################################
 ## CI
@@ -70,18 +76,20 @@ job cleaner:
   extends: .job cleaner
   timeout: 4h
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
 
 pr reminder:
   extends: .pr reminder
   rules:
     - if: $NOTIFY_SLACK != "true"
       when: never
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
 
 trigger builder:
   stage: ci
   rules:
+    - if: $CI_MERGE_REQUEST_LABELS =~ /ci-no-builder/
+      when: never
     - if: $ON_MR
       changes:
         paths:
@@ -95,6 +103,8 @@ trigger builder:
 trigger docker:
   stage: ci
   rules:
+    - if: $CI_MERGE_REQUEST_LABELS =~ /ci-no-docker/
+      when: never
     - if: $ON_MR
       changes:
         paths:
@@ -102,7 +112,7 @@ trigger docker:
           - docker/**/*.{yml,env,json,toml,py,sh,csv,py,toml}
           - docker/**/Dockerfile
           - .gdbinit
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       variables:
         CI_DESCRIPTION: $CI_DESCRIPTION
     - if: $CI_DESCRIPTION =~ /Weekly/
@@ -117,36 +127,17 @@ trigger docker:
 matlab nightly:
   stage: ci
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       variables:
         ON_SCHEDULE: "true"
         CI_DESCRIPTION: Nightly
         SRSRAN_COMMIT: $CI_COMMIT_SHA
         NOTIFY_SLACK: "true"
-      when: delayed
-      start_in: 3 hours
   inherit:
     variables: false
   trigger:
     project: softwareradiosystems/srsgnb_matlab
     branch: master
-
-enterprise nightly:
-  stage: ci
-  rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
-      variables:
-        ON_SCHEDULE: "true"
-        CI_DESCRIPTION: Nightly
-        SRSRAN_COMMIT: $CI_COMMIT_SHA
-        NOTIFY_SLACK: "true"
-      when: delayed
-      start_in: 3 hours
-  inherit:
-    variables: false
-  trigger:
-    project: softwareradiosystems/srsran_5g_enterprise
-    branch: main
 
 matlab weekly:
   stage: ci
@@ -157,32 +148,11 @@ matlab weekly:
         CI_DESCRIPTION: Weekly
         SRSRAN_COMMIT: $CI_COMMIT_SHA
         NOTIFY_SLACK: "true"
-      when: delayed
-      start_in: 20 hours
   inherit:
     variables: false
   trigger:
     project: softwareradiosystems/srsgnb_matlab
     branch: master
-
-helm weekly:
-  stage: ci
-  rules:
-    - if: $CI_DESCRIPTION =~ /Weekly/
-      variables:
-        ON_SCHEDULE: "true"
-        CI_DESCRIPTION: Synchronization with srsGNB
-        NOTIFY_SLACK: "true"
-      when: delayed
-      start_in: 20 hours
-  inherit:
-    variables: false
-  trigger:
-    project: softwareradiosystems/ci/srsgnb_k8s
-    branch: main
-  needs:
-    - job: trigger docker
-      artifacts: false
 
 ################################################################################
 ## Static
@@ -217,7 +187,7 @@ full-code-format:
     - if: $ON_MR
       changes:
         - .clang-format
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
 
 .codechecker:
   image: ${CR_REGISTRY_URI}/srsgnb/codechecker:${DOCKER_BUILDER_VERSION}
@@ -253,6 +223,11 @@ full-code-format:
       -*lib/asn1
       -*lib/phy/generic_functions/fftx/lib_fftx_dftbat_srcs
       -*lib/phy/generic_functions/fftx/lib_fftx_idftbat_srcs" >/tmp/codechecker_skip
+    - |
+      if [[ $CI_MERGE_REQUEST_LABELS != *"ci-no-plugin"* && -n $PLUGIN_BRANCH ]]; then
+        git submodule add https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_SHELL_SSH_HOST}/${PLUGIN_REPO}.git ${PLUGIN_PATH}
+        git submodule set-branch --branch ${PLUGIN_BRANCH} ${PLUGIN_PATH}
+      fi
     - |
       export CC=/usr/bin/clang
       export CXX=/usr/bin/clang++
@@ -295,6 +270,7 @@ clang-tidy:
       when: manual
       allow_failure: false
   variables:
+    PLUGIN_BRANCH: $MR_PLUGIN_REF
     ANALYZER: clang-tidy
     ANALYZER_ARGS: --analyzer-config clang-tidy:take-config-from-directory=true --tidy-config .clang-tidy
     ARTIFACT_EXTRA_PATH: "/index.html"
@@ -463,7 +439,7 @@ unit coverage:
 unit coverage dev:
   extends: unit coverage
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       variables:
         coverage_report: full
       when: always # Even if previous stages/required jobs fail
@@ -474,7 +450,7 @@ unit coverage dev:
 pages:
   stage: documentation
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       when: always # Even if previous stages/required jobs fail
       allow_failure: true
   image: ${GITLAB_REGISTRY_URI}/${CI_TOOLS_REPO}/doxygen:1.9.8-1.2023.7
@@ -494,6 +470,14 @@ pages:
       cd ..
     - mkdir public/doxygen
     - rsync -a build/docs/html/ public/doxygen/
+    - |
+      # Remove bigger file if size is bigger than 900MB
+      while [ $(du -s public | awk '{print $1}') -gt 921600 ]; do
+        file_to_remove=$(find public -type f ! -name "*.html" ! -name "*.js" -exec ls -l {} + | sort -k5 -n -r | awk 'NR==1' | awk '{print $NF}')
+        file_size=$(du -h "$file_to_remove" | awk '{print $1}')
+        echo "Removing file: $file_to_remove (Size: $file_size)"
+        rm -f "$file_to_remove"
+      done
   after_script:
     - |
       if [ $CI_JOB_STATUS = "failed" ]; then
@@ -519,7 +503,7 @@ update agpl main dryrun:
   extends: update private branch
   stage: .post
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       when: always
   variables:
     PRIVATE_BRANCH: agpl_main
@@ -531,7 +515,7 @@ create-tags:
   extends: .create-tag
   stage: .post
   rules:
-    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests/
+    - if: $CI_DESCRIPTION =~ /Nightly Build Unit Tests Plugin/
       when: delayed
       start_in: 3 hours
   script:

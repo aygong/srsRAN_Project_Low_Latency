@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,9 +23,9 @@
 #pragma once
 
 #include "srsran/adt/bounded_bitset.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/pdcch/pdcch_constants.h"
 #include "srsran/ran/resource_allocation/rb_interval.h"
+#include <optional>
 
 namespace srsran {
 

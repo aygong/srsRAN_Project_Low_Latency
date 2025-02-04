@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -37,8 +37,8 @@ main() {
     curl -L "https://fast.dpdk.org/rel/dpdk-${dpdk_version}.tar.xz" | tar xJf -
     cd dpdk*"${dpdk_version}"
     meson setup build --prefix "/opt/dpdk/${dpdk_version}" -Dcpu_instruction_set="${arch}"
-    ninja -j"${ncores}" -C build install
-
+    meson compile -j "${ncores}" -C build
+    meson install -C build
 }
 
 main "$@"

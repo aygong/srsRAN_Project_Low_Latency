@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "compression_params.h"
+#include "srsran/ofh/compression/compression_params.h"
 #include "srsran/ran/resource_block.h"
 #include "srsran/support/units.h"
 

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,6 @@
  */
 
 #include "srsran/support/io/sctp_socket.h"
-#include "srsran/adt/optional.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/error_handling.h"
 #include "srsran/support/io/sockets.h"
@@ -206,11 +205,6 @@ sctp_socket& sctp_socket::operator=(sctp_socket&& other) noexcept
   return *this;
 }
 
-sctp_socket::~sctp_socket()
-{
-  close();
-}
-
 bool sctp_socket::close()
 {
   if (not sock_fd.is_open()) {
@@ -225,8 +219,7 @@ bool sctp_socket::close()
   return true;
 }
 
-SRSRAN_NODISCARD bool
-sctp_socket::bind(struct sockaddr& ai_addr, const socklen_t& ai_addrlen, const std::string& bind_interface)
+bool sctp_socket::bind(struct sockaddr& ai_addr, const socklen_t& ai_addrlen, const std::string& bind_interface)
 {
   if (not is_open()) {
     logger.error("Failed to bind to {}. Cause: Socket is closed", get_nameinfo(ai_addr, ai_addrlen));
@@ -256,7 +249,7 @@ sctp_socket::bind(struct sockaddr& ai_addr, const socklen_t& ai_addrlen, const s
   return true;
 }
 
-SRSRAN_NODISCARD bool sctp_socket::connect(struct sockaddr& ai_addr, const socklen_t& ai_addrlen)
+bool sctp_socket::connect(struct sockaddr& ai_addr, const socklen_t& ai_addrlen)
 {
   logger.debug("{}: Connecting to {}...", if_name, get_nameinfo(ai_addr, ai_addrlen));
   if (not is_open()) {
@@ -279,7 +272,7 @@ SRSRAN_NODISCARD bool sctp_socket::connect(struct sockaddr& ai_addr, const sockl
   return true;
 }
 
-SRSRAN_NODISCARD bool sctp_socket::listen()
+bool sctp_socket::listen()
 {
   if (not is_open()) {
     logger.error("{}: Failed to listen for new SCTP connections. Cause: socket is closed", if_name);

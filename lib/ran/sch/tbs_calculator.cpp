@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #include "srsran/ran/sch/tbs_calculator.h"
 #include "srsran/ran/resource_block.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_assert.h"
 #include <algorithm>
 
@@ -133,7 +133,7 @@ unsigned srsran::tbs_calculator_calculate(const tbs_calculator_configuration& co
 
   srsran_assert(config.mcs_descr.modulation > modulation_scheme::BPSK,
                 "Modulation scheme should be QPSK or higher, provided {}.",
-                config.mcs_descr.modulation);
+                fmt::underlying(config.mcs_descr.modulation));
 
   // Step 2. Intermediate number of information bits.
   return tbs_calculator_step2(scaling,

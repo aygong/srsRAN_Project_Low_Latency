@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,6 @@
 #include "srsran/e1ap/common/e1ap_message.h"
 #include "srsran/e1ap/common/e1ap_types.h"
 #include "srsran/srslog/srslog.h"
-#include "srsran/support/format_utils.h"
 
 namespace srsran {
 

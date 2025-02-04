@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -32,16 +32,16 @@ class dmrs_pdcch_processor_spy : public dmrs_pdcch_processor
 private:
   struct entry_t {
     config_t              config;
-    resource_grid_mapper* mapper;
+    resource_grid_writer* grid;
   };
   std::vector<entry_t> entries;
 
 public:
-  void map(resource_grid_mapper& mapper, const config_t& config) override
+  void map(resource_grid_writer& grid, const config_t& config) override
   {
     entry_t entry = {};
     entry.config  = config;
-    entry.mapper  = &mapper;
+    entry.grid    = &grid;
     entries.emplace_back(entry);
   }
   void                        reset() { entries.clear(); }

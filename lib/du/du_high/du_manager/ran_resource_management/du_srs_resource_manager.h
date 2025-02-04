@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,6 @@
 #pragma once
 
 #include "srs_resource_generator.h"
-#include "srsran/adt/optional.h"
 #include "srsran/du/du_cell_config.h"
 #include "srsran/ran/srs/srs_bandwidth_configuration.h"
 

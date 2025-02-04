@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -62,6 +62,30 @@ static constexpr unsigned FORMAT2_MIN_UCI_NBITS = 3;
 /// Number of control data subcarriers per Resource Block for PUCCH Format 2, as per TS38.213 Section 9.1.5.2.
 static constexpr unsigned FORMAT2_NOF_DATA_SC = 8;
 
+/// Minimum number of symbols that PUCCH Format 3 can transmit.
+static constexpr unsigned FORMAT3_MIN_NSYMB = 4;
+
+/// Maximum number of symbols that PUCCH Format 3 can transmit.
+static constexpr unsigned FORMAT3_MAX_NSYMB = 14;
+
+/// Maximum number of PRBs allocated for PUCCH Format 3.
+static constexpr unsigned FORMAT3_MAX_NPRB = 16;
+
+/// Minimum number of UCI payload bits carried by a PUCCH Format 3 resource.
+static constexpr unsigned FORMAT3_MIN_UCI_NBITS = 3;
+
+/// Minimum number of OFDM symbols allocated to a PUCCH Format 4 transmission.
+static constexpr unsigned FORMAT4_MIN_NSYMB = 4;
+
+/// Maximum number of symbols that PUCCH Format 4 can transmit.
+static constexpr unsigned FORMAT4_MAX_NSYMB = 14;
+
+/// Maximum number of PRBs allocated for PUCCH Format 4.
+static constexpr unsigned FORMAT4_MAX_NPRB = 1;
+
+/// Minimum number of UCI payload bits carried by a PUCCH Format 4 resource.
+static constexpr unsigned FORMAT4_MIN_UCI_NBITS = 3;
+
 /// \brief Maximum number of resource elements used by PUCCH.
 ///
 /// It corresponds to PUCCH Format 3 with a bandwidth of 16 PRBs and a duration of 14 symbols, two of which are occupied
@@ -86,6 +110,9 @@ constexpr size_t MAX_NOF_CELL_PUCCH_RESOURCES = 256;
 /// \remark See TS 38.331, section 9.2.1, maximum value is given by the number of possible values of r_PUCCH, which
 /// is 16.
 constexpr size_t MAX_NOF_CELL_COMMON_PUCCH_RESOURCES = 16;
+
+/// Maximum supported UCI payload length in number of bits for PUCCH Formats 2, 3 and 4.
+constexpr unsigned FORMATS_2_3_4_MAX_UCI_NBITS = 1706;
 
 } // namespace pucch_constants
 } // namespace srsran

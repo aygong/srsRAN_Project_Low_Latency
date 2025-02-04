@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -25,6 +25,7 @@ add_subdirectory(ecpri)
 add_subdirectory(ethernet)
 add_subdirectory(receiver)
 add_subdirectory(serdes)
+add_subdirectory(support)
 add_subdirectory(transmitter)
 
 add_executable(slot_symbol_point_test slot_symbol_point_test.cpp)

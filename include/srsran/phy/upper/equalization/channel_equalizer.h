@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -60,6 +60,9 @@ public:
 
   /// Default destructor.
   virtual ~channel_equalizer() = default;
+
+  /// Determines if the dimensions and algorithm are valid.
+  virtual bool is_supported(unsigned nof_ports, unsigned nof_layers) = 0;
 
   /// \brief Equalizes the MIMO channel and combines Tx&ndash;Rx paths.
   ///

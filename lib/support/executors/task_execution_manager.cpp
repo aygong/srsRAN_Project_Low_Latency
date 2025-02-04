@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -157,7 +157,7 @@ protected:
     return true;
   }
 
-  SRSRAN_NODISCARD bool store_executor(const std::string& exec_name, std::unique_ptr<task_executor> exec)
+  [[nodiscard]] bool store_executor(const std::string& exec_name, std::unique_ptr<task_executor> exec)
   {
     if (exec_name.empty()) {
       logger.error("Failed to create executor in context \"{}\". Cause: Executor name is emtpy.", name());

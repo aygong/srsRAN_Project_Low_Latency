@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -18,6 +18,11 @@
 # and at http://www.gnu.org/licenses/.
 #
 
+
+
+add_library(srsran_metrics_logger_utils STATIC metrics_logger_appconfig_cli11_schema.cpp metrics_logger_appconfig_yaml_writer.cpp)
+target_include_directories(srsran_metrics_logger_utils PRIVATE ${CMAKE_SOURCE_DIR})
+
 set(SOURCES
         logger_appconfig_cli11_schema.cpp
         logger_appconfig_validator.cpp
@@ -25,3 +30,5 @@ set(SOURCES
 
 add_library(srsran_logger_app_service STATIC ${SOURCES})
 target_include_directories(srsran_logger_app_service PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(srsran_logger_app_service PRIVATE srsran_metrics_logger_utils)
+

@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -29,22 +29,22 @@ set(SOURCES
         executors/task_worker_pool.cpp
         executors/unique_thread.cpp
         executors/execution_context_description.cpp
+        tracing/resource_usage.cpp
+        tracing/event_tracing.cpp
         backtrace.cpp
         bit_encoding.cpp
         byte_buffer.cpp
         byte_buffer_chain.cpp
         config_yaml.cpp
         cpu_architecture_info.cpp
-        event_tracing.cpp
         signal_handling.cpp
         sysinfo.cpp
         timers.cpp
         math_utils.cpp
-	dynlink_manager.cpp
         )
 
 add_library(srsran_support STATIC ${SOURCES})
-target_link_libraries(srsran_support srsran_network ${CMAKE_THREAD_LIBS_INIT} ${YAMLCPP_LIBRARY}
+target_link_libraries(srsran_support PRIVATE srsran_network ${CMAKE_THREAD_LIBS_INIT} ${YAMLCPP_LIBRARY}
                       ${NUMA_LIBRARIES} srslog)
 add_backward(srsran_support)
 

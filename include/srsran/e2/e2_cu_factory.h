@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,15 +22,15 @@
 
 #pragma once
 
-#include "e2_cu.h"
-#include "e2_factory.h"
+#include "srsran/e2/e2_cu.h"
+#include "srsran/e2/e2_factory.h"
 
 namespace srsran {
 /// Creates a instance of an E2 interface (with subscription manager)
-std::unique_ptr<e2_interface> create_e2_cu_entity(e2ap_configuration&      e2ap_cfg_,
-                                                  e2_connection_client*    e2_client_,
-                                                  e2_cu_metrics_interface* e2_metrics_var,
-                                                  timer_factory            timers_,
-                                                  task_executor&           e2_exec_);
+std::unique_ptr<e2_agent> create_e2_cu_agent(const e2ap_configuration& e2ap_cfg_,
+                                             e2_connection_client&     e2_client_,
+                                             e2_cu_metrics_interface*  e2_metrics_var,
+                                             timer_factory             timers_,
+                                             task_executor&            e2_exec_);
 
 } // namespace srsran

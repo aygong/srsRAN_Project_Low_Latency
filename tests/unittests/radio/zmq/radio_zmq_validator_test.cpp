@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -32,14 +32,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::radio_configuration::clock_sources::source> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::radio_configuration::clock_sources::source& source, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::radio_configuration::clock_sources::source& source, FormatContext& ctx) const
   {
     switch (source) {
       case srsran::radio_configuration::clock_sources::source::DEFAULT:
@@ -58,14 +57,13 @@ struct formatter<srsran::radio_configuration::clock_sources::source> {
 template <>
 struct formatter<srsran::radio_configuration::radio> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::radio_configuration::radio& config, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::radio_configuration::radio& config, FormatContext& ctx) const
   {
     return fmt::format_to(ctx.out(), "clock_src={} sync_src={}", config.clock.clock, config.clock.sync);
   }

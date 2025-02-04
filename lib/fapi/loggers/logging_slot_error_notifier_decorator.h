@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -32,19 +32,19 @@ namespace fapi {
 class logging_slot_error_notifier_decorator : public slot_error_message_notifier
 {
 public:
-  logging_slot_error_notifier_decorator(srslog::basic_logger& logger_, slot_error_message_notifier& notifier_) :
-    logger(logger_), notifier(notifier_)
-  {
-  }
+  explicit logging_slot_error_notifier_decorator(srslog::basic_logger& logger_);
 
   // See interface for documentation.
   void on_error_indication(const error_indication_message& msg) override;
+
+  /// Sets the slot error message notifier to the given one.
+  void set_slot_error_message_notifier(slot_error_message_notifier& error_notifier);
 
 private:
   /// FAPI logger.
   srslog::basic_logger& logger;
   /// Error notifier.
-  slot_error_message_notifier& notifier;
+  slot_error_message_notifier* notifier;
 };
 
 } // namespace fapi

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "codebook_config.h"
-#include "csi_resource_config.h"
-#include "csi_rs_constants.h"
+#include "srsran/ran/csi_rs/codebook_config.h"
+#include "srsran/ran/csi_rs/csi_resource_config.h"
+#include "srsran/ran/csi_rs/csi_rs_constants.h"
 #include "srsran/ran/pusch/pusch_configuration.h"
 #include "srsran/ran/pusch/pusch_constants.h"
 #include <variant>

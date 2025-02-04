@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,6 @@
  */
 
 #include "srsran/ran/srs/srs_information.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/srs/srs_bandwidth_configuration.h"
 #include "srsran/ran/srs/srs_resource_configuration.h"
 #include "srsran/support/srsran_assert.h"
@@ -48,7 +47,7 @@ srs_information srsran::get_srs_information(const srs_resource_configuration& re
 
   // Assert configuration parameters.
   srsran_assert(resource.hopping == srs_resource_configuration::group_or_sequence_hopping_enum::neither,
-                "No sequence nor group hopping supported");
+                "No sequence nor group hopping supported.");
   srsran_assert(!resource.has_frequency_hopping(), "Frequency hopping is not supported.");
 
   // Calculate sequence length.
@@ -92,14 +91,13 @@ srs_information srsran::get_srs_information(const srs_resource_configuration& re
   unsigned initial_subcarrier = k0_bar + sum;
 
   // Fill derived parameters.
-  srs_information info;
-  info.n_cs_max                   = n_cs_max;
-  info.sequence_length            = sequence_length;
-  info.sequence_group             = u;
-  info.sequence_number            = v;
-  info.n_cs                       = cyclic_shift_port;
-  info.n_cs_max                   = n_cs_max;
-  info.mapping_initial_subcarrier = initial_subcarrier;
-  info.comb_size                  = comb_size;
+  srs_information info = {.sequence_length            = sequence_length,
+                          .sequence_group             = u,
+                          .sequence_number            = v,
+                          .n_cs                       = cyclic_shift_port,
+                          .n_cs_max                   = n_cs_max,
+                          .mapping_initial_subcarrier = initial_subcarrier,
+                          .comb_size                  = comb_size};
+
   return info;
 }

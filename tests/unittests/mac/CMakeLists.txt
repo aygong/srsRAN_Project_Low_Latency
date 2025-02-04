@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -34,7 +34,8 @@ add_executable(mac_test
         dl_sch_pdu_assembler_test.cpp
         mac_rar_pdu_assembler_test.cpp
         rnti_manager_test.cpp
-        mac_dl_cfg_test.cpp)
+        mac_dl_cfg_test.cpp
+        mac_config_helpers_test.cpp)
 target_link_libraries(mac_test
         srsran_pcap
         srsran_support

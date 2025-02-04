@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,10 +23,10 @@
 #pragma once
 
 #include "srsran/adt/complex.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/ofh/serdes/ofh_uplane_message_properties.h"
 #include "srsran/ran/resource_block.h"
+#include <optional>
 
 namespace srsran {
 namespace ofh {

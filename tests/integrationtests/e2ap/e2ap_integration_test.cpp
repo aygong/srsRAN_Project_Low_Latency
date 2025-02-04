@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,9 +28,8 @@
 #include "srsran/e2/gateways/e2_network_client_factory.h"
 #include "srsran/gateways/sctp_network_gateway_factory.h"
 #include "srsran/support/async/async_test_utils.h"
-#include "srsran/support/executors/manual_task_worker.h"
+#include "srsran/support/executors/inline_task_executor.h"
 #include "srsran/support/io/io_broker_factory.h"
-#include "srsran/support/test_utils.h"
 #include "srsran/support/timers.h"
 #include <gtest/gtest.h>
 
@@ -49,7 +48,7 @@ public:
   dummy_e2ap_network_adapter(const sctp_network_connector_config& nw_config_) :
     nw_config(nw_config_),
     epoll_broker(create_io_broker(io_broker_type::epoll)),
-    gw(create_sctp_network_gateway({nw_config, *this, *this})),
+    gw(create_sctp_network_gateway({nw_config, *this, *this, executor})),
     packer(*gw, *this, pcap)
   {
     report_fatal_error_if_not(gw->create_and_connect(), "Failed to connect E2 GW");
@@ -58,8 +57,6 @@ public:
                          gw->get_socket_fd());
     }
   }
-
-  ~dummy_e2ap_network_adapter() {}
 
   void connect_e2ap(e2_interface* e2ap_) { e2ap = e2ap_; }
 
@@ -89,6 +86,7 @@ private:
 
   /// We require a network gateway and a packer
   const sctp_network_connector_config&  nw_config;
+  inline_task_executor                  executor;
   std::unique_ptr<io_broker>            epoll_broker;
   std::unique_ptr<sctp_network_gateway> gw;
   e2ap_asn1_packer                      packer;
@@ -124,16 +122,19 @@ protected:
     e2sm_iface       = std::make_unique<e2sm_kpm_impl>(test_logger, *e2sm_packer, *du_meas_provider);
     e2sm_mngr        = std::make_unique<e2sm_manager>(test_logger);
     e2sm_mngr->add_e2sm_service("1.3.6.1.4.1.53148.1.2.2.2", std::move(e2sm_iface));
-    e2_subscription_mngr = std::make_unique<e2_subscription_manager_impl>(*adapter, *e2sm_mngr);
+    e2_subscription_mngr = std::make_unique<e2_subscription_manager_impl>(*e2sm_mngr);
     factory              = timer_factory{timers, ctrl_worker};
-    e2ap                 = create_e2(cfg, factory, *adapter, *e2_subscription_mngr, *e2sm_mngr);
-    pcap                 = std::make_unique<dummy_e2ap_pcap>();
+    e2_client            = std::make_unique<dummy_e2_connection_client>();
+    e2agent_notifier     = std::make_unique<dummy_e2_agent_mng>();
+    e2ap = create_e2(cfg, *e2agent_notifier, factory, *e2_client, *e2_subscription_mngr, *e2sm_mngr, ctrl_worker);
+    pcap = std::make_unique<dummy_e2ap_pcap>();
     adapter->connect_e2ap(e2ap.get());
   }
 
   e2ap_configuration                          cfg;
   timer_factory                               factory;
   timer_manager                               timers;
+  std::unique_ptr<e2ap_e2agent_notifier>      e2agent_notifier;
   std::unique_ptr<dummy_e2ap_network_adapter> adapter;
   manual_task_worker                          ctrl_worker{128};
   std::unique_ptr<dummy_e2ap_pcap>            pcap;
@@ -144,6 +145,7 @@ protected:
   std::unique_ptr<e2sm_manager>               e2sm_mngr;
   std::unique_ptr<e2sm_interface>             e2sm_iface;
   std::unique_ptr<e2_interface>               e2ap;
+  std::unique_ptr<dummy_e2_connection_client> e2_client;
   srslog::basic_logger&                       test_logger = srslog::fetch_basic_logger("TEST");
 };
 
@@ -196,18 +198,19 @@ protected:
     nw_config.bind_address    = "127.0.0.101";
     nw_config.bind_port       = 0;
 
-    epoll_broker          = create_io_broker(io_broker_type::epoll);
-    factory               = timer_factory{timers, ctrl_worker};
-    pcap                  = std::make_unique<dummy_e2ap_pcap>();
-    du_metrics            = std::make_unique<dummy_e2_du_metrics>();
-    f1ap_ue_id_mapper     = std::make_unique<dummy_f1ap_ue_id_translator>();
-    e2_client             = create_e2_gateway_client(e2_sctp_gateway_config{nw_config, *epoll_broker, *pcap});
+    epoll_broker      = create_io_broker(io_broker_type::epoll);
+    factory           = timer_factory{timers, ctrl_worker};
+    pcap              = std::make_unique<dummy_e2ap_pcap>();
+    du_metrics        = std::make_unique<dummy_e2_du_metrics>();
+    f1ap_ue_id_mapper = std::make_unique<dummy_f1ap_ue_id_translator>();
+    e2_client         = create_e2_gateway_client(e2_sctp_gateway_config{nw_config, *epoll_broker, rx_executor, *pcap});
     du_param_configurator = std::make_unique<dummy_du_configurator>();
-    e2ap                  = create_e2_du_entity(
-        cfg, e2_client.get(), &(*du_metrics), &(*f1ap_ue_id_mapper), &(*du_param_configurator), factory, ctrl_worker);
+    e2agent               = create_e2_du_agent(
+        cfg, *e2_client, &(*du_metrics), &(*f1ap_ue_id_mapper), &(*du_param_configurator), factory, ctrl_worker);
   }
 
   e2ap_configuration                           cfg;
+  inline_task_executor                         rx_executor;
   std::unique_ptr<io_broker>                   epoll_broker;
   timer_manager                                timers;
   manual_task_worker                           ctrl_worker{128};
@@ -218,6 +221,7 @@ protected:
   std::unique_ptr<srs_du::du_configurator>     du_param_configurator;
   std::unique_ptr<e2_connection_client>        e2_client;
   std::unique_ptr<e2_interface>                e2ap;
+  std::unique_ptr<e2_agent>                    e2agent;
   srslog::basic_logger&                        test_logger = srslog::fetch_basic_logger("TEST");
 };
 

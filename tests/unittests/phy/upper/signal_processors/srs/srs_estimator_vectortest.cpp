@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,6 +28,7 @@
 #include "srsran/phy/upper/signal_processors/srs/srs_estimator_configuration.h"
 #include "srsran/phy/upper/signal_processors/srs/srs_estimator_factory.h"
 #include "srsran/phy/upper/signal_processors/srs/srs_estimator_result.h"
+#include "srsran/ran/phy_time_unit.h"
 #include "srsran/ran/srs/srs_channel_matrix_formatters.h"
 #include <fmt/ostream.h>
 #include <gtest/gtest.h>
@@ -100,7 +101,15 @@ TEST_P(srsEstimatorFixture, FromVector)
   srs_estimator_result result = estimator->estimate(grid, config);
 
   ASSERT_EQ(test_case.context.result.channel_matrix.normalize(), result.channel_matrix.normalize());
-  ASSERT_NEAR(test_case.context.result.time_alignment.time_alignment, result.time_alignment.time_alignment, 1e-7);
+  ASSERT_TRUE(result.epre_dB.has_value());
+  ASSERT_NEAR(
+      convert_dB_to_power(test_case.context.result.epre_dB.value()), convert_dB_to_power(result.epre_dB.value()), 5e-3);
+
+  double ta_aligment_tolerance_s =
+      srsran::phy_time_unit::from_timing_advance(1, to_subcarrier_spacing(config.slot.numerology())).to_seconds();
+  ASSERT_NEAR(test_case.context.result.time_alignment.time_alignment,
+              result.time_alignment.time_alignment,
+              ta_aligment_tolerance_s);
 }
 
 INSTANTIATE_TEST_SUITE_P(srsEstimatorFixture, srsEstimatorFixture, ::testing::ValuesIn(srs_estimator_test_data));

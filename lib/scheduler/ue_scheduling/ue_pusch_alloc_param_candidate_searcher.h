@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "../support/pusch/pusch_td_resource_indices.h"
-#include "ue.h"
+#include "../ue_context/ue.h"
 
 namespace srsran {
 

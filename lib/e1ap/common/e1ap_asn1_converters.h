@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -90,7 +90,7 @@ e1ap_asn1_to_ciphering_algorithm(const asn1::e1ap::ciphering_algorithm_e& asn1_c
       ciph_algo = srsran::security::ciphering_algorithm::nea3;
       break;
     default:
-      report_fatal_error("Invalid ciphering algorithm ({})", asn1_ciph_algo);
+      report_fatal_error("Invalid ciphering algorithm ({})", fmt::underlying(asn1_ciph_algo.value));
   }
 
   return ciph_algo;
@@ -146,7 +146,7 @@ e1ap_asn1_to_integrity_algorithm(const asn1::e1ap::integrity_protection_algorith
       int_algo = srsran::security::integrity_algorithm::nia3;
       break;
     default:
-      report_fatal_error("Invalid integrity protection algorithm ({})", asn1_int_algo);
+      report_fatal_error("Invalid integrity protection algorithm ({})", fmt::underlying(asn1_int_algo.value));
   }
 
   return int_algo;
@@ -158,8 +158,8 @@ e1ap_asn1_to_integrity_algorithm(const asn1::e1ap::integrity_protection_algorith
 inline asn1::e1ap::snssai_s snssai_to_e1ap_asn1(srsran::s_nssai_t snssai)
 {
   asn1::e1ap::snssai_s asn1_snssai;
-  asn1_snssai.sst.from_number(snssai.sst);
-  if (snssai.sd.has_value()) {
+  asn1_snssai.sst.from_number(snssai.sst.value());
+  if (snssai.sd.is_set()) {
     asn1_snssai.sd_present = true;
     asn1_snssai.sd.from_number(snssai.sd.value());
   }
@@ -173,10 +173,10 @@ inline asn1::e1ap::snssai_s snssai_to_e1ap_asn1(srsran::s_nssai_t snssai)
 inline srsran::s_nssai_t e1ap_asn1_to_snssai(asn1::e1ap::snssai_s asn1_snssai)
 {
   srsran::s_nssai_t snssai;
-  snssai.sst = asn1_snssai.sst.to_number();
+  snssai.sst = slice_service_type{(uint8_t)asn1_snssai.sst.to_number()};
 
   if (asn1_snssai.sd_present) {
-    snssai.sd = asn1_snssai.sd.to_number();
+    snssai.sd = slice_differentiator::create(asn1_snssai.sd.to_number()).value();
   }
 
   return snssai;
@@ -252,7 +252,7 @@ inline sdap_hdr_ul_cfg e1ap_asn1_to_sdap_hdr_ul_cfg(asn1::e1ap::sdap_hdr_ul_opts
       hdr_cfg = sdap_hdr_ul_cfg::present;
       break;
     default:
-      srsran_assertion_failure("Invalid SDAP-Header-UL option ({})", asn1_hdr_ul_opts);
+      srsran_assertion_failure("Invalid SDAP-Header-UL option ({})", fmt::underlying(asn1_hdr_ul_opts));
       hdr_cfg = {};
   }
 
@@ -271,7 +271,7 @@ inline sdap_hdr_dl_cfg e1ap_asn1_to_sdap_hdr_dl_cfg(asn1::e1ap::sdap_hdr_dl_opts
       hdr_cfg = sdap_hdr_dl_cfg::present;
       break;
     default:
-      srsran_assertion_failure("Invalid SDAP-Header-DL option ({})", asn1_hdr_dl_opts);
+      srsran_assertion_failure("Invalid SDAP-Header-DL option ({})", fmt::underlying(asn1_hdr_dl_opts));
       hdr_cfg = {};
   }
 
@@ -369,7 +369,7 @@ inline pdcp_sn_size asn1_to_pdcp_sn_size(asn1::e1ap::pdcp_sn_size_e asn1_sn_size
       sn_size = pdcp_sn_size::size18bits;
       break;
     default:
-      report_fatal_error("Unsupported PDCP SN size. PDCP SN size={}", asn1_sn_size);
+      report_fatal_error("Unsupported PDCP SN size. PDCP SN size={}", fmt::underlying(asn1_sn_size.value));
   }
 
   return sn_size;
@@ -430,7 +430,8 @@ inline pdcp_discard_timer asn1_to_pdcp_discard_timer(asn1::e1ap::discard_timer_e
       discard_timer = pdcp_discard_timer::infinity;
       break;
     default:
-      report_fatal_error("Unsupported PDCP discard timer. PDCP discard timer={}", asn1_discard_timer);
+      report_fatal_error("Unsupported PDCP discard timer. PDCP discard timer={}",
+                         fmt::underlying(asn1_discard_timer.value));
   }
   return discard_timer;
 }
@@ -612,7 +613,8 @@ inline pdcp_t_reordering asn1_to_pdcp_t_reordering(asn1::e1ap::t_reordering_e as
       t_reordering = pdcp_t_reordering::ms3000;
       break;
     default:
-      report_fatal_error("Unsupported PDCP t-reordering timer. PDCP t-reordering timer={}", asn1_t_reordering);
+      report_fatal_error("Unsupported PDCP t-reordering timer. PDCP t-reordering timer={}",
+                         fmt::underlying(asn1_t_reordering.value));
   }
 
   return t_reordering;
@@ -994,7 +996,7 @@ inline e1ap_cause_t asn1_to_cause(asn1::e1ap::cause_c e1ap_cause)
       cause = static_cast<cause_misc_t>(e1ap_cause.misc().value);
       break;
     default:
-      report_fatal_error("Cannot convert E1AP ASN.1 cause {} to common type", e1ap_cause.type());
+      report_fatal_error("Cannot convert E1AP ASN.1 cause {} to common type", fmt::underlying(e1ap_cause.type().value));
   }
 
   return cause;

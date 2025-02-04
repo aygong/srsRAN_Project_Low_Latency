@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #pragma once
+
 #include "srsran/ran/uci/uci_part2_size_description.h"
 #include "srsran/support/units.h"
 

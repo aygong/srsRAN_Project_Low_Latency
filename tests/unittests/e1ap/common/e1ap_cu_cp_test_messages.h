@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,8 @@
 #include "srsran/e1ap/common/e1ap_message.h"
 #include "srsran/e1ap/cu_cp/e1ap_cu_cp.h"
 #include "srsran/ran/cu_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
+#include <map>
 
 namespace srsran {
 namespace srs_cu_cp {
@@ -87,7 +88,8 @@ e1ap_message generate_bearer_context_modification_response(
     gnb_cu_cp_ue_e1ap_id_t                             cu_cp_ue_e1ap_id,
     gnb_cu_up_ue_e1ap_id_t                             cu_up_ue_e1ap_id,
     const std::map<pdu_session_id_t, drb_test_params>& pdu_sessions_to_add = {},
-    const std::map<pdu_session_id_t, drb_id_t>& pdu_sessions_to_modify     = {{pdu_session_id_t::min, drb_id_t::drb1}});
+    const std::map<pdu_session_id_t, drb_id_t>& pdu_sessions_to_modify     = {{pdu_session_id_t::min, drb_id_t::drb1}},
+    const std::vector<pdu_session_id_t>&        pdu_sessions_failed_to_modify = {});
 
 /// \brief Generate a dummy Bearer Context Modification Failure.
 /// \param[in] cu_cp_ue_e1ap_id The CU-CP UE E1AP ID.

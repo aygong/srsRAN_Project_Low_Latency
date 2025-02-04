@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "srsran/phy/upper/channel_state_information.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/delimited_formatter.h"
 #include <fmt/core.h>
 
 namespace fmt {
@@ -38,14 +38,13 @@ struct formatter<srsran::channel_state_information> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::channel_state_information& csi, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::channel_state_information& csi, FormatContext& ctx) const
   {
     // Verbose representation prints all available SINR parameters. It appends [sel] to the label of the selected
     // measurement point.
@@ -81,14 +80,14 @@ struct formatter<srsran::channel_state_information> {
 
       // Print the measurements that are present.
       if (epre_dB.has_value()) {
-        helper.format_if_verbose(ctx, "epre={:+.1f}dB", epre_dB.value());
+        helper.format_always(ctx, "epre={:+.1f}dB", epre_dB.value());
       } else {
-        helper.format_if_verbose(ctx, "epre=na");
+        helper.format_always(ctx, "epre=na");
       }
       if (rsrp_dB.has_value()) {
-        helper.format_if_verbose(ctx, "rsrp={:+.1f}dB", rsrp_dB.value());
+        helper.format_always(ctx, "rsrp={:+.1f}dB", rsrp_dB.value());
       } else {
-        helper.format_if_verbose(ctx, "rsrp=na");
+        helper.format_always(ctx, "rsrp=na");
       }
       if (sinr_dB.has_value()) {
         helper.format_if_verbose(ctx, "sinr={:+.1f}dB", sinr_dB.value());

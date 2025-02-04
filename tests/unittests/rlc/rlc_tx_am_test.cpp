@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,6 +24,7 @@
 #include "tests/test_doubles/pdcp/pdcp_pdu_generator.h"
 #include "srsran/ran/pdsch/pdsch_constants.h"
 #include "srsran/support/executors/manual_task_worker.h"
+#include "srsran/support/rtsan.h"
 #include <gtest/gtest.h>
 #include <list>
 
@@ -55,6 +56,7 @@ public:
   // rlc_tx_upper_layer_data_notifier interface
   void on_transmitted_sdu(uint32_t max_tx_pdcp_sn, uint32_t desired_buf_size) override
   {
+    SRSRAN_RTSAN_SCOPED_DISABLER(d);
     // store in list
     highest_transmitted_pdcp_sn_list.push_back(max_tx_pdcp_sn);
     desired_buf_size_list.push_back(desired_buf_size);
@@ -62,18 +64,21 @@ public:
 
   void on_delivered_sdu(uint32_t max_deliv_pdcp_sn) override
   {
+    SRSRAN_RTSAN_SCOPED_DISABLER(d);
     // store in list
     highest_delivered_pdcp_sn_list.push_back(max_deliv_pdcp_sn);
   }
 
   void on_retransmitted_sdu(uint32_t max_retx_pdcp_sn) override
   {
+    SRSRAN_RTSAN_SCOPED_DISABLER(d);
     // store in list
     highest_retransmitted_pdcp_sn_list.push_back(max_retx_pdcp_sn);
   }
 
   void on_delivered_retransmitted_sdu(uint32_t max_deliv_retx_pdcp_sn) override
   {
+    SRSRAN_RTSAN_SCOPED_DISABLER(d);
     // store in list
     highest_delivered_retransmitted_pdcp_sn_list.push_back(max_deliv_retx_pdcp_sn);
   }
@@ -2049,12 +2054,19 @@ TEST_P(rlc_tx_am_test, retx_count_trigger_max_retx_without_segmentation)
     pdu_buf.resize(pdu_len);
     EXPECT_EQ(pdu_len, (sdu_size + header_min_size));
 
-    pdu_buf.resize(sdu_size + header_min_size);
-    pdu_len = rlc->pull_pdu(pdu_buf);
-    pdu_buf.resize(pdu_len);
-    EXPECT_EQ(pdu_len, (sdu_size + header_min_size));
+    if (n_retx != config.max_retx_thresh) {
+      pdu_buf.resize(sdu_size + header_min_size);
+      pdu_len = rlc->pull_pdu(pdu_buf);
+      pdu_buf.resize(pdu_len);
+      EXPECT_EQ(pdu_len, (sdu_size + header_min_size));
 
-    EXPECT_EQ(rlc->get_buffer_state(), 0);
+      EXPECT_EQ(rlc->get_buffer_state(), 0);
+    } else {
+      // max_retx already reached, last PDU is not read.
+      pdu_buf.resize(sdu_size + header_min_size);
+      pdu_len = rlc->pull_pdu(pdu_buf);
+      EXPECT_EQ(pdu_len, 0);
+    }
   }
 
   // Finally, max_retx has been reached for both SNs
@@ -2068,7 +2080,7 @@ TEST_P(rlc_tx_am_test, retx_count_trigger_max_retx_without_segmentation)
 std::string test_param_info_to_string(const ::testing::TestParamInfo<rlc_am_sn_size>& info)
 {
   fmt::memory_buffer buffer;
-  fmt::format_to(buffer, "{}bit", to_number(info.param));
+  fmt::format_to(std::back_inserter(buffer), "{}bit", to_number(info.param));
   return fmt::to_string(buffer);
 }
 

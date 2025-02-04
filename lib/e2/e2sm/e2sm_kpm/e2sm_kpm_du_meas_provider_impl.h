@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,13 +24,13 @@
 
 #include "e2sm_kpm_metric_defs.h"
 #include "e2sm_kpm_utils.h"
-#include "srsran/adt/optional.h"
 #include "srsran/asn1/asn1_utils.h"
 #include "srsran/asn1/e2sm/e2sm_kpm_ies.h"
 #include "srsran/e2/e2_du.h"
 #include "srsran/e2/e2sm/e2sm.h"
 #include "srsran/e2/e2sm/e2sm_kpm.h"
 #include "srsran/f1ap/du/f1ap_du.h"
+#include <deque>
 #include <map>
 #include <numeric>
 

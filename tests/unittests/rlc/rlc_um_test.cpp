@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -1230,7 +1230,7 @@ TEST_P(rlc_um_test, out_of_order_segments_across_SDUs)
 std::string test_param_info_to_string(const ::testing::TestParamInfo<rlc_um_sn_size>& info)
 {
   fmt::memory_buffer buffer;
-  fmt::format_to(buffer, "{}bit", to_number(info.param));
+  fmt::format_to(std::back_inserter(buffer), "{}bit", to_number(info.param));
   return fmt::to_string(buffer);
 }
 

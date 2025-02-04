@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,6 @@
 #include "radio_uhd_impl.h"
 #include "radio_uhd_device.h"
 #include <thread>
-
 #include <uhd/utils/thread_priority.h>
 
 using namespace srsran;

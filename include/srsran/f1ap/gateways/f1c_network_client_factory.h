@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,19 +22,22 @@
 
 #pragma once
 
-#include "f1c_connection_client.h"
+#include "srsran/f1ap/gateways/f1c_connection_client.h"
 #include "srsran/gateways/sctp_network_gateway.h"
 
 namespace srsran {
 
 class dlt_pcap;
 class io_broker;
+class task_executor;
 
 struct f1c_du_sctp_gateway_config {
   /// SCTP configuration.
   sctp_network_connector_config sctp;
   /// IO broker responsible for handling SCTP Rx data and notifications.
   io_broker& broker;
+  /// Execution context used to process received SCTP packets.
+  task_executor& io_rx_executor;
   /// PCAP writer for the F1AP messages.
   dlt_pcap& pcap;
 };

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,6 +27,7 @@
 #include "srsran/e1ap/common/e1ap_message.h"
 #include "srsran/e1ap/gateways/e1_local_connector_factory.h"
 #include "srsran/pcap/dlt_pcap.h"
+#include "srsran/support/executors/inline_task_executor.h"
 #include "srsran/support/io/io_broker_factory.h"
 #include <future>
 #include <gtest/gtest.h>
@@ -40,6 +41,7 @@ public:
   bool                        closed  = false;
   blocking_queue<byte_buffer> last_sdus{16};
 
+  void         flush() override {}
   void         close() override { closed = true; }
   bool         is_write_enabled() const override { return enabled; }
   void         push_pdu(const_span<uint8_t> pdu) override { last_sdus.push_blocking(byte_buffer::create(pdu).value()); }
@@ -78,7 +80,7 @@ public:
 
     if (use_sctp) {
       broker    = create_io_broker(io_broker_type::epoll);
-      connector = create_e1_local_connector(e1_local_sctp_connector_config{pcap, *broker});
+      connector = create_e1_local_connector(e1_local_sctp_connector_config{pcap, *broker, rx_executor});
     } else {
       connector = create_e1_local_connector(e1_local_connector_config{pcap});
     }
@@ -103,6 +105,7 @@ public:
     return std::make_unique<rx_pdu_notifier>("CU-CP", cu_rx_pdus, std::move(eof_signal));
   }
 
+  inline_task_executor                rx_executor;
   std::unique_ptr<io_broker>          broker;
   dummy_dlt_pcap                      pcap;
   std::unique_ptr<e1_local_connector> connector;

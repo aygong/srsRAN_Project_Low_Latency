@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,6 @@
 #include "srsran/f1ap/f1ap_ue_id_types.h"
 #include "srsran/support/executors/manual_task_worker.h"
 #include "srsran/support/test_utils.h"
-
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>

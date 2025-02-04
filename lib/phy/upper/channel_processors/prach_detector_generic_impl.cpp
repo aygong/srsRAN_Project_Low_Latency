@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,7 @@
 #include "prach_detector_generic_impl.h"
 #include "prach_detector_generic_thresholds.h"
 #include "srsran/adt/interval.h"
+#include "srsran/phy/upper/channel_processors/prach_detector_phy_validator.h"
 #include "srsran/ran/prach/prach_cyclic_shifts.h"
 #include "srsran/ran/prach/prach_preamble_information.h"
 #include "srsran/srsvec/accumulate.h"
@@ -36,24 +37,13 @@
 #include "srsran/srsvec/prod.h"
 #include "srsran/srsvec/sc_prod.h"
 #include "srsran/srsvec/zero.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 
 using namespace srsran;
 
-static const detail::threshold_and_margin_finder threshold_and_margin_table(detail::all_threshold_and_margins);
-
-bool prach_detector_validator_impl::is_valid(const prach_detector::configuration& config) const
+error_type<std::string> prach_detector_validator_impl::is_valid(const prach_detector::configuration& config) const
 {
-  detail::threshold_params th_params;
-  th_params.nof_rx_ports          = config.nof_rx_ports;
-  th_params.scs                   = config.ra_scs;
-  th_params.format                = config.format;
-  th_params.zero_correlation_zone = config.zero_correlation_zone;
-  th_params.combine_symbols       = true;
-
-  auto flag = threshold_and_margin_table.check_flag(th_params);
-
-  return (flag != detail::threshold_and_margin_finder::threshold_flag::red);
+  return validate_prach_detector_phy(config.format, config.ra_scs, config.zero_correlation_zone, config.nof_rx_ports);
 }
 
 prach_detector_generic_impl::prach_detector_generic_impl(std::unique_ptr<dft_processor>   idft_long_,
@@ -156,7 +146,7 @@ prach_detection_result prach_detector_generic_impl::detect(const prach_buffer& i
   th_params.zero_correlation_zone = config.zero_correlation_zone;
   th_params.combine_symbols       = combine_symbols;
 
-  auto     th_and_margin = threshold_and_margin_table.get(th_params);
+  auto     th_and_margin = detail::get_threshold_and_margin(th_params);
   float    threshold     = std::get<0>(th_and_margin);
   unsigned win_margin    = std::get<1>(th_and_margin);
   srsran_assert((win_margin > 0) && (threshold > 0.0),

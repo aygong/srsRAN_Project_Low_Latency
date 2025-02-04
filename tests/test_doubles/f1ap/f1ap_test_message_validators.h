@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
 #include "srsran/f1ap/f1ap_ue_id_types.h"
-#include "srsran/ran/lcid.h"
 #include "srsran/ran/nr_cgi.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/rnti.h"
+#include <optional>
 
 namespace srsran {
 
@@ -68,6 +68,9 @@ bool is_valid_ue_context_modification_response(const f1ap_message&    resp_msg,
 bool is_valid_ue_context_release_command(const f1ap_message& msg);
 
 bool is_valid_paging(const f1ap_message& msg);
+
+bool is_valid_f1_reset_ack(const f1ap_message& msg);
+bool is_valid_f1_reset_ack(const f1ap_message& req, const f1ap_message& resp);
 
 } // namespace test_helpers
 } // namespace srsran

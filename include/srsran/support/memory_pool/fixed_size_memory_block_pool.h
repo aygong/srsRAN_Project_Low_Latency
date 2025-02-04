@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,13 +23,13 @@
 #pragma once
 
 #ifdef ENABLE_TSAN
-#include "sanitizer/tsan_interface.h"
+#include <sanitizer/tsan_interface.h>
 #endif
 
 #include "cameron314/concurrentqueue.h"
-#include "memory_block_list.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/support/error_handling.h"
+#include "srsran/support/memory_pool/memory_block_list.h"
 #include "srsran/support/srsran_assert.h"
 #include <mutex>
 #include <thread>

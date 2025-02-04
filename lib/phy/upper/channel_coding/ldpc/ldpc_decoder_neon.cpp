@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -147,6 +147,16 @@ void ldpc_decoder_neon::analyze_var_to_check_msgs(span<log_likelihood_ratio>    
   }
 }
 
+void ldpc_decoder_neon::scale(span<log_likelihood_ratio> out, span<const log_likelihood_ratio> in)
+{
+  neon::neon_const_span in_neon(in, node_size_neon);
+  neon::neon_span       out_neon(out, node_size_neon);
+  for (unsigned i_block = 0; i_block != node_size_neon; ++i_block) {
+    out_neon.set_at(
+        i_block, neon::scale_s8(in_neon.get_at(i_block), scaling_factor, log_likelihood_ratio::max().to_value_type()));
+  }
+}
+
 void ldpc_decoder_neon::compute_check_to_var_msgs(span<log_likelihood_ratio> this_check_to_var,
                                                   span<const log_likelihood_ratio> /*this_var_to_check*/,
                                                   span<const log_likelihood_ratio> rotated_node,
@@ -173,8 +183,6 @@ void ldpc_decoder_neon::compute_check_to_var_msgs(span<log_likelihood_ratio> thi
     uint8x16_t mask_is_min_u8 = vceqq_s8(this_var_index_s8, min_var_to_check_index_neon.get_at(i_block));
     int8x16_t  check_to_var_s8 =
         vbslq_s8(mask_is_min_u8, second_min_var_to_check_neon.get_at(i_block), min_var_to_check_neon.get_at(i_block));
-    // Scale the message to compensate for approximations.
-    check_to_var_s8 = neon::scale_s8(check_to_var_s8, scaling_factor, log_likelihood_ratio::max().to_value_type());
 
     // Sign of the cumulative product of all variable-to-check messages but the current one (same as multiplying the
     // sign of all messages by the sign of the current one).
@@ -229,35 +237,4 @@ void ldpc_decoder_neon::compute_soft_bits(span<log_likelihood_ratio>       this_
     mask_u8        = vorrq_u8(mask_u8, mask_inputs_u8);
     this_soft_bits_neon.set_at(i_block, vbslq_s8(mask_u8, LLR_NEG_INFINITY_s8(), soft_s8));
   }
-}
-
-bool ldpc_decoder_neon::get_hard_bits(bit_buffer& out)
-{
-  // Buffer to hold the soft bits.
-  std::array<log_likelihood_ratio, MAX_LIFTING_SIZE * MAX_BG_K> temp_llr;
-  span<log_likelihood_ratio>                                    llr_write_buffer(temp_llr);
-
-  unsigned              max_node_lifted = bg_K * node_size_neon;
-  neon::neon_const_span soft_bits_neon(soft_bits, max_node_lifted);
-
-  // Copy the LLRs from the soft_bits AVX array into temp_llr without any padding. Recall that temp_llr is aligned to
-  // the size of the AVX registers. This makes it possible to call the hard decision function only once, improving
-  // efficiency.
-  for (unsigned i_node_lifted = 0; i_node_lifted != max_node_lifted; i_node_lifted += node_size_neon) {
-    // View over the LLR.
-    span<const log_likelihood_ratio> current_soft(
-        reinterpret_cast<const log_likelihood_ratio*>(soft_bits_neon.data_at(i_node_lifted, 0)), lifting_size);
-
-    // Append LLRs to the buffer.
-    srsvec::copy(llr_write_buffer.first(lifting_size), current_soft);
-
-    // Advance buffer.
-    llr_write_buffer = llr_write_buffer.last(llr_write_buffer.size() - lifting_size);
-  }
-
-  // View over the appended LLR.
-  span<const log_likelihood_ratio> llr_read_buffer(temp_llr.begin(), llr_write_buffer.begin());
-
-  // Convert to hard bits.
-  return hard_decision(out, llr_read_buffer);
 }

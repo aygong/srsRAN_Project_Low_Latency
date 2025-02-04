@@ -38,13 +38,25 @@
                         "type": "integer"
                     },
                     "expected_nof_kos": {
-                        "type": "integer"
+                        "type": "number"
                     },
                     "warning_as_errors": {
                         "type": "boolean"
                     },
                     "enable_dddsu": {
                         "type": "boolean"
+                    },
+                    "ul_heavy_7u2d": {
+                        "type": "boolean"
+                    },
+                    "ul_heavy_6u3d": {
+                        "type": "boolean"
+                    },
+                    "warning_allowlist": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "required": [

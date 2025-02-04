@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,9 @@
 #include "pdu_rx_handler.h"
 #include "srsran/instrumentation/traces/up_traces.h"
 #include "srsran/srslog/srslog.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/fmt_basic_parser.h"
+#include "srsran/support/format/fmt_to_c_str.h"
+#include "fmt/std.h"
 
 using namespace srsran;
 
@@ -37,26 +39,28 @@ struct pdu_log_prefix {
   std::optional<lcid_ul_sch_t> lcid;
 };
 
-pdu_log_prefix create_prefix(const decoded_mac_rx_pdu& pdu)
+} // namespace
+
+static pdu_log_prefix create_prefix(const decoded_mac_rx_pdu& pdu)
 {
   return pdu_log_prefix{.type = "UL", .rnti = pdu.pdu_rx.rnti, .ue_index = pdu.ue_index};
 }
 
-pdu_log_prefix create_prefix(const decoded_mac_rx_pdu& pdu, const mac_ul_sch_subpdu& subpdu)
+static pdu_log_prefix create_prefix(const decoded_mac_rx_pdu& pdu, const mac_ul_sch_subpdu& subpdu)
 {
   return pdu_log_prefix{.type = "UL", .rnti = pdu.pdu_rx.rnti, .ue_index = pdu.ue_index, .lcid = subpdu.lcid()};
 }
 
-} // namespace
+namespace fmt {
 
 template <>
-struct fmt::formatter<pdu_log_prefix> : public basic_fmt_parser {
+struct formatter<pdu_log_prefix> : public basic_parser {
   template <typename FormatContext>
-  auto format(const pdu_log_prefix& p, FormatContext& ctx)
+  auto format(const pdu_log_prefix& p, FormatContext& ctx) const
   {
     fmt::format_to(ctx.out(), "{} rnti={}", p.type, p.rnti);
     if (p.ue_index != srsran::INVALID_DU_UE_INDEX) {
-      fmt::format_to(ctx.out(), " ue={}", p.ue_index);
+      fmt::format_to(ctx.out(), " ue={}", fmt::underlying(p.ue_index));
     }
     if (p.lcid.has_value()) {
       const char* event = p.lcid->is_sdu() ? p.lcid->is_ccch() ? "UL-CCCH" : "UL-DCCH" : "CE";
@@ -65,6 +69,8 @@ struct fmt::formatter<pdu_log_prefix> : public basic_fmt_parser {
     return ctx.out();
   }
 };
+
+} // namespace fmt
 
 pdu_rx_handler::pdu_rx_handler(mac_ul_ccch_notifier&               ccch_notifier_,
                                srs_du::du_high_ue_executor_mapper& ue_exec_mapper_,
@@ -103,7 +109,7 @@ bool pdu_rx_handler::handle_rx_pdu(slot_point sl_rx, du_cell_index_t cell_index,
   if (logger.info.enabled()) {
     // Note: Since subPDUs are just views, they should not be passed by value to the logging backend.
     fmt::memory_buffer fmtbuf;
-    fmt::format_to(fmtbuf, "{}", ctx.decoded_subpdus);
+    fmt::format_to(std::back_inserter(fmtbuf), "{}", ctx.decoded_subpdus);
     logger.info("{} subPDUs: [{}]", create_prefix(ctx), to_c_str(fmtbuf));
   }
 
@@ -132,7 +138,9 @@ bool pdu_rx_handler::push_ul_ccch_msg(du_ue_index_t ue_index, byte_buffer ul_ccc
 {
   mac_ul_ue_context* ue = ue_manager.find_ue(ue_index);
   if (ue == nullptr) {
-    logger.warning("UL subPDU ue={}, lcid={} UL-CCCH: Received UL-CCCH for non-existent UE", ue_index, LCID_SRB0);
+    logger.warning("UL subPDU ue={}, lcid={} UL-CCCH: Received UL-CCCH for non-existent UE",
+                   fmt::underlying(ue_index),
+                   fmt::underlying(LCID_SRB0));
     return false;
   }
 
@@ -159,7 +167,7 @@ bool pdu_rx_handler::handle_rx_subpdus(const decoded_mac_rx_pdu& ctx)
 {
   mac_ul_ue_context* ue = ue_manager.find_ue(ctx.ue_index);
 
-  // Process SDUs and MAC CEs that are not C-RNTI MAC CE
+  // Process SDUs and MAC CEs that are not C-RNTI MAC CE.
   for (const mac_ul_sch_subpdu& subpdu : ctx.decoded_subpdus) {
     const bool ret = subpdu.lcid().is_sdu() ? handle_sdu(ctx, subpdu, ue) : handle_mac_ce(ctx, subpdu);
     if (not ret) {
@@ -274,6 +282,7 @@ bool pdu_rx_handler::handle_mac_ce(const decoded_mac_rx_pdu& ctx, const mac_ul_s
       phr_ind.cell_index = ctx.cell_index_rx;
       phr_ind.ue_index   = ctx.ue_index;
       phr_ind.rnti       = ctx.pdu_rx.rnti;
+      phr_ind.slot_rx    = ctx.slot_rx;
       phr_ind.phr        = decode_se_phr(subpdu.payload());
       sched.handle_ul_phr_indication(phr_ind);
     } break;
@@ -351,6 +360,9 @@ bool pdu_rx_handler::handle_crnti_ce(const decoded_mac_rx_pdu& ctx, const mac_ul
   // > Fetch an existing UE with the same old C-RNTI.
   new_ctx.ue_index = rnti_table[new_ctx.pdu_rx.rnti];
   if (new_ctx.ue_index == INVALID_DU_UE_INDEX) {
+    // This situation can occur when the UE returns by naming its previous RNTI via "C-RNTI CE", but so much time has
+    // passed in the meantime that the previous context has already been deleted.
+    // Example: the UE did not finish its de-registration procedure and only came back to finish that procedure.
     logger.warning("{}: Discarding PDU. Cause: C-RNTI in C-RNTI CE is not associated with any existing UE. "
                    "It is likely that the old UE context has already been discarded",
                    create_prefix(new_ctx, subpdu));

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -121,12 +121,24 @@ public:
     return release_context;
   }
 
-  rrc_ue_transfer_context get_transfer_context() override { return rrc_ue_transfer_context{}; }
-
-  std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) override
+  rrc_ue_transfer_context get_transfer_context() override
   {
+    logger.info("Received a new request to get RRC UE trasnfer context");
+    return rrc_ue_transfer_context{};
+  }
+
+  std::optional<rrc_meas_cfg>
+  generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = std::nullopt) override
+  {
+    logger.info("Received a new request to generate RRC UE meas config");
     std::optional<rrc_meas_cfg> meas_config;
     return meas_config;
+  }
+
+  byte_buffer get_packed_meas_config() override
+  {
+    logger.info("Received a new request to get packed RRC UE meas config");
+    return {};
   }
 
   byte_buffer handle_rrc_handover_command(byte_buffer cmd) override { return byte_buffer{}; }
@@ -134,8 +146,14 @@ public:
   byte_buffer get_rrc_handover_command(const rrc_reconfiguration_procedure_request& request,
                                        unsigned                                     transaction_id_) override
   {
-    logger.info("Received a new request to get a RRC Handover Command.");
+    logger.info("Received a new request to get a RRC Handover Command");
     return byte_buffer{};
+  }
+
+  bool handle_rrc_handover_preparation_info(byte_buffer pdu) override
+  {
+    logger.info("Received HandoverPreparationInfo");
+    return true;
   }
 
   void create_srb(const srb_creation_message& msg) override
@@ -146,6 +164,8 @@ public:
   }
 
   static_vector<srb_id_t, MAX_NOF_SRBS> get_srbs() override { return srb_vec; }
+
+  rrc_state get_rrc_state() const override { return rrc_state::connected; };
 
   // RRC UE Setup proc notifier
   void on_new_dl_ccch(const asn1::rrc_nr::dl_ccch_msg_s& dl_ccch_msg) override{};

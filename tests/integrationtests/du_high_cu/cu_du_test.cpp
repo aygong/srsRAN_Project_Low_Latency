@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,6 @@
  *
  */
 
-#include "lib/du/du_high/du_high_executor_strategies.h"
 #include "tests/integrationtests/du_high/test_utils/du_high_worker_manager.h"
 #include "tests/test_doubles/f1ap/f1c_test_local_gateway.h"
 #include "tests/unittests/cu_cp/test_doubles/mock_amf.h"
@@ -31,7 +30,7 @@
 #include "srsran/cu_cp/cu_cp_factory.h"
 #include "srsran/du/du_cell_config_helpers.h"
 #include "srsran/du/du_high/du_high_factory.h"
-#include <chrono>
+#include "srsran/scheduler/config/scheduler_expert_config_factory.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -62,10 +61,10 @@ protected:
 
     // create CU-CP config
     srs_cu_cp::cu_cp_configuration cu_cfg = config_helpers::make_default_cu_cp_config();
-    cu_cfg.services.cu_cp_executor        = &workers.ctrl_exec;
+    cu_cfg.services.cu_cp_executor        = &workers.exec_mapper->du_control_executor(); // reuse du-high ctrl exec
     cu_cfg.services.timers                = &timers;
-    cu_cfg.ngaps.push_back(
-        srs_cu_cp::cu_cp_configuration::ngap_params{&*amf, {{7, {{plmn_identity::test_value(), {{1}}}}}}});
+    cu_cfg.ngaps.push_back(srs_cu_cp::cu_cp_configuration::ngap_params{
+        &*amf, {{7, {{plmn_identity::test_value(), {{slice_service_type{1}}}}}}}});
 
     // create CU-CP.
     cu_cp_obj = create_cu_cp(cu_cfg);
@@ -83,17 +82,19 @@ protected:
     phy_dummy phy;
 
     du_high_configuration du_cfg{};
-    du_cfg.exec_mapper     = &workers.exec_mapper;
-    du_cfg.f1c_client      = &f1c_gw;
-    du_cfg.f1u_gw          = &f1u_gw;
-    du_cfg.phy_adapter     = &phy;
-    du_cfg.timers          = &timers;
     du_cfg.ran.cells       = {config_helpers::make_default_du_cell_config()};
     du_cfg.ran.sched_cfg   = config_helpers::make_default_scheduler_expert_config();
     du_cfg.ran.gnb_du_name = "test_du";
 
+    du_high_dependencies du_dependencies;
+    du_dependencies.exec_mapper = workers.exec_mapper.get();
+    du_dependencies.f1c_client  = &f1c_gw;
+    du_dependencies.f1u_gw      = &f1u_gw;
+    du_dependencies.phy_adapter = &phy;
+    du_dependencies.timers      = &timers;
+
     // create DU object
-    du_obj = make_du_high(std::move(du_cfg));
+    du_obj = make_du_high(std::move(du_cfg), du_dependencies);
 
     // start CU and DU
     du_obj->start();

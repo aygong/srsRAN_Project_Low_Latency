@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -52,8 +52,6 @@ public:
                    ngap_repository&            ngaps_,
                    cu_up_processor_repository& cu_ups_,
                    du_processor_repository&    dus_,
-                   connect_amfs_func           connect_amfs_,
-                   disconnect_amfs_func        disconnect_amfs_,
                    task_executor&              ctrl_exec);
 
   void stop();

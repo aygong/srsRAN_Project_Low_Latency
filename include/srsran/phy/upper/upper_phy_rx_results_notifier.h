@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,7 +29,7 @@
 #include "srsran/adt/span.h"
 #include "srsran/phy/support/prach_buffer_context.h"
 #include "srsran/phy/upper/channel_processors/prach_detection_result.h"
-#include "srsran/phy/upper/channel_processors/pucch_processor_result.h"
+#include "srsran/phy/upper/channel_processors/pucch/pucch_processor_result.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_processor_result_notifier.h"
 #include "srsran/phy/upper/signal_processors/srs/srs_estimator_result.h"
 #include "srsran/phy/upper/uplink_processor_context.h"

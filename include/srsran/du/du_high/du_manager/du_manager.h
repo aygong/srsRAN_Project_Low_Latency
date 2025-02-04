@@ -1,14 +1,10 @@
 
 #pragma once
 
-#include "srsran/adt/byte_buffer.h"
 #include "srsran/du/du_high/du_manager/du_configurator.h"
 #include "srsran/f1ap/du/f1ap_du.h"
 #include "srsran/ran/du_types.h"
-#include "srsran/ran/lcid.h"
-#include "srsran/ran/rnti.h"
 #include "srsran/support/async/async_task.h"
-#include <string>
 
 namespace srsran {
 
@@ -43,6 +39,9 @@ public:
 
   /// \brief Request a currently unused and unallocated UE index from the DU.
   virtual du_ue_index_t find_unused_du_ue_index() = 0;
+
+  /// \brief Handle reset of UE contexts as per request from the F1AP.
+  virtual async_task<void> handle_f1_reset_request(const std::vector<du_ue_index_t>& ues_to_reset) = 0;
 
   /// \brief Create a new UE context in the DU with an assigned UE index.
   virtual async_task<f1ap_ue_context_creation_response>

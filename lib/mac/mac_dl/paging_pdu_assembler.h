@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,10 +22,11 @@
 
 #pragma once
 
-#include "srsran/scheduler/scheduler_slot_handler.h"
 #include "srsran/support/memory_pool/ring_buffer_pool.h"
 
 namespace srsran {
+
+struct dl_paging_allocation;
 
 /// Encodes Paging PDUs based on Paging information provided by the scheduler.
 class paging_pdu_assembler

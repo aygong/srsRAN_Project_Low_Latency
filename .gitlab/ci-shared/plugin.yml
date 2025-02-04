@@ -16,51 +16,12 @@ variables:
   SLACK_CHANNEL_INFO_MSG: "#ci_gnb_verbose"
   # srsRAN references
   SRSRANDIR: &srsran_dir ${CI_PROJECT_DIR}/srsgnb
-  SRSRAN_REPO_URL: https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/softwareradiosystems/srsgnb.git
-
-  INFRASTRUCTURE_TAG:
-    description: Computer architecture and supported instruction sets
-    options:
-      - amd64
-      - amd64-avx2
-      - amd64-avx2-avx512
-      - arm64
-    value: "amd64-avx2"
-  OS:
-    description: Operating system
-    options:
-      - "ubuntu-24.10"
-      - "ubuntu-24.04"
-      - "ubuntu-23.10"
-      - "ubuntu-22.04"
-      - "debian-12"
-      - "debian-11"
-      - "archlinux-latest"
-      - "rhel-8"
-    value: "ubuntu-24.04"
-  COMPILER:
-    description: Compiler to use
-    options:
-      - "gcc"
-      - "clang"
-    value: "gcc"
-  BUILD_ARGS:
-    description: It will be passed to cmake
-    value: ""
-  MAKE_ARGS:
-    description: It will be passed to make
-    value: ""
-  UHD_VERSION:
-    description: must be one version supported in the specified OS
-    value: ""
-  DPDK_VERSION:
-    description: must be one version supported in the specified OS
-    value: ""
+  SRSRAN_REPO_URL: https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_SHELL_SSH_HOST}/softwareradiosystems/srsgnb.git
 
 ######
 # CI #
 ######
-is using latest:
+.is using latest:
   image: ubuntu:24.04
   stage: ci
   rules:
@@ -77,6 +38,9 @@ is using latest:
         echo "Please update to latest srsRAN commit: $SRSRAN_LATEST_COMMIT"
         exit 1
       fi
+
+is using latest:
+  extends: .is using latest
   allow_failure: true
 
 download srsran:
@@ -111,6 +75,8 @@ builder version:
     - if: $ON_WEB
     - if: $ON_API
     - if: $ON_SCHEDULE
+    - if: $CI_DESCRIPTION =~ /Release/
+      when: never
     - if: $CI_DESCRIPTION
   variables:
     SRSRANDIR: *srsran_dir
@@ -135,7 +101,7 @@ load retina variables:
 ##################
 .cache_set:
   cache:
-    - key: ${OS}-${COMPILER}-${BUILD_ARGS}
+    - key: ${OS}-${COMPILER}-${CMAKE_BUILD_TYPE}-${MARCH}
       paths:
         - ${CI_PROJECT_DIR}/ccache
         - ${SRSRANDIR}/ccache
@@ -143,7 +109,7 @@ load retina variables:
 
 .cache_get:
   cache:
-    - key: ${OS}-${COMPILER}-${BUILD_ARGS}
+    - key: ${OS}-${COMPILER}-${CMAKE_BUILD_TYPE}-${MARCH}
       paths:
         - ${CI_PROJECT_DIR}/ccache
         - ${SRSRANDIR}/ccache

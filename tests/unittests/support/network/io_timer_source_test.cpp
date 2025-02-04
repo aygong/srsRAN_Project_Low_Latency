@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,6 +20,7 @@
  *
  */
 
+#include "srsran/support/executors/inline_task_executor.h"
 #include "srsran/support/executors/manual_task_worker.h"
 #include "srsran/support/io/io_broker_factory.h"
 #include "srsran/support/io/io_timer_source.h"
@@ -32,11 +33,12 @@ using namespace srsran;
 class io_timer_source_test : public ::testing::Test
 {
 public:
+  inline_task_executor       executor;
   manual_task_worker         worker{16};
   timer_manager              timers{16};
   std::unique_ptr<io_broker> broker = create_io_broker(srsran::io_broker_type::epoll);
 
-  void start() { source.emplace(timers, *broker, std::chrono::milliseconds{1}); }
+  void start() { source.emplace(timers, *broker, executor, std::chrono::milliseconds{1}); }
 
   void stop() { source.reset(); }
 

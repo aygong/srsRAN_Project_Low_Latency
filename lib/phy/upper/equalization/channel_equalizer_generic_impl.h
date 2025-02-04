@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -34,8 +34,14 @@ namespace srsran {
 class channel_equalizer_generic_impl : public channel_equalizer
 {
 public:
+  /// Maximum number of ports supported by the equalizer.
+  static constexpr unsigned max_nof_ports = 4;
+
   /// Default constructor.
   explicit channel_equalizer_generic_impl(channel_equalizer_algorithm_type type_) : type(type_) {}
+
+  // See interface for documentation.
+  bool is_supported(unsigned nof_ports, unsigned nof_layers) override;
 
   // See interface for documentation.
   void equalize(span<cf_t>                       eq_symbols,
@@ -46,6 +52,57 @@ public:
                 float                            tx_scaling) override;
 
 private:
+  /// Determines whether a combination of the algorithm type, number of layers, and number of ports is supported.
+  static bool is_supported(channel_equalizer_algorithm_type algorithm, unsigned nof_ports, unsigned nof_layers);
+
+  /// ZF Equalization function for 3 layers and 4 ports.
+  static void equalize_zf_3x4(span<cf_t>                            eq_symbols,
+                              span<float>                           noise_vars,
+                              const re_buffer_reader<cbf16_t>&      ch_symbols,
+                              const channel_equalizer::ch_est_list& ch_estimates_,
+                              float                                 noise_var_est,
+                              float                                 tx_scaling);
+
+  /// ZF Equalization function for 4 layers and 4 ports.
+  static void equalize_zf_4x4(span<cf_t>                            eq_symbols,
+                              span<float>                           noise_vars,
+                              const re_buffer_reader<cbf16_t>&      ch_symbols,
+                              const channel_equalizer::ch_est_list& ch_estimates_,
+                              float                                 noise_var_est,
+                              float                                 tx_scaling);
+
+  /// Linear MMSE Equalization function for 2 layers and 2 ports.
+  static void equalize_mmse_2x2(span<cf_t>                            eq_symbols,
+                                span<float>                           noise_vars,
+                                const re_buffer_reader<cbf16_t>&      ch_symbols,
+                                const channel_equalizer::ch_est_list& ch_estimates_,
+                                float                                 noise_var_est,
+                                float                                 tx_scaling);
+
+  /// Linear MMSE Equalization function for 2 layers and 4 ports.
+  static void equalize_mmse_2x4(span<cf_t>                            eq_symbols,
+                                span<float>                           noise_vars,
+                                const re_buffer_reader<cbf16_t>&      ch_symbols,
+                                const channel_equalizer::ch_est_list& ch_estimates_,
+                                float                                 noise_var_est,
+                                float                                 tx_scaling);
+
+  /// Linear MMSE Equalization function for 3 layers and 4 ports.
+  static void equalize_mmse_3x4(span<cf_t>                            eq_symbols,
+                                span<float>                           noise_vars,
+                                const re_buffer_reader<cbf16_t>&      ch_symbols,
+                                const channel_equalizer::ch_est_list& ch_estimates_,
+                                float                                 noise_var_est,
+                                float                                 tx_scaling);
+
+  /// Linear MMSE Equalization function for 4 layers and 4 ports.
+  static void equalize_mmse_4x4(span<cf_t>                            eq_symbols,
+                                span<float>                           noise_vars,
+                                const re_buffer_reader<cbf16_t>&      ch_symbols,
+                                const channel_equalizer::ch_est_list& ch_estimates_,
+                                float                                 noise_var_est,
+                                float                                 tx_scaling);
+
   channel_equalizer_algorithm_type type;
 };
 

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -41,6 +41,7 @@ struct n2_connection_client_config {
   /// Parameters specific to an SCTP network gateway.
   struct network {
     io_broker&             broker;
+    task_executor&         io_rx_executor;
     std::string            bind_address;
     std::string            bind_interface;
     std::string            amf_address;

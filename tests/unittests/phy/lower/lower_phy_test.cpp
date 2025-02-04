@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -207,14 +207,14 @@ static std::ostream& operator<<(std::ostream& os, const prach_buffer_context& co
              context.ports,
              context.slot,
              context.start_symbol,
-             context.format,
+             fmt::underlying(context.format),
              context.rb_offset,
              context.nof_td_occasions,
              context.nof_fd_occasions,
              context.nof_prb_ul_grid,
-             context.pusch_scs,
+             fmt::underlying(context.pusch_scs),
              context.root_sequence_index,
-             context.restricted_set,
+             fmt::underlying(context.restricted_set),
              context.zero_correlation_zone,
              context.start_preamble_index,
              context.nof_preamble_indices);

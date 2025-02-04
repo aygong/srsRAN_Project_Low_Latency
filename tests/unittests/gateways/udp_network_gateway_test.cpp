@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -53,9 +53,11 @@ protected:
 
   void set_config(udp_network_gateway_config server_config, udp_network_gateway_config client_config)
   {
-    server = create_udp_network_gateway({std::move(server_config), server_data_notifier, io_tx_executor});
+    server =
+        create_udp_network_gateway({std::move(server_config), server_data_notifier, io_tx_executor, io_tx_executor});
     ASSERT_NE(server, nullptr);
-    client = create_udp_network_gateway({std::move(client_config), client_data_notifier, io_tx_executor});
+    client =
+        create_udp_network_gateway({std::move(client_config), client_data_notifier, io_tx_executor, io_tx_executor});
     ASSERT_NE(client, nullptr);
   }
 

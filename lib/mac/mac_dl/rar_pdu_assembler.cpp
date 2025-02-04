@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #include "rar_pdu_assembler.h"
+#include "srsran/scheduler/result/pdsch_info.h"
 
 using namespace srsran;
 
@@ -47,6 +48,8 @@ private:
   const rar_information& rar_info;
   uint8_t*               ptr = nullptr;
 };
+
+} // namespace
 
 void rar_pdu_encoder::encode(span<uint8_t> output_buf)
 {
@@ -117,8 +120,6 @@ void rar_pdu_encoder::encode_rar_grant_payload(const rar_ul_grant& grant)
   *ptr = to_value(grant.temp_crnti) & 0xffU;
   ++ptr;
 }
-
-} // namespace
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

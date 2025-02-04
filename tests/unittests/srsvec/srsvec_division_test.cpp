@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,6 @@
  *
  */
 
-#include "srsran/srsvec/aligned_vec.h"
 #include "srsran/srsvec/division.h"
 #include "srsran/support/srsran_test.h"
 #include <random>
@@ -34,17 +33,17 @@ void test_divide_fff(std::size_t N)
 {
   std::uniform_real_distribution<float> dist(-1.0, 1.0);
 
-  srsvec::aligned_vec<float> num(N);
+  std::vector<float> num(N);
   for (float& v : num) {
     v = dist(rgen);
   }
 
-  srsvec::aligned_vec<float> den(N);
+  std::vector<float> den(N);
   for (float& v : den) {
     v = dist(rgen);
   }
 
-  srsvec::aligned_vec<float> result(N);
+  std::vector<float> result(N);
 
   srsvec::divide(result, num, den);
 

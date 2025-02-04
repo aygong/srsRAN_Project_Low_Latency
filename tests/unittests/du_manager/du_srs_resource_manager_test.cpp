@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -50,6 +50,10 @@ std::ostream& operator<<(std::ostream& out, const srs_params& params)
 }
 
 } // namespace
+
+template <>
+struct fmt::formatter<srs_params> : ostream_formatter {
+};
 
 static bool is_ul_slot(unsigned offset, const tdd_ul_dl_config_common& tdd_cfg)
 {

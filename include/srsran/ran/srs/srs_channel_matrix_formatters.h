@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,8 +21,8 @@
  */
 
 #pragma once
+
 #include "srsran/ran/srs/srs_channel_matrix.h"
-#include "srsran/support/format_utils.h"
 
 namespace fmt {
 
@@ -33,14 +33,13 @@ struct formatter<srsran::srs_channel_matrix> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::srs_channel_matrix& matrix, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::srs_channel_matrix& matrix, FormatContext& ctx) const
   {
     unsigned nof_rx_ports = matrix.get_nof_rx_ports();
     unsigned nof_tx_ports = matrix.get_nof_tx_ports();

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -45,7 +45,7 @@ f1ap_cause_t srsran::asn1_to_cause(asn1::f1ap::cause_c asn1_cause)
       cause = static_cast<cause_misc_t>(asn1_cause.misc().value);
       break;
     default:
-      report_fatal_error("Cannot convert F1AP ASN.1 cause {} to common type", asn1_cause.type());
+      report_fatal_error("Cannot convert F1AP ASN.1 cause {} to common type", fmt::underlying(asn1_cause.type().value));
   }
 
   return cause;
@@ -226,9 +226,9 @@ static f1ap_drb_info drb_info_from_f1ap_asn1(const asn1::f1ap::qos_info_c& asn1_
   non_dyn_5qi_descriptor& nondyn_5qi               = out.drb_qos.qos_desc.get_nondyn_5qi();
   nondyn_5qi.five_qi                               = uint_to_five_qi(asn1_non_dyn_5qi.five_qi);
   out.drb_qos.alloc_retention_prio.prio_level_arp  = asn1_drb_info.drb_qos.ngra_nalloc_retention_prio.prio_level;
-  out.s_nssai.sst                                  = asn1_drb_info.snssai.sst.to_number();
+  out.s_nssai.sst                                  = slice_service_type{(uint8_t)asn1_drb_info.snssai.sst.to_number()};
   if (asn1_drb_info.snssai.sd_present) {
-    out.s_nssai.sd = asn1_drb_info.snssai.sd.to_number();
+    out.s_nssai.sd = slice_differentiator::create(asn1_drb_info.snssai.sd.to_number()).value();
   }
   // TODO: Do not populate gbr_flow_info for non-GBR flows.
   if (asn1_drb_info.drb_qos.gbr_qos_flow_info_present) {
@@ -364,8 +364,8 @@ static qos_info_c qos_info_to_f1ap_asn1(const f1ap_drb_info& drb_info)
   }
 
   // s nssai
-  asn1_drb_info.snssai.sst.from_number(drb_info.s_nssai.sst);
-  if (drb_info.s_nssai.sd.has_value()) {
+  asn1_drb_info.snssai.sst.from_number(drb_info.s_nssai.sst.value());
+  if (drb_info.s_nssai.sd.is_set()) {
     asn1_drb_info.snssai.sd_present = true;
     asn1_drb_info.snssai.sd.from_number(drb_info.s_nssai.sd.value());
   }

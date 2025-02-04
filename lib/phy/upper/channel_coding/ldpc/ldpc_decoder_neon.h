@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -40,8 +40,6 @@ private:
                          span<const log_likelihood_ratio> this_var_to_check,
                          span<const log_likelihood_ratio> this_check_to_var) override;
 
-  bool get_hard_bits(bit_buffer& out) override;
-
   void compute_var_to_check_msgs(span<log_likelihood_ratio>       this_var_to_check,
                                  span<const log_likelihood_ratio> this_soft_bits,
                                  span<const log_likelihood_ratio> this_check_to_var) override;
@@ -52,6 +50,8 @@ private:
                                  span<uint8_t>                    sign_prod_var_to_check,
                                  span<const log_likelihood_ratio> rotated_node,
                                  unsigned                         var_node) override;
+
+  void scale(span<log_likelihood_ratio> out, span<const log_likelihood_ratio> in) override;
 
   void compute_check_to_var_msgs(span<log_likelihood_ratio>       this_check_to_var,
                                  span<const log_likelihood_ratio> this_var_to_check,

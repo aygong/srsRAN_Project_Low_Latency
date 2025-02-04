@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,6 +25,14 @@
 using namespace srsran;
 
 e2_cu_metrics_connector::e2_cu_metrics_connector() = default;
+
+void e2_cu_metrics_connector::report_metrics(const pdcp_metrics_container& metrics)
+{
+  if (e2_meas_provider) {
+    // Pass metrics to the E2 Measurement Provider.
+    e2_meas_provider->report_metrics(metrics);
+  }
+}
 
 void e2_cu_metrics_connector::connect_e2_cu_meas_provider(std::unique_ptr<e2_cu_metrics_notifier> meas_provider)
 {

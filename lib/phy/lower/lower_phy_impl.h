@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,6 @@
 #include "processors/adaptors/processor_handler_adaptor.h"
 #include "processors/adaptors/processor_notifier_adaptor.h"
 #include "srsran/adt/circular_array.h"
-#include "srsran/adt/optional.h"
 #include "srsran/gateways/baseband/baseband_gateway.h"
 #include "srsran/phy/lower/amplitude_controller/amplitude_controller.h"
 #include "srsran/phy/lower/lower_phy.h"
@@ -42,7 +41,7 @@
 #include "srsran/phy/lower/processors/downlink/downlink_processor.h"
 #include "srsran/phy/lower/processors/uplink/uplink_processor.h"
 #include "srsran/phy/support/resource_grid_pool.h"
-#include "srsran/support/stats.h"
+#include "srsran/support/math/stats.h"
 
 namespace srsran {
 
@@ -79,6 +78,12 @@ public:
 
   // See interface for documentation.
   lower_phy_rg_handler& get_rg_handler() override { return handler_adaptor.get_rg_handler(); }
+
+  // See interface for documentation.
+  lower_phy_cfo_controller& get_tx_cfo_control() override;
+
+  // See interface for documentation.
+  lower_phy_cfo_controller& get_rx_cfo_control() override;
 
   /// Downlink processor.
   std::unique_ptr<lower_phy_downlink_processor> downlink_proc;

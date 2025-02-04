@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -24,14 +24,14 @@
 # LIB                   uhd or dpdk (lowercase)
 # LIB_VERSION           UHD or DPDK version number
 # MARCH                 gcc/clang compatible arch
-# NUM_CORES             Number or empty for all
+# NUM_JOBS             Number or empty for all
 # EXTRA_CMAKE_ARGS      Extra flags for srsRAN Project
 
 ARG OS_VERSION=24.04
 ARG LIB=uhd
 ARG LIB_VERSION=4.7.0.0
 ARG MARCH=native
-ARG NUM_CORES=""
+ARG NUM_JOBS=""
 
 ##################
 # Stage 1: Build #
@@ -47,32 +47,33 @@ ADD . /src
 # Install srsRAN build dependencies
 ARG LIB
 RUN /src/docker/scripts/install_dependencies.sh build && \
-    /src/docker/scripts/install_${LIB}_dependencies.sh build
+    /src/docker/scripts/install_${LIB}_dependencies.sh build && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 
 ARG LIB_VERSION
 ARG MARCH
-ARG NUM_CORES
+ARG NUM_JOBS
 
 # Compile UHD/DPDK
-RUN /src/docker/scripts/build_${LIB}.sh ${LIB_VERSION} ${MARCH} ${NUM_CORES}
+RUN /src/docker/scripts/build_${LIB}.sh ${LIB_VERSION} ${MARCH} ${NUM_JOBS}
 
 # Compile srsRAN Project and install it in the OS
 ARG EXTRA_CMAKE_ARGS=""
-RUN if [ -z "$NUM_CORES" ]; then NUM_CORES=$(nproc); fi && \
+RUN if [ -z "$NUM_JOBS" ]; then NUM_JOBS=$(nproc); fi && \
     LIB_UPPER=$(echo $LIB | tr '[:lower:]' '[:upper:]') && \
     export ${LIB_UPPER}_DIR="/opt/${LIB}/${LIB_VERSION}" && \
-    if [ "$LIB_UPPER" = "UHD" ]; then SPLIT="SPLIT_8"; else SPLIT="SPLIT_7_2"; fi \
+    if [ "$LIB_UPPER" = "UHD" ]; then TARGETS="srsdu_split_8 gnb_split_8"; else TARGETS="srsdu_split_7_2 gnb_split_7_2"; fi \
     && \
-    /src/docker/scripts/builder.sh -m "-j${NUM_CORES} install" \
-    -DBUILD_TESTS=False -DENABLE_${LIB_UPPER}=On -DDU_SPLIT_TYPE=${SPLIT} -DMARCH=${MARCH} -DCMAKE_INSTALL_PREFIX=/opt/srs \
+    /src/docker/scripts/builder.sh -m "-j${NUM_JOBS} srscu $TARGETS ru_emulator" \
+    -DBUILD_TESTS=False -DENABLE_${LIB_UPPER}=On -DMARCH=${MARCH} -DCMAKE_INSTALL_PREFIX=/opt/srs \
     ${EXTRA_CMAKE_ARGS} /src \
     && \
-    /src/docker/scripts/builder.sh -m "-j${NUM_CORES} ru_emulator" \
-    -DBUILD_TESTS=True -DENABLE_${LIB_UPPER}=On -DMARCH=${MARCH} \
-    ${EXTRA_CMAKE_ARGS} /src
-
-# Copy extra binaries
-RUN cp /src/build/tests/integrationtests/ofh/ru_emulator /opt/srs/bin/ru_emulator
+    mkdir -p /opt/srs/bin /opt/srs/share/srsran && \
+    cp /src/build/apps/cu/srscu                 /opt/srs/bin/srscu       && \
+    cp /src/build/apps/du_split_*/srsdu         /opt/srs/bin/srsdu       && \
+    cp /src/build/apps/gnb_split_*/gnb          /opt/srs/bin/gnb         && \
+    cp /src/build/apps/examples/ofh/ru_emulator /opt/srs/bin/ru_emulator && \
+    cp /src/configs/*.yml /opt/srs/share/srsran/
 
 ################
 # Stage 2: Run #

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/support/srsran_assert.h"
 #include "fmt/format.h"
 #include <cstdint>
 
@@ -45,6 +46,7 @@ inline bool pdcp_sn_size_from_uint(pdcp_sn_size& sn_size, uint16_t num)
 /// \brief Convert PDCP SN size from enum to unsigned integer.
 constexpr uint8_t pdcp_sn_size_to_uint(pdcp_sn_size sn_size)
 {
+  srsran_assert(sn_size != pdcp_sn_size::invalid, "Invalid PDCP SN size");
   return static_cast<uint8_t>(sn_size);
 }
 
@@ -56,13 +58,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::pdcp_sn_size> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(srsran::pdcp_sn_size sn_size, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::pdcp_sn_size sn_size, FormatContext& ctx) const
   {
     switch (sn_size) {
       case srsran::pdcp_sn_size::invalid:

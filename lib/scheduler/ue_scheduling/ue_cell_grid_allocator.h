@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,6 @@
 #include "../pdcch_scheduling/pdcch_resource_allocator.h"
 #include "../policy/ue_allocator.h"
 #include "../slicing/ran_slice_candidate.h"
-#include "../uci_scheduling/uci_scheduler.h"
 #include "ue_repository.h"
 #include "srsran/scheduler/config/scheduler_expert_config.h"
 
@@ -51,9 +50,14 @@ public:
 
   void slot_indication(slot_point sl);
 
-  alloc_result allocate_dl_grant(const ue_pdsch_grant& grant, ran_slice_id_t slice_id);
+  dl_alloc_result allocate_dl_grant(const ue_pdsch_grant& grant, ran_slice_id_t slice_id);
 
-  alloc_result allocate_ul_grant(const ue_pusch_grant& grant, ran_slice_id_t slice_id, slot_point pusch_slot);
+  ul_alloc_result allocate_ul_grant(const ue_pusch_grant& grant, ran_slice_id_t slice_id, slot_point pusch_slot);
+
+  /// \brief Called at the end of a slot to process the allocations that took place and make some final adjustments.
+  ///
+  /// In particular, this function can redimension the existing grants to fill the remaining RBs if it deems necessary.
+  void post_process_results();
 
 private:
   struct cell_t {
@@ -101,9 +105,9 @@ public:
   {
   }
 
-  alloc_result allocate_dl_grant(const ue_pdsch_grant& grant) override
+  dl_alloc_result allocate_dl_grant(const ue_pdsch_grant& grant) override
   {
-    const alloc_result result = pdsch_alloc.allocate_dl_grant(grant, slice_candidate.id());
+    const dl_alloc_result result = pdsch_alloc.allocate_dl_grant(grant, slice_candidate.id());
     if (result.status == alloc_status::success) {
       slice_candidate.store_grant(result.alloc_nof_rbs);
     }
@@ -125,9 +129,9 @@ public:
   {
   }
 
-  alloc_result allocate_ul_grant(const ue_pusch_grant& grant) override
+  ul_alloc_result allocate_ul_grant(const ue_pusch_grant& grant) override
   {
-    const alloc_result result =
+    const ul_alloc_result result =
         pusch_alloc.allocate_ul_grant(grant, slice_candidate.id(), slice_candidate.get_slot_tx());
     if (result.status == alloc_status::success) {
       slice_candidate.store_grant(result.alloc_nof_rbs);

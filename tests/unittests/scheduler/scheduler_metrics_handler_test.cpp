@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,9 @@
 
 #include "lib/scheduler/config/cell_configuration.h"
 #include "lib/scheduler/logging/scheduler_metrics_handler.h"
-#include "tests/unittests/scheduler/test_utils/config_generators.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
+#include "srsran/scheduler/config/scheduler_expert_config_factory.h"
+#include "srsran/scheduler/result/sched_result.h"
 #include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
@@ -43,7 +45,7 @@ protected:
       std::chrono::milliseconds period = std::chrono::milliseconds{test_rgen::uniform_int<unsigned>(2, 100)}) :
     report_period(period),
     cell_cfg(config_helpers::make_default_scheduler_expert_config(),
-             test_helpers::make_default_sched_cell_configuration_request()),
+             sched_config_helper::make_default_sched_cell_configuration_request()),
     metrics(period, metrics_notif, cell_cfg)
   {
     metrics.handle_ue_creation(test_ue_index, to_rnti(0x4601), pci_t{0});
@@ -149,11 +151,11 @@ TEST_F(scheduler_metrics_handler_tester, compute_nof_ul_oks_and_noks)
   crc_pdu.ue_index       = test_ue_index;
   crc_pdu.tb_crc_success = true;
   for (unsigned i = 0; i != nof_acks; ++i) {
-    metrics.handle_crc_indication(crc_pdu, units::bytes{1});
+    metrics.handle_crc_indication(next_sl_tx - 1, crc_pdu, units::bytes{1});
   }
   crc_pdu.tb_crc_success = false;
   for (unsigned i = 0; i != nof_nacks; ++i) {
-    metrics.handle_crc_indication(crc_pdu, units::bytes{1});
+    metrics.handle_crc_indication(next_sl_tx - 1, crc_pdu, units::bytes{1});
   }
 
   this->get_next_metric();
@@ -213,7 +215,7 @@ TEST_F(scheduler_metrics_handler_tester, compute_bitrate)
   crc_pdu.rnti           = to_rnti(0x4601);
   crc_pdu.ue_index       = test_ue_index;
   crc_pdu.tb_crc_success = true;
-  metrics.handle_crc_indication(crc_pdu, ul_tbs);
+  metrics.handle_crc_indication(next_sl_tx - 1, crc_pdu, ul_tbs);
 
   this->get_next_metric();
   scheduler_ue_metrics ue_metrics = metrics_notif.last_report.ue_metrics[0];
@@ -234,7 +236,7 @@ TEST_F(scheduler_metrics_handler_tester, compute_bitrate)
   crc_pdu.rnti           = to_rnti(0x4601);
   crc_pdu.ue_index       = test_ue_index;
   crc_pdu.tb_crc_success = false;
-  metrics.handle_crc_indication(crc_pdu, ul_tbs);
+  metrics.handle_crc_indication(next_sl_tx - 1, crc_pdu, ul_tbs);
 
   this->get_next_metric();
   ue_metrics = metrics_notif.last_report.ue_metrics[0];

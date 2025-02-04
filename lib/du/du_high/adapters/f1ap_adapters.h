@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/adt/slotted_array.h"
 #include "srsran/du/du_high/du_manager/du_manager.h"
 #include "srsran/f1ap/du/f1ap_du.h"
 #include "srsran/support/timers.h"
@@ -77,6 +78,11 @@ public:
   f1ap_ue_task_scheduler& get_ue_handler(du_ue_index_t ue_index) override { return ues[ue_index]; }
 
   void on_f1c_disconnection() override { return du_mng->handle_du_stop_request(); }
+
+  async_task<void> request_reset(const std::vector<du_ue_index_t>& ues_to_reset) override
+  {
+    return du_mng->handle_f1_reset_request(ues_to_reset);
+  }
 
   du_ue_index_t find_free_ue_index() override { return du_mng->find_unused_du_ue_index(); }
 

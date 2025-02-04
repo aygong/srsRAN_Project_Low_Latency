@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,7 @@
 
 namespace srsran {
 
-/// \brief Returns the Chanel State Information (CSI) report configuration parameters based on CSI-MeasConfig.
+/// \brief Returns the Channel State Information (CSI) report configuration parameters based on CSI-MeasConfig.
 /// \param csi_meas CSI-RS measurement configuration.
 /// \return Returns CSI report configuration parameters.
 csi_report_configuration create_csi_report_configuration(const csi_meas_config& csi_meas);

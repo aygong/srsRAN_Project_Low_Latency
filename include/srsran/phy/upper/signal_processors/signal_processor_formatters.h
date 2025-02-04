@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,6 @@
 
 #include "srsran/phy/support/precoding_formatters.h"
 #include "srsran/phy/upper/signal_processors/nzp_csi_rs_generator.h"
-#include "srsran/support/format_utils.h"
 
 namespace fmt {
 /// \brief Custom formatter for \c nzp_csi_rs_generator::config_t.
@@ -40,14 +39,13 @@ struct formatter<srsran::nzp_csi_rs_generator::config_t> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::nzp_csi_rs_generator::config_t& nzp_csi_config, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::nzp_csi_rs_generator::config_t& nzp_csi_config, FormatContext& ctx) const
   {
     helper.format_always(ctx, "prb=[{}, {})", nzp_csi_config.start_rb, nzp_csi_config.start_rb + nzp_csi_config.nof_rb);
     helper.format_always(ctx, "row={}", nzp_csi_config.csi_rs_mapping_table_row);

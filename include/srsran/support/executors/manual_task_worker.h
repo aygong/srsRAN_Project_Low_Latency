@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "task_executor.h"
 #include "srsran/adt/blocking_queue.h"
+#include "srsran/support/executors/task_executor.h"
 
 namespace srsran {
 
@@ -39,7 +39,7 @@ public:
 
   std::thread::id get_thread_id() const { return t_id; }
 
-  bool execute(unique_task task) override
+  [[nodiscard]] bool execute(unique_task task) override
   {
     if (std::this_thread::get_id() == t_id) {
       task();
@@ -48,7 +48,7 @@ public:
     return defer(std::move(task));
   }
 
-  bool defer(unique_task task) override
+  [[nodiscard]] bool defer(unique_task task) override
   {
     if (blocking_mode) {
       pending_tasks.push_blocking(std::move(task));
@@ -72,7 +72,7 @@ public:
 
   void request_stop()
   {
-    defer([this]() { stop(); });
+    (void)defer([this]() { stop(); });
   }
 
   /// Run all pending tasks until queue is emptied.

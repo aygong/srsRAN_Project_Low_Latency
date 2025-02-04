@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "srsran/adt/expected.h"
 #include "srsran/adt/tensor.h"
 #include "srsran/phy/generic_functions/dft_processor.h"
 #include "srsran/phy/upper/channel_processors/prach_detector.h"
@@ -34,7 +35,7 @@ class prach_detector_validator_impl : public prach_detector_validator
 {
 public:
   // See interface for documentation.
-  bool is_valid(const prach_detector::configuration& config) const override;
+  error_type<std::string> is_valid(const prach_detector::configuration& config) const override;
 };
 
 /// \brief Implements a simple PRACH detector.

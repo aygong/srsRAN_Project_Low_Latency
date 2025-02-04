@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,8 @@
 using namespace srsran;
 using namespace srs_du;
 
-std::unique_ptr<du_high> srsran::srs_du::make_du_high(const srs_du::du_high_configuration& du_hi_cfg)
+std::unique_ptr<du_high> srsran::srs_du::make_du_high(const du_high_configuration& du_hi_cfg,
+                                                      const du_high_dependencies&  dependencies)
 {
-  return std::make_unique<srs_du::du_high_impl>(du_hi_cfg);
+  return std::make_unique<du_high_impl>(du_hi_cfg, dependencies);
 }

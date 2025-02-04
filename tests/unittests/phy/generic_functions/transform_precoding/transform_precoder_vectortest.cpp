@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,11 +21,11 @@
  */
 
 #include "transform_precoder_test_data.h"
+#include "srsran/phy/constants.h"
 #include "srsran/phy/generic_functions/generic_functions_factories.h"
 #include "srsran/phy/generic_functions/transform_precoding/transform_precoder.h"
 #include "srsran/phy/generic_functions/transform_precoding/transform_precoding_factories.h"
 #include <gtest/gtest.h>
-#include <srsran/phy/constants.h>
 
 using namespace srsran;
 
@@ -38,17 +38,31 @@ bool operator==(span<const cf_t> lhs, span<const cf_t> rhs)
   });
 }
 
-std::ostream& operator<<(std::ostream& os, span<const cbf16_t> data)
+bool operator==(span<const float> lhs, span<const float> rhs)
+{
+  return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](float left, float right) {
+    return std::abs(left - right) < 1e-5;
+  });
+}
+
+std::ostream& operator<<(std::ostream& os, span<const cf_t> data)
+{
+  return os << fmt::format("{}", data);
+}
+
+std::ostream& operator<<(std::ostream& os, span<const float> data)
 {
   return os << fmt::format("{}", data);
 }
 
 std::ostream& operator<<(std::ostream& os, const test_case_t& test_case)
 {
-  return os << fmt::format("{} {} {}",
+  return os << fmt::format("{} {} {} {} {}",
                            test_case.M_rb,
-                           test_case.deprecode_input.get_file_name(),
-                           test_case.deprecode_output.get_file_name());
+                           test_case.deprecode_data_input.get_file_name(),
+                           test_case.deprecode_noise_input.get_file_name(),
+                           test_case.deprecode_data_output.get_file_name(),
+                           test_case.deprecode_noise_output.get_file_name());
 }
 
 } // namespace srsran
@@ -58,7 +72,7 @@ namespace {
 class TransformPrecodingFixture : public ::testing::TestWithParam<test_case_t>
 {
 protected:
-  void SetUp() override
+  static void SetUpTestSuite()
   {
     if (!precoder) {
       std::shared_ptr<dft_processor_factory> dft_proc_factory = create_dft_processor_factory_fftw_slow();
@@ -72,6 +86,10 @@ protected:
       ASSERT_TRUE(precoder);
     }
   }
+
+  static void TearDownTestSuite() { precoder.reset(); }
+
+  void SetUp() override { ASSERT_NE(precoder, nullptr); }
 
   static std::unique_ptr<transform_precoder> precoder;
 };
@@ -89,20 +107,31 @@ TEST_P(TransformPrecodingFixture, FromVector)
   unsigned M_sc = M_rb * NRE;
 
   // Read precoder inputs and outputs.
-  std::vector<cf_t> deprecode_input    = test_case.deprecode_input.read();
-  std::vector<cf_t> deprecode_expected = test_case.deprecode_output.read();
-  ASSERT_EQ(deprecode_input.size(), deprecode_expected.size());
+  const std::vector<cf_t>  deprecode_data_input     = test_case.deprecode_data_input.read();
+  const std::vector<cf_t>  deprecode_data_expected  = test_case.deprecode_data_output.read();
+  const std::vector<float> deprecode_noise_input    = test_case.deprecode_noise_input.read();
+  const std::vector<float> deprecode_noise_expected = test_case.deprecode_noise_output.read();
+  ASSERT_EQ(deprecode_data_input.size(), deprecode_data_expected.size());
+  ASSERT_EQ(deprecode_noise_input.size(), deprecode_noise_expected.size());
+  ASSERT_EQ(deprecode_data_input.size(), deprecode_noise_input.size());
 
-  std::vector<cf_t> deprecode_output(M_sc);
+  std::vector<cf_t>  deprecode_data_output(M_sc);
+  std::vector<float> deprecode_noise_output(M_sc);
 
-  unsigned nof_ofdm_symbols = deprecode_input.size() / M_sc;
+  unsigned nof_ofdm_symbols = deprecode_data_input.size() / M_sc;
   for (unsigned i_ofdm_symbol = 0; i_ofdm_symbol != nof_ofdm_symbols; ++i_ofdm_symbol) {
-    span<const cf_t> expected = span<const cf_t>(deprecode_expected).subspan(i_ofdm_symbol * M_sc, M_sc);
-    span<cf_t>       input    = span<cf_t>(deprecode_input).subspan(i_ofdm_symbol * M_sc, M_sc);
-    span<cf_t>       output   = span<cf_t>(deprecode_output);
-    precoder->deprecode_ofdm_symbol(output, input);
+    span<const cf_t> expected_data = span<const cf_t>(deprecode_data_expected).subspan(i_ofdm_symbol * M_sc, M_sc);
+    span<const cf_t> input_data    = span<const cf_t>(deprecode_data_input).subspan(i_ofdm_symbol * M_sc, M_sc);
+    span<cf_t>       output_data   = deprecode_data_output;
+    precoder->deprecode_ofdm_symbol(output_data, input_data);
 
-    ASSERT_EQ(expected, span<const cf_t>(output));
+    span<const float> expected_noise = span<const float>(deprecode_noise_expected).subspan(i_ofdm_symbol * M_sc, M_sc);
+    span<const float> input_noise    = span<const float>(deprecode_noise_input).subspan(i_ofdm_symbol * M_sc, M_sc);
+    span<float>       output_noise   = deprecode_noise_output;
+    precoder->deprecode_ofdm_symbol_noise(output_noise, input_noise);
+
+    ASSERT_EQ(expected_data, span<const cf_t>(output_data));
+    ASSERT_EQ(expected_noise, span<const float>(output_noise));
   }
 }
 

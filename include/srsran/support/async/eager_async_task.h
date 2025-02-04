@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "coroutine.h"
-#include "detail/base_task.h"
+#include "srsran/support/async/coroutine.h"
+#include "srsran/support/async/detail/base_task.h"
 
 namespace srsran {
 

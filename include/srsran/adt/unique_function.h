@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -106,17 +106,22 @@ public:
 template <class>
 struct is_unique_function : std::false_type {
 };
-template <class Sig, size_t Capacity>
-struct is_unique_function<unique_function<Sig, Capacity>> : std::true_type {
+template <class Sig, size_t Capacity, bool ForbidAlloc>
+struct is_unique_function<unique_function<Sig, Capacity, ForbidAlloc>> : std::true_type {
 };
 
-/// Metafunctions to enable different ctor implementations depending on whether the callback fits the small buffer
-template <typename T, size_t Cap, typename FunT = typename std::decay<T>::type>
-using enable_if_small_capture =
-    typename std::enable_if<sizeof(FunT) <= Cap and not is_unique_function<FunT>::value, bool>::type;
-template <typename T, size_t Cap, typename FunT = typename std::decay<T>::type>
-using enable_if_big_capture =
-    typename std::enable_if < Cap<sizeof(FunT) and not is_unique_function<FunT>::value, bool>::type;
+template <typename FunT, typename R, typename... Args>
+const auto& get_unique_heap_oper_ptr()
+{
+  static const task_details::heap_table_t<FunT, R, Args...> heap_oper_table{};
+  return heap_oper_table;
+}
+template <typename FunT, typename R, typename... Args>
+const auto& get_unique_small_oper_ptr()
+{
+  static const task_details::smallbuffer_table_t<FunT, R, Args...> small_oper_table{};
+  return small_oper_table;
+}
 
 } // namespace task_details
 
@@ -132,44 +137,135 @@ public:
   static constexpr size_t capacity = Capacity; ///< size of buffer
 
   constexpr unique_function() noexcept : oper_ptr(&empty_table) {}
+  unique_function(const unique_function& rhs) = delete;
+  template <size_t C, bool F>
+  unique_function(const unique_function<R(Args...), C, F>& rhs) = delete;
 
-  /// Called when T capture fits the unique_function small buffer
-  template <typename T, task_details::enable_if_small_capture<T, capacity> = true>
-  unique_function(T&& function) noexcept(std::is_nothrow_move_constructible<T>::value)
+  unique_function(unique_function&& rhs) noexcept
   {
-    using FunT = typename std::decay<T>::type;
-    static const task_details::smallbuffer_table_t<FunT, R, Args...> small_oper_table{};
-    oper_ptr = &small_oper_table;
-    ::new (&buffer) FunT(std::forward<T>(function));
+    oper_ptr     = rhs.oper_ptr;
+    rhs.oper_ptr = &empty_table;
+    oper_ptr->move(&rhs.buffer, &buffer);
   }
 
-  /// Called when T capture does not fit the unique_function small buffer
-  template <typename T, task_details::enable_if_big_capture<T, capacity> = true>
-  unique_function(T&& function) noexcept(std::is_nothrow_move_constructible<T>::value)
+  template <size_t Capacity2, bool F>
+  unique_function(unique_function<R(Args...), Capacity2, F>&& rhs) noexcept
   {
-    static_assert(
-        not ForbidAlloc,
-        "Failed to store provided callback in std::unique_function specialization that forbids heap allocations.");
-    using FunT = typename std::decay<T>::type;
-    static const task_details::heap_table_t<FunT, R, Args...> heap_oper_table{};
-    oper_ptr = &heap_oper_table;
-    ptr      = static_cast<void*>(new FunT{std::forward<T>(function)});
+    using OtherFunT = unique_function<R(Args...), Capacity2, F>;
+
+    if (rhs.oper_ptr == &empty_table) {
+      oper_ptr = &empty_table;
+      return;
+    }
+
+    if constexpr (capacity >= Capacity2) {
+      // The capacity of this is equal or higher. We can just move the buffer.
+      oper_ptr     = rhs.oper_ptr;
+      rhs.oper_ptr = &empty_table;
+      oper_ptr->move(&rhs.buffer, &buffer);
+    } else {
+      // The capacity of rhs is higher. We cannot guarantee a malloc-free move.
+      static_assert(not ForbidAlloc,
+                    "Failed to store the provided unique_function in unique_function specialization that forbids heap "
+                    "allocations.");
+      if (not rhs.is_in_small_buffer()) {
+        // The functor is in the heap. Just move it.
+        oper_ptr     = rhs.oper_ptr;
+        rhs.oper_ptr = &empty_table;
+        oper_ptr->move(&rhs.buffer, &buffer);
+      } else {
+        // The functor is in the small buffer of the rhs.
+        oper_ptr = &task_details::get_unique_heap_oper_ptr<OtherFunT, R, Args...>();
+        ptr      = static_cast<void*>(new OtherFunT{std::move(rhs)});
+      }
+    }
   }
 
-  unique_function(unique_function&& other) noexcept : oper_ptr(other.oper_ptr)
+  template <typename T, std::enable_if_t<not task_details::is_unique_function<std::decay_t<T>>::value, bool> = true>
+  unique_function(T&& rhs) noexcept(std::is_nothrow_move_constructible_v<T>)
   {
-    other.oper_ptr = &empty_table;
-    oper_ptr->move(&other.buffer, &buffer);
+    using FunT = typename std::decay_t<T>;
+
+    if constexpr (sizeof(FunT) <= capacity) {
+      // Fits in small buffer.
+      oper_ptr = &task_details::get_unique_small_oper_ptr<FunT, R, Args...>();
+      ::new (&buffer) FunT(std::forward<T>(rhs));
+    } else {
+      // Does not fit in small buffer.
+      static_assert(
+          not ForbidAlloc,
+          "Failed to store provided callback in unique_function specialization that forbids heap allocations.");
+      oper_ptr = &task_details::get_unique_heap_oper_ptr<FunT, R, Args...>();
+      ptr      = static_cast<void*>(new FunT{std::forward<T>(rhs)});
+    }
   }
 
   ~unique_function() { oper_ptr->dtor(&buffer); }
 
-  unique_function& operator=(unique_function&& other) noexcept
+  unique_function& operator=(const unique_function& rhs) = delete;
+  template <size_t C, bool F>
+  unique_function& operator=(const unique_function<R(Args...), C, F>& rhs) = delete;
+
+  unique_function& operator=(unique_function&& rhs) noexcept
   {
     oper_ptr->dtor(&buffer);
-    oper_ptr       = other.oper_ptr;
-    other.oper_ptr = &empty_table;
-    oper_ptr->move(&other.buffer, &buffer);
+    oper_ptr     = rhs.oper_ptr;
+    rhs.oper_ptr = &empty_table;
+    oper_ptr->move(&rhs.buffer, &buffer);
+    return *this;
+  }
+
+  template <size_t Capacity2, bool F>
+  unique_function& operator=(unique_function<R(Args...), Capacity2, F>&& rhs) noexcept
+  {
+    using OtherFunT = unique_function<R(Args...), Capacity2, F>;
+
+    oper_ptr->dtor(&buffer);
+    if (rhs.oper_ptr == &empty_table) {
+      oper_ptr = &empty_table;
+      return *this;
+    }
+
+    if constexpr (capacity >= Capacity2) {
+      // The capacity of this is equal or higher. We can just move the buffer.
+      oper_ptr     = rhs.oper_ptr;
+      rhs.oper_ptr = &empty_table;
+      oper_ptr->move(&rhs.buffer, &buffer);
+    } else {
+      // The capacity of rhs is higher. We cannot guarantee a malloc-free move.
+      static_assert(not ForbidAlloc,
+                    "Failed to store the provided unique_function in unique_function specialization that forbids heap "
+                    "allocations.");
+      if (not rhs.is_in_small_buffer()) {
+        oper_ptr     = rhs.oper_ptr;
+        rhs.oper_ptr = &empty_table;
+        oper_ptr->move(&rhs.buffer, &buffer);
+      } else {
+        oper_ptr = &task_details::get_unique_heap_oper_ptr<OtherFunT, R, Args...>();
+        ptr      = static_cast<void*>(new OtherFunT{std::move(rhs)});
+      }
+    }
+    return *this;
+  }
+
+  template <typename T, std::enable_if_t<not task_details::is_unique_function<std::decay_t<T>>::value, bool> = true>
+  unique_function& operator=(T&& rhs) noexcept(std::is_nothrow_move_constructible_v<T>)
+  {
+    using FunT = typename std::decay_t<T>;
+
+    oper_ptr->dtor(&buffer);
+    if constexpr (sizeof(FunT) <= capacity) {
+      // Fits in small buffer.
+      oper_ptr = &task_details::get_unique_small_oper_ptr<FunT, R, Args...>();
+      ::new (&buffer) FunT(std::forward<T>(rhs));
+    } else {
+      // Does not fit in small buffer.
+      static_assert(
+          not ForbidAlloc,
+          "Failed to store provided callback in unique_function specialization that forbids heap allocations.");
+      oper_ptr = &task_details::get_unique_heap_oper_ptr<FunT, R, Args...>();
+      ptr      = static_cast<void*>(new FunT{std::forward<T>(rhs)});
+    }
     return *this;
   }
 
@@ -180,6 +276,9 @@ public:
   bool is_in_small_buffer() const noexcept { return oper_ptr->is_in_small_buffer(); }
 
 private:
+  template <typename Signature, size_t C, bool F>
+  friend class unique_function;
+
   union {
     mutable storage_t buffer;
     void*             ptr;

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,27 +25,27 @@
 
 using namespace srsran;
 
-bool srs_validator_generic_impl::is_valid(const srs_estimator_configuration& config) const
+error_type<std::string> srs_validator_generic_impl::is_valid(const srs_estimator_configuration& config) const
 {
   // Check the SRS resource is valid.
   if (!config.resource.is_valid()) {
-    return false;
+    return make_unexpected("Invalid SRS resource configuration.");
   }
 
   // Frequency hopping is not supported.
   if (config.resource.has_frequency_hopping()) {
-    return false;
+    return make_unexpected("The SRS estimator does not support frequency hopping.");
   }
 
   // Sequence and group hopping is not supported.
   if (config.resource.hopping != srs_resource_configuration::group_or_sequence_hopping_enum::neither) {
-    return false;
+    return make_unexpected("The SRS estimator does not support group or sequence hopping.");
   }
 
   // Invalid receive port list.
   if (config.ports.empty()) {
-    return false;
+    return make_unexpected("Empty list of Rx ports for the SRS estimator.");
   }
 
-  return true;
+  return default_success_t();
 }

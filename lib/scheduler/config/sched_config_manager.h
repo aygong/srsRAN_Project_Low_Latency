@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,8 @@
 #pragma once
 
 #include "ue_configuration.h"
+#include "srsran/adt/concurrent_queue.h"
+#include "srsran/adt/mpmc_queue.h"
 #include "srsran/adt/noop_functor.h"
 #include "srsran/scheduler/config/scheduler_config.h"
 #include "srsran/srslog/logger.h"
@@ -50,6 +52,7 @@ public:
   du_ue_index_t           get_ue_index() const { return ue_index; }
   const ue_configuration& next_config() const { return *next_ded_cfg; }
   std::optional<bool>     get_fallback_command() const { return set_fallback_mode; }
+  slot_point              get_ul_ccch_slot_rx() const { return ul_ccch_slot_rx; }
 
   void notify_completion();
 
@@ -59,6 +62,7 @@ private:
   std::unique_ptr<sched_config_manager, noop_operation> parent;
   std::unique_ptr<ue_configuration>                     next_ded_cfg;
   std::optional<bool>                                   set_fallback_mode;
+  slot_point                                            ul_ccch_slot_rx;
 };
 
 /// Event to delete a UE in the scheduler.
@@ -129,7 +133,7 @@ public:
 
   du_cell_group_index_t get_cell_group_index(du_ue_index_t ue_index) const
   {
-    srsran_assert(ue_index < MAX_NOF_DU_UES, "Invalid ue_index={}", ue_index);
+    srsran_assert(ue_index < MAX_NOF_DU_UES, "Invalid ue_index={}", fmt::underlying(ue_index));
     return ue_to_cell_group_index[ue_index].load(std::memory_order_relaxed);
   }
 
@@ -138,6 +142,8 @@ public:
 private:
   friend class ue_config_update_event;
   friend class ue_config_delete_event;
+
+  void flush_ues_to_rem();
 
   void handle_ue_config_complete(du_ue_index_t ue_index, std::unique_ptr<ue_configuration> next_cfg);
   void handle_ue_delete_complete(du_ue_index_t ue_index);
@@ -152,8 +158,14 @@ private:
 
   std::array<std::unique_ptr<ue_configuration>, MAX_NOF_DU_UES> ue_cfg_list;
 
-  /// Mapping of UEs to DU Cell Groups.
+  // Mapping of UEs to DU Cell Groups.
   std::array<std::atomic<du_cell_group_index_t>, MAX_NOF_DU_UES> ue_to_cell_group_index;
+
+  // Cached UE configurations to be reused.
+  concurrent_queue<std::unique_ptr<ue_configuration>,
+                   concurrent_queue_policy::lockfree_mpmc,
+                   concurrent_queue_wait_policy::non_blocking>
+      ues_to_rem;
 };
 
 } // namespace srsran

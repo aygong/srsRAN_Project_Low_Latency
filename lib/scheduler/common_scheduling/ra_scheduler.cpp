@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -228,8 +228,9 @@ void ra_scheduler::handle_rach_indication(const rach_indication_message& msg)
 {
   // Buffer detected RACHs to be handled in next slot.
   if (not pending_rachs.try_push(msg)) {
-    logger.warning(
-        "cell={}: Discarding RACH indication for slot={}. Cause: Event queue is full", msg.cell_index, msg.slot_rx);
+    logger.warning("cell={}: Discarding RACH indication for slot={}. Cause: Event queue is full",
+                   fmt::underlying(msg.cell_index),
+                   msg.slot_rx);
   }
 }
 
@@ -243,6 +244,14 @@ void ra_scheduler::handle_rach_indication_impl(const rach_indication_message& ms
     // numerology as the SCS common (i.e, slot_idx = actual slot index within the frame).
     const unsigned slot_idx = prach_format_is_long ? msg.slot_rx.subframe_index() : msg.slot_rx.slot_index();
     const uint16_t ra_rnti  = get_ra_rnti(slot_idx, prach_occ.start_symbol, prach_occ.frequency_index);
+
+    if (prach_occ.preambles.empty()) {
+      // As per FAPI, this should not occur.
+      logger.warning(
+          "ra-rnti={}: Discarding PRACH occasion. Cause: There are no preambles detected for this PRACH occasion",
+          ra_rnti);
+      continue;
+    }
 
     pending_rar_t* rar_req = nullptr;
     for (pending_rar_t& rar : pending_rars) {
@@ -310,8 +319,9 @@ void ra_scheduler::handle_rach_indication_impl(const rach_indication_message& ms
 void ra_scheduler::handle_crc_indication(const ul_crc_indication& crc_ind)
 {
   if (not pending_crcs.try_push(crc_ind)) {
-    logger.warning(
-        "cell={}: CRC indication for slot={} discarded. Cause: Event queue is full", crc_ind.cell_index, crc_ind.sl_rx);
+    logger.warning("cell={}: CRC indication for slot={} discarded. Cause: Event queue is full",
+                   fmt::underlying(crc_ind.cell_index),
+                   crc_ind.sl_rx);
   }
 }
 
@@ -325,9 +335,9 @@ void ra_scheduler::handle_pending_crc_indications_impl(cell_resource_allocator& 
       auto& pending_msg3 = pending_msg3s[to_value(crc.rnti) % MAX_NOF_MSG3];
       if (pending_msg3.preamble.tc_rnti != crc.rnti or pending_msg3.msg3_harq_ent.empty()) {
         logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: Nonexistent tc-rnti",
-                       cell_cfg.cell_index,
+                       fmt::underlying(cell_cfg.cell_index),
                        crc.rnti,
-                       crc.harq_id);
+                       fmt::underlying(crc.harq_id));
         continue;
       }
 
@@ -336,9 +346,9 @@ void ra_scheduler::handle_pending_crc_indications_impl(cell_resource_allocator& 
       std::optional<ul_harq_process_handle> h_ul = pending_msg3.msg3_harq_ent.ul_harq(h_id);
       if (not h_ul.has_value() or crc.harq_id != h_id) {
         logger.warning("Invalid UL CRC, cell={}, rnti={}, h_id={}. Cause: HARQ-Id 0 must be used in Msg3",
-                       cell_cfg.cell_index,
+                       fmt::underlying(cell_cfg.cell_index),
                        crc.rnti,
-                       crc.harq_id);
+                       fmt::underlying(crc.harq_id));
         continue;
       }
 
@@ -494,6 +504,14 @@ void ra_scheduler::schedule_pending_rars(cell_resource_allocator& res_alloc, slo
     if (not rar_req.rar_window.contains(pdcch_slot)) {
       // RAR window hasn't started yet for this RAR. Given that the RARs are in order of slot, we can stop here.
       break;
+    }
+    if (rar_req.tc_rntis.empty()) {
+      // This should never happen, unless there was some corruption of the queue.
+      logger.warning(
+          "ra-rnti={}: Discarding RAR scheduling request. Cause: There are no TC-RNTIs associated with this RAR",
+          rar_req.ra_rnti);
+      it = pending_rars.erase(it);
+      continue;
     }
 
     // Try to schedule DCIs + RBGs for RAR Grants

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,6 +26,12 @@
 #include "srsran/ran/pdcch/cce_to_prb_mapping.h"
 
 using namespace srsran;
+
+pdcch_slot_allocator::pdcch_slot_allocator()
+{
+  dfs_tree.reserve(MAX_DL_PDCCH_PDUS_PER_SLOT + MAX_UL_PDCCH_PDUS_PER_SLOT);
+  saved_dfs_tree.reserve(MAX_DL_PDCCH_PDUS_PER_SLOT + MAX_UL_PDCCH_PDUS_PER_SLOT);
+}
 
 pdcch_slot_allocator::~pdcch_slot_allocator() {}
 

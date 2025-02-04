@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,9 +24,9 @@
 
 #include "srsran/pdcp/pdcp_sn_size.h"
 #include "srsran/ran/cause/f1ap_cause.h"
-#include "srsran/ran/lcid.h"
 #include "srsran/ran/qos/qos_flow_id.h"
 #include "srsran/ran/qos/qos_parameters.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/s_nssai.h"
 #include "srsran/ran/up_transport_layer_info.h"
 #include "srsran/rlc/rlc_mode.h"

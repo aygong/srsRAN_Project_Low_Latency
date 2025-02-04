@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -78,6 +78,8 @@ static log_likelihood_ratio scale_llr(log_likelihood_ratio llr, float scaling_fa
       std::round(static_cast<float>(llr.to_value_type()) * scaling_factor));
 }
 
+void ldpc_decoder_generic::scale(span<log_likelihood_ratio> out, span<const log_likelihood_ratio> in) {}
+
 // In the generic implementation we don't physically rotate the node, since we can access the corresponding values by
 // a simple shift - therefore the unused parameter.
 void ldpc_decoder_generic::compute_check_to_var_msgs(span<log_likelihood_ratio>       this_check_to_var,
@@ -117,12 +119,4 @@ void ldpc_decoder_generic::compute_soft_bits(span<log_likelihood_ratio>       th
     // fixed bits, that is they won't change their value from now on.
     this_soft_bits[j] = log_likelihood_ratio::promotion_sum(this_check_to_var[j], this_var_to_check[j]);
   }
-}
-
-bool ldpc_decoder_generic::get_hard_bits(bit_buffer& out)
-{
-  unsigned out_length = out.size();
-
-  span<log_likelihood_ratio> llrs = span<log_likelihood_ratio>(soft_bits).first(out_length);
-  return srsran::hard_decision(out, llrs);
 }

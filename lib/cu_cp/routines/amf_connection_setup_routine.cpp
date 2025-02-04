@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,6 +27,18 @@
 
 using namespace srsran;
 using namespace srs_cu_cp;
+
+#ifndef SRSRAN_HAS_ENTERPRISE
+
+async_task<bool>
+srsran::srs_cu_cp::start_amf_connection_setup(ngap_repository&                                    ngap_db,
+                                              std::unordered_map<amf_index_t, std::atomic<bool>>& amfs_connected)
+{
+  amfs_connected.emplace(ngap_db.get_ngaps().begin()->first, false);
+  return launch_async<amf_connection_setup_routine>(ngap_db, amfs_connected.begin()->second);
+}
+
+#endif // SRSRAN_HAS_ENTERPRISE
 
 amf_connection_setup_routine::amf_connection_setup_routine(ngap_repository&   ngap_db_,
                                                            std::atomic<bool>& amf_connected_) :

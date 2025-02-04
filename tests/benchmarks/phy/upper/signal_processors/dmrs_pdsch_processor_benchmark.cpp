@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,6 @@
  *
  */
 
-#include "../../../tests/unittests/phy/support/resource_grid_mapper_test_doubles.h"
 #include "srsran/phy/support/support_factories.h"
 #include "srsran/phy/upper/signal_processors/dmrs_pdsch_processor.h"
 #include "srsran/phy/upper/signal_processors/signal_processor_factories.h"
@@ -34,10 +33,9 @@ using namespace srsran;
 // Random generator.
 static std::mt19937 rgen(0);
 
-static unsigned nof_repetitions  = 1000;
-static unsigned nof_rb           = 106;
-static bool     silent           = false;
-static bool     use_dummy_mapper = false;
+static unsigned nof_repetitions = 1000;
+static unsigned nof_rb          = 106;
+static bool     silent          = false;
 
 struct channel_topology {
   unsigned nof_ports;
@@ -50,7 +48,6 @@ static void usage(const char* prog)
 {
   fmt::print("Usage: {} [-P precoder type] [-n number of RB] [-R repetitions] [-s silent]\n", prog);
   fmt::print("\t-n Number of resource blocks [Default {}]\n", nof_rb);
-  fmt::print("\t-D Use dummy resource grid mapper\n");
   fmt::print("\t-R Repetitions [Default {}]\n", nof_repetitions);
   fmt::print("\t-s Toggle silent operation [Default {}]\n", silent);
   fmt::print("\t-h Show this message\n");
@@ -63,9 +60,6 @@ static void parse_args(int argc, char** argv)
     switch (opt) {
       case 'n':
         nof_rb = std::strtol(optarg, nullptr, 10);
-        break;
-      case 'D':
-        use_dummy_mapper = true;
         break;
       case 'R':
         nof_repetitions = std::strtol(optarg, nullptr, 10);
@@ -86,7 +80,7 @@ static std::unique_ptr<resource_grid> create_resource_grid(unsigned nof_ports, u
 {
   std::shared_ptr<channel_precoder_factory> precoding_factory = create_channel_precoder_factory("auto");
   TESTASSERT(precoding_factory != nullptr, "Invalid channel precoder factory.");
-  std::shared_ptr<resource_grid_factory> rg_factory = create_resource_grid_factory(precoding_factory);
+  std::shared_ptr<resource_grid_factory> rg_factory = create_resource_grid_factory();
   TESTASSERT(rg_factory != nullptr, "Invalid resource grid factory.");
 
   return rg_factory->create(nof_ports, nof_symbols, nof_subc);
@@ -100,8 +94,15 @@ int main(int argc, char** argv)
   std::shared_ptr<pseudo_random_generator_factory> prg_factory = create_pseudo_random_generator_sw_factory();
   TESTASSERT(prg_factory);
 
+  std::shared_ptr<channel_precoder_factory> precoding_factory = create_channel_precoder_factory("auto");
+  TESTASSERT(precoding_factory);
+
+  std::shared_ptr<resource_grid_mapper_factory> rg_mapper_factory =
+      create_resource_grid_mapper_factory(precoding_factory);
+  TESTASSERT(rg_mapper_factory);
+
   std::shared_ptr<dmrs_pdsch_processor_factory> dmrs_pdsch_proc_factory =
-      create_dmrs_pdsch_processor_factory_sw(prg_factory);
+      create_dmrs_pdsch_processor_factory_sw(prg_factory, rg_mapper_factory);
   TESTASSERT(dmrs_pdsch_proc_factory);
 
   std::unique_ptr<dmrs_pdsch_processor> dmrs_proc = dmrs_pdsch_proc_factory->create();
@@ -110,15 +111,11 @@ int main(int argc, char** argv)
   // Precoding weight distribution.
   std::uniform_real_distribution<float> weight_dist(-1.0F, 1.0F);
 
-  resource_grid_mapper_dummy dummy_mapper;
-
   benchmarker perf_meas("DM-RS PDSCH processor", nof_repetitions);
 
   for (auto topology : channel_topology_list) {
     std::unique_ptr<resource_grid> grid = create_resource_grid(topology.nof_ports, MAX_NSYMB_PER_SLOT, MAX_RB * NRE);
     TESTASSERT(grid);
-
-    resource_grid_mapper& mapper = use_dummy_mapper ? dummy_mapper : grid->get_mapper();
 
     // Generate precoding weights.
     precoding_weight_matrix weights(topology.nof_layers, topology.nof_ports);
@@ -150,8 +147,9 @@ int main(int argc, char** argv)
       std::string meas_descr = fmt::to_string(topology.nof_ports) + " ports x " + fmt::to_string(topology.nof_layers) +
                                " layers, DM-RS Type 1 ";
 
-      perf_meas.new_measure(
-          meas_descr, nof_dmrs_symbols, [&dmrs_proc, &mapper, &dmrs_config]() { dmrs_proc->map(mapper, dmrs_config); });
+      perf_meas.new_measure(meas_descr, nof_dmrs_symbols, [&dmrs_proc, &grid, &dmrs_config]() {
+        dmrs_proc->map(grid->get_writer(), dmrs_config);
+      });
     }
 
     // Test DM-RS Type 2 generation.
@@ -163,8 +161,9 @@ int main(int argc, char** argv)
       std::string meas_descr = fmt::to_string(topology.nof_ports) + " ports x " + fmt::to_string(topology.nof_layers) +
                                " layers, DM-RS Type 2 ";
 
-      perf_meas.new_measure(
-          meas_descr, nof_dmrs_symbols, [&dmrs_proc, &mapper, &dmrs_config]() { dmrs_proc->map(mapper, dmrs_config); });
+      perf_meas.new_measure(meas_descr, nof_dmrs_symbols, [&dmrs_proc, &grid, &dmrs_config]() {
+        dmrs_proc->map(grid->get_writer(), dmrs_config);
+      });
     }
   }
 

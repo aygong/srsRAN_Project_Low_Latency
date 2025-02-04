@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,7 +20,6 @@
  *
  */
 
-#include "../../../support/resource_grid_mapper_test_doubles.h"
 #include "pdsch_processor_test_data.h"
 #include "pdsch_processor_test_doubles.h"
 #include "srsran/phy/support/support_factories.h"
@@ -43,9 +42,8 @@ using namespace srsran;
 
 static std::string eal_arguments = "pdsch_processor_vectortest";
 #ifdef HWACC_PDSCH_ENABLED
-static bool                                     skip_hwacc_test   = false;
-static std::unique_ptr<dpdk::dpdk_eal>          dpdk_interface    = nullptr;
-static std::unique_ptr<dpdk::bbdev_acc_factory> bbdev_acc_factory = nullptr;
+static bool                            skip_hwacc_test = false;
+static std::unique_ptr<dpdk::dpdk_eal> dpdk_interface  = nullptr;
 
 // Separates EAL and non-EAL arguments.
 // The function assumes that 'eal_arg' flags the start of the EAL arguments and that no more non-EAL arguments follow.
@@ -142,15 +140,6 @@ private:
       return nullptr;
     }
 
-    // Create a bbdev accelerator factory.
-    if (!bbdev_acc_factory) {
-      bbdev_acc_factory = srsran::dpdk::create_bbdev_acc_factory("srs");
-      if (!bbdev_acc_factory || skip_hwacc_test) {
-        skip_hwacc_test = true;
-        return nullptr;
-      }
-    }
-
     // Intefacing to the bbdev-based hardware-accelerator.
     dpdk::bbdev_acc_configuration bbdev_config;
     bbdev_config.id                                    = 0;
@@ -158,7 +147,7 @@ private:
     bbdev_config.nof_ldpc_dec_lcores                   = 0;
     bbdev_config.nof_fft_lcores                        = 0;
     bbdev_config.nof_mbuf                              = static_cast<unsigned>(pow2(log2_ceil(MAX_NOF_SEGMENTS)));
-    std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = bbdev_acc_factory->create(bbdev_config, logger);
+    std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = create_bbdev_acc(bbdev_config, logger);
     if (!bbdev_accelerator || skip_hwacc_test) {
       skip_hwacc_test = true;
       return nullptr;
@@ -173,7 +162,7 @@ private:
     hw_encoder_config.dedicated_queue   = true;
 
     // ACC100 hardware-accelerator implementation.
-    return srsran::hal::create_bbdev_pdsch_enc_acc_factory(hw_encoder_config, "srs");
+    return srsran::hal::create_bbdev_pdsch_enc_acc_factory(hw_encoder_config);
 #else  // HWACC_PDSCH_ENABLED
     return nullptr;
 #endif // HWACC_PDSCH_ENABLED
@@ -266,20 +255,38 @@ private:
       return nullptr;
     }
 
+    std::shared_ptr<channel_precoder_factory> precoding_factory = create_channel_precoder_factory("auto");
+    if (!precoding_factory) {
+      return nullptr;
+    }
+
+    std::shared_ptr<resource_grid_mapper_factory> rg_mapper_factory =
+        create_resource_grid_mapper_factory(precoding_factory);
+    if (!rg_mapper_factory) {
+      return nullptr;
+    }
+
     std::shared_ptr<pdsch_modulator_factory> pdsch_modulator_factory =
-        create_pdsch_modulator_factory_sw(modulator_factory, prg_factory);
+        create_pdsch_modulator_factory_sw(modulator_factory, prg_factory, rg_mapper_factory);
     if (!pdsch_modulator_factory) {
       return nullptr;
     }
 
     std::shared_ptr<dmrs_pdsch_processor_factory> dmrs_pdsch_factory =
-        create_dmrs_pdsch_processor_factory_sw(prg_factory);
+        create_dmrs_pdsch_processor_factory_sw(prg_factory, rg_mapper_factory);
+    if (!dmrs_pdsch_factory) {
+      return nullptr;
+    }
+
+    std::shared_ptr<ptrs_pdsch_generator_factory> ptrs_pdsch_factory =
+        create_ptrs_pdsch_generator_generic_factory(prg_factory, rg_mapper_factory);
     if (!dmrs_pdsch_factory) {
       return nullptr;
     }
 
     if (factory_type.find("generic") != std::string::npos) {
-      return create_pdsch_processor_factory_sw(pdsch_encoder_factory, pdsch_modulator_factory, dmrs_pdsch_factory);
+      return create_pdsch_processor_factory_sw(
+          pdsch_encoder_factory, pdsch_modulator_factory, dmrs_pdsch_factory, ptrs_pdsch_factory);
     }
 
     if (factory_type == "concurrent") {
@@ -287,12 +294,14 @@ private:
           "pdsch_proc", NOF_CONCURRENT_THREADS, 128);
       executor = std::make_unique<task_worker_pool_executor<concurrent_queue_policy::locking_mpmc>>(*worker_pool);
 
-      return create_pdsch_concurrent_processor_factory_sw(crc_calc_factory,
+      return create_pdsch_concurrent_processor_factory_sw(ldpc_segmenter_tx_factory,
                                                           ldpc_encoder_factory,
                                                           ldpc_rate_matcher_factory,
                                                           prg_factory,
+                                                          rg_mapper_factory,
                                                           modulator_factory,
                                                           dmrs_pdsch_factory,
+                                                          ptrs_pdsch_factory,
                                                           *executor,
                                                           NOF_CONCURRENT_THREADS);
     }
@@ -303,7 +312,9 @@ private:
                                                     ldpc_rate_matcher_factory,
                                                     prg_factory,
                                                     modulator_factory,
-                                                    dmrs_pdsch_factory);
+                                                    dmrs_pdsch_factory,
+                                                    ptrs_pdsch_factory,
+                                                    rg_mapper_factory);
     }
 
     return nullptr;
@@ -363,30 +374,27 @@ TEST_P(PdschProcessorFixture, PdschProcessorVectortest)
   unsigned max_ports = config.precoding.get_nof_ports();
 
   // Prepare resource grid and resource grid mapper spies.
-  resource_grid_writer_spy              grid(max_ports, max_symb, max_prb);
-  std::unique_ptr<resource_grid_mapper> mapper = create_resource_grid_mapper(max_ports, NRE * max_prb, grid);
+  resource_grid_writer_spy grid(max_ports, max_symb, max_prb);
 
   // Read input data as a bit-packed transport block.
   std::vector<uint8_t> transport_block = test_case.sch_data.read();
   ASSERT_FALSE(transport_block.empty()) << "Failed to load transport block.";
 
   // Prepare transport blocks view.
-  static_vector<span<const uint8_t>, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS> transport_blocks;
+  static_vector<shared_transport_block, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS> transport_blocks;
   transport_blocks.emplace_back(transport_block);
 
   // Make sure the configuration is valid.
   ASSERT_TRUE(pdu_validator->is_valid(config));
 
   // Process PDSCH.
-  pdsch_proc->process(*mapper, notifier_spy, transport_blocks, config);
+  pdsch_proc->process(grid, notifier_spy, transport_blocks, config);
 
   // Waits for the processor to finish.
   notifier_spy.wait_for_finished();
 
-  // Tolerance: max BF16 error times sqrt(2), since we are taking the modulus.
-  constexpr float tolerance = M_SQRT2f32 / 256.0;
   // Assert results.
-  grid.assert_entries(test_case.grid_expected.read(), tolerance);
+  grid.assert_entries(test_case.grid_expected.read(), std::sqrt(max_ports));
 }
 
 // Creates test suite that combines all possible parameters.

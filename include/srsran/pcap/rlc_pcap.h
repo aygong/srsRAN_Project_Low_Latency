@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/ran/du_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/rlc/rlc_config.h"
 #include "fmt/format.h"
 #include <cstdint>
@@ -39,6 +39,7 @@ class rlc_pcap
 public:
   virtual ~rlc_pcap() = default;
 
+  virtual void flush()                                                                     = 0;
   virtual void close()                                                                     = 0;
   virtual bool is_write_enabled() const                                                    = 0;
   virtual void push_pdu(const pcap_rlc_pdu_context& context, const span<uint8_t> pdu)      = 0;
@@ -106,6 +107,7 @@ class null_rlc_pcap : public rlc_pcap
 public:
   ~null_rlc_pcap() override = default;
 
+  void flush() override {}
   void close() override {}
   bool is_write_enabled() const override { return false; }
   void push_pdu(const pcap_rlc_pdu_context& context, const span<uint8_t> pdu) override {}
@@ -148,14 +150,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::pcap_rlc_pdu_context> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::pcap_rlc_pdu_context& pcap_context, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::pcap_rlc_pdu_context& pcap_context, FormatContext& ctx) const
   {
     return format_to(ctx.out(),
                      "rlc_mode={} dir={} sn_len={} bearer_type={} bearer_id={} ueid={}",

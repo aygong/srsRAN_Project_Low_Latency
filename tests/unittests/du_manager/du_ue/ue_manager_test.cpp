@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -68,7 +68,7 @@ protected:
   {
     f1ap_ue_delete_request ue_del_req{};
     ue_del_req.ue_index = ue_index;
-    test_logger.info("TEST: Starting UE deletion with UE index={}...", ue_del_req.ue_index);
+    test_logger.info("TEST: Starting UE deletion with UE index={}...", fmt::underlying(ue_del_req.ue_index));
     ue_mng.schedule_async_task(ue_del_req.ue_index, ue_mng.handle_ue_delete_request(ue_del_req));
   }
 

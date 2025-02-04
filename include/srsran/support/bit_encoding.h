@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -133,13 +133,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::bit_encoder> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::bit_encoder& s, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::bit_encoder& s, FormatContext& ctx) const
   {
     if (s.next_bit_offset() == 0) {
       fmt::format_to(ctx.out(), "{:b}", s.data());
@@ -157,13 +157,13 @@ struct formatter<srsran::bit_encoder> {
 template <>
 struct formatter<srsran::bit_decoder> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::bit_decoder& s, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::bit_decoder& s, FormatContext& ctx) const
   {
     if (s.next_bit_offset() == 0) {
       fmt::format_to(ctx.out(), "{:b}", s.data().view(0, s.nof_bytes()));

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "ngap_types.h"
 #include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/ngap/ngap_types.h"
 #include "srsran/ran/cause/ngap_cause.h"
 #include <optional>
 #include <variant>

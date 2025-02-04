@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,6 +25,7 @@
 #include "../logging/scheduler_metrics_handler.h"
 #include "../srs/srs_scheduler.h"
 #include "../uci_scheduling/uci_scheduler_impl.h"
+#include "srsran/support/memory_pool/unbounded_object_pool.h"
 
 using namespace srsran;
 
@@ -59,8 +60,8 @@ public:
     // Signal that this bearer needs its BO state updated.
     if (not pending_evs.try_push(key)) {
       parent.logger.warning("ue={} lcid={}: Discarding DL buffer occupancy update. Cause: Event queue is full",
-                            rlc_dl_bo.ue_index,
-                            rlc_dl_bo.lcid);
+                            fmt::underlying(rlc_dl_bo.ue_index),
+                            fmt::underlying(rlc_dl_bo.lcid));
     }
   }
 
@@ -77,8 +78,10 @@ public:
       // > Extract last DL BO value for the respective bearer and reset BO table position.
       dl_bo.bs = ue_dl_bo_table[key].exchange(-1, std::memory_order_release);
       if (dl_bo.bs < 0) {
-        parent.logger.warning(
-            "ue={} lcid={}: Invalid DL buffer occupancy value: {}", dl_bo.ue_index, dl_bo.lcid, dl_bo.bs);
+        parent.logger.warning("ue={} lcid={}: Invalid DL buffer occupancy value: {}",
+                              fmt::underlying(dl_bo.ue_index),
+                              fmt::underlying(dl_bo.lcid),
+                              dl_bo.bs);
         continue;
       }
 
@@ -92,10 +95,9 @@ public:
       // Forward DL BO update to UE.
       u.handle_dl_buffer_state_indication(dl_bo);
       auto& du_pcell = parent.du_cells[u.get_pcell().cell_index];
-      if (dl_bo.lcid == LCID_SRB0 or (u.get_pcell().is_in_fallback_mode() and dl_bo.lcid == LCID_SRB1)) {
+      if (u.get_pcell().is_in_fallback_mode()) {
         // Signal SRB fallback scheduler with the new SRB0/SRB1 buffer state.
-        du_pcell.fallback_sched->handle_dl_buffer_state_indication_srb(
-            dl_bo.ue_index, dl_bo.lcid == LCID_SRB0, sl, dl_bo.bs);
+        du_pcell.fallback_sched->handle_dl_buffer_state_indication(dl_bo.ue_index);
       }
 
       // Log event.
@@ -119,6 +121,69 @@ private:
   ue_event_queue pending_evs;
 };
 
+class srsran::pdu_indication_pool
+{
+  constexpr static size_t UCI_INITIAL_POOL_SIZE = MAX_PUCCH_PDUS_PER_SLOT;
+  constexpr static size_t PHR_INITIAL_POOL_SIZE = 8;
+  constexpr static size_t CRC_INITIAL_POOL_SIZE = MAX_PUSCH_PDUS_PER_SLOT;
+  constexpr static size_t SRS_INITIAL_POOL_SIZE = MAX_SRS_PDUS_PER_SLOT;
+  constexpr static size_t BSR_INITIAL_POOL_SIZE = MAX_PUSCH_PDUS_PER_SLOT;
+
+public:
+  using uci_ptr = unbounded_object_pool<uci_indication::uci_pdu>::ptr;
+  using phr_ptr = unbounded_object_pool<ul_phr_indication_message>::ptr;
+  using crc_ptr = unbounded_object_pool<ul_crc_pdu_indication>::ptr;
+  using srs_ptr = unbounded_object_pool<srs_indication::srs_indication_pdu>::ptr;
+  using bsr_ptr = unbounded_object_pool<ul_bsr_indication_message>::ptr;
+
+  pdu_indication_pool() :
+    pending_ucis(UCI_INITIAL_POOL_SIZE),
+    pending_phrs(PHR_INITIAL_POOL_SIZE),
+    pending_crcs(CRC_INITIAL_POOL_SIZE),
+    pending_srss(SRS_INITIAL_POOL_SIZE),
+    pending_bsrs(BSR_INITIAL_POOL_SIZE)
+  {
+  }
+
+  uci_ptr create_uci(const uci_indication::uci_pdu& pdu)
+  {
+    auto ret = pending_ucis.get();
+    *ret     = pdu;
+    return ret;
+  }
+  phr_ptr create_phr(const ul_phr_indication_message& phr_ind)
+  {
+    auto ret = pending_phrs.get();
+    *ret     = phr_ind;
+    return ret;
+  }
+  crc_ptr create_crc(const ul_crc_pdu_indication& crc_ind)
+  {
+    auto ret = pending_crcs.get();
+    *ret     = crc_ind;
+    return ret;
+  }
+  srs_ptr create_srs(const srs_indication::srs_indication_pdu& srs_ind)
+  {
+    auto ret = pending_srss.get();
+    *ret     = srs_ind;
+    return ret;
+  }
+  bsr_ptr create_bsr(const ul_bsr_indication_message& bsr_ind)
+  {
+    auto ret = pending_bsrs.get();
+    *ret     = bsr_ind;
+    return ret;
+  }
+
+private:
+  unbounded_object_pool<uci_indication::uci_pdu>            pending_ucis;
+  unbounded_object_pool<ul_phr_indication_message>          pending_phrs;
+  unbounded_object_pool<ul_crc_pdu_indication>              pending_crcs;
+  unbounded_object_pool<srs_indication::srs_indication_pdu> pending_srss;
+  unbounded_object_pool<ul_bsr_indication_message>          pending_bsrs;
+};
+
 // Initial capacity for the common and cell event lists, in order to avoid std::vector reallocations. We use the max
 // nof UEs as a conservative estimate of the expected number of events per slot.
 static constexpr size_t COMMON_EVENT_LIST_SIZE = MAX_NOF_DU_UES * 2;
@@ -127,12 +192,13 @@ static constexpr size_t CELL_EVENT_LIST_SIZE   = MAX_NOF_DU_UES * 2;
 ue_event_manager::ue_event_manager(ue_repository& ue_db_) :
   ue_db(ue_db_),
   logger(srslog::fetch_basic_logger("SCHED")),
+  ind_pdu_pool(std::make_unique<pdu_indication_pool>()),
   common_events(COMMON_EVENT_LIST_SIZE),
   dl_bo_mng(std::make_unique<ue_dl_buffer_occupancy_manager>(*this))
 {
 }
 
-ue_event_manager::~ue_event_manager() {}
+ue_event_manager::~ue_event_manager() = default;
 
 void ue_event_manager::handle_ue_creation(ue_config_update_event ev)
 {
@@ -140,13 +206,14 @@ void ue_event_manager::handle_ue_creation(ue_config_update_event ev)
   std::unique_ptr<ue> u = std::make_unique<ue>(
       ue_creation_command{ev.next_config(),
                           ev.get_fallback_command().has_value() and ev.get_fallback_command().value(),
-                          *du_cells[ev.next_config().pcell_common_cfg().cell_index].cell_harqs});
+                          *du_cells[ev.next_config().pcell_common_cfg().cell_index].cell_harqs,
+                          ev.get_ul_ccch_slot_rx()});
   const du_ue_index_t ue_idx = u->ue_index;
 
   auto handle_ue_creation_impl = [this, u = std::move(u), ev = std::move(ev)]() mutable {
     if (ue_db.contains(u->ue_index)) {
       logger.error("ue={} rnti={}: Discarding UE creation. Cause: A UE with the same index already exists",
-                   u->ue_index,
+                   fmt::underlying(u->ue_index),
                    u->crnti);
       return;
     }
@@ -179,8 +246,11 @@ void ue_event_manager::handle_ue_creation(ue_config_update_event ev)
 
   // Defer UE object addition to ue list to the slot indication handler.
   if (not common_events.try_push(common_event_t{INVALID_DU_UE_INDEX, std::move(handle_ue_creation_impl)})) {
-    logger.warning("ue={}: Discarding UE creation. Cause: Event queue is full", ue_idx);
+    logger.warning("ue={}: Discarding UE creation. Cause: Event queue is full", fmt::underlying(ue_idx));
   }
+
+  // Destroy any pending UEs in the repository outside the critical section.
+  ue_db.destroy_pending_ues();
 }
 
 void ue_event_manager::handle_ue_reconfiguration(ue_config_update_event ev)
@@ -242,7 +312,7 @@ void ue_event_manager::handle_ue_reconfiguration(ue_config_update_event ev)
   };
 
   if (not common_events.try_push(common_event_t{ue_index, std::move(handle_ue_reconf_impl)})) {
-    logger.warning("ue={}: Discarding UE reconfiguration. Cause: Event queue is full", ue_index);
+    logger.warning("ue={}: Discarding UE reconfiguration. Cause: Event queue is full", fmt::underlying(ue_index));
   }
 }
 
@@ -253,7 +323,7 @@ void ue_event_manager::handle_ue_deletion(ue_config_delete_event ev)
   auto handle_ue_deletion_impl = [this, ev = std::move(ev)]() mutable {
     const du_ue_index_t ue_idx = ev.ue_index();
     if (not ue_db.contains(ue_idx)) {
-      logger.warning("Received request to delete ue={} that does not exist", ue_idx);
+      logger.warning("Received request to delete ue={} that does not exist", fmt::underlying(ue_idx));
       return;
     }
     const auto&     u         = ue_db[ue_idx];
@@ -277,101 +347,110 @@ void ue_event_manager::handle_ue_deletion(ue_config_delete_event ev)
   };
 
   if (not common_events.try_push(common_event_t{ue_index, std::move(handle_ue_deletion_impl)})) {
-    logger.warning("ue={}: Discarding UE deletion. Cause: Event queue is full", ue_index);
+    logger.warning("ue={}: Discarding UE deletion. Cause: Event queue is full", fmt::underlying(ue_index));
   }
+
+  // Destroy any pending UEs in the repository outside the critical section.
+  ue_db.destroy_pending_ues();
 }
 
 void ue_event_manager::handle_ue_config_applied(du_ue_index_t ue_idx)
 {
   auto handle_ue_config_applied_impl = [this, ue_idx]() {
     if (not ue_db.contains(ue_idx)) {
-      logger.warning("Received config application confirmation for ue={} that does not exist", ue_idx);
+      logger.warning("Received config application confirmation for ue={} that does not exist", fmt::underlying(ue_idx));
       return;
     }
     ue&   u     = ue_db[ue_idx];
     auto& pcell = du_cells[u.get_pcell().cell_index];
 
-    // Log UE config applied event.
-    pcell.ev_logger->enqueue(scheduler_event_logger::ue_cfg_applied_event{ue_idx, u.crnti});
-
-    // Remove UE from fallback mode.
-    u.get_pcell().set_fallback_state(false);
+    // Confirm that UE applied new config.
+    u.handle_config_applied();
 
     // Add UE to slice scheduler, once it leaves fallback mode.
     pcell.slice_sched->config_applied(ue_idx);
+
+    // Log UE config applied event.
+    pcell.ev_logger->enqueue(scheduler_event_logger::ue_cfg_applied_event{ue_idx, u.crnti});
   };
 
   if (not common_events.try_push(common_event_t{ue_idx, handle_ue_config_applied_impl})) {
-    logger.warning("ue={}: Discarding UE config applied event. Cause: Event queue is full", ue_idx);
+    logger.warning("ue={}: Discarding UE config applied event. Cause: Event queue is full", fmt::underlying(ue_idx));
   }
 }
 
 void ue_event_manager::handle_ul_bsr_indication(const ul_bsr_indication_message& bsr_ind)
 {
-  srsran_sanity_check(cell_exists(bsr_ind.cell_index), "Invalid cell index");
+  auto handle_ul_bsr_ind_impl = [this, bsr_ind = ind_pdu_pool->create_bsr(bsr_ind)]() {
+    if (not cell_exists(bsr_ind->cell_index)) {
+      logger.warning("ue={}: Detected invalide cell index={} in BSR",
+                     fmt::underlying(bsr_ind->ue_index),
+                     fmt::underlying(bsr_ind->cell_index));
+    }
 
-  auto handle_ul_bsr_ind_impl = [this, bsr_ind]() {
-    if (not ue_db.contains(bsr_ind.ue_index)) {
-      log_invalid_ue_index(bsr_ind.ue_index, "BSR");
+    if (not ue_db.contains(bsr_ind->ue_index)) {
+      log_invalid_ue_index(bsr_ind->ue_index, "BSR");
       return;
     }
-    auto&           u         = ue_db[bsr_ind.ue_index];
+    auto&           u         = ue_db[bsr_ind->ue_index];
     du_cell_index_t pcell_idx = u.get_pcell().cell_index;
 
     // Handle event.
-    u.handle_bsr_indication(bsr_ind);
+    u.handle_bsr_indication(*bsr_ind);
 
     if (u.get_pcell().is_in_fallback_mode()) {
       // Signal SRB fallback scheduler with the new SRB0/SRB1 buffer state.
-      du_cells[pcell_idx].fallback_sched->handle_ul_bsr_indication(bsr_ind.ue_index, bsr_ind);
+      du_cells[pcell_idx].fallback_sched->handle_ul_bsr_indication(bsr_ind->ue_index, *bsr_ind);
     }
 
     // Log event.
     if (du_cells[pcell_idx].ev_logger->enabled()) {
       scheduler_event_logger::bsr_event event{};
-      event.ue_index             = bsr_ind.ue_index;
-      event.rnti                 = bsr_ind.crnti;
-      event.type                 = bsr_ind.type;
-      event.reported_lcgs        = bsr_ind.reported_lcgs;
+      event.ue_index             = bsr_ind->ue_index;
+      event.rnti                 = bsr_ind->crnti;
+      event.type                 = bsr_ind->type;
+      event.reported_lcgs        = bsr_ind->reported_lcgs;
       event.tot_ul_pending_bytes = units::bytes{u.pending_ul_newtx_bytes()};
       du_cells[pcell_idx].ev_logger->enqueue(event);
     }
 
     // Notify metrics handler.
-    du_cells[pcell_idx].metrics->handle_ul_bsr_indication(bsr_ind);
+    du_cells[pcell_idx].metrics->handle_ul_bsr_indication(*bsr_ind);
   };
 
-  if (not common_events.try_push(common_event_t{bsr_ind.ue_index, handle_ul_bsr_ind_impl})) {
-    logger.warning("ue={}: Discarding UE BSR. Cause: Event queue is full", bsr_ind.ue_index);
+  if (not common_events.try_push(common_event_t{bsr_ind.ue_index, std::move(handle_ul_bsr_ind_impl)})) {
+    logger.warning("ue={}: Discarding UE BSR. Cause: Event queue is full", fmt::underlying(bsr_ind.ue_index));
   }
 }
 
 void ue_event_manager::handle_ul_phr_indication(const ul_phr_indication_message& phr_ind)
 {
-  for (const cell_ph_report& cell_phr : phr_ind.phr.get_phr()) {
-    srsran_sanity_check(cell_exists(cell_phr.serv_cell_id), "Invalid serving cell index={}", cell_phr.serv_cell_id);
+  auto handle_phr_impl = [this, phr_ind = ind_pdu_pool->create_phr(phr_ind)]() {
+    auto& u = ue_db[phr_ind->ue_index];
+    for (const cell_ph_report& cell_phr : phr_ind->phr.get_phr()) {
+      srsran_sanity_check(cell_phr.serv_cell_id < u.nof_cells(),
+                          "Invalid serving cell index={}",
+                          fmt::underlying(cell_phr.serv_cell_id));
+      auto& ue_cc = u.get_cell(cell_phr.serv_cell_id);
 
-    if (not cell_specific_events[cell_phr.serv_cell_id].try_push(
-            cell_event_t{phr_ind.ue_index,
-                         [this, cell_phr, phr_ind](ue_cell& ue_cc) {
-                           ue_cc.channel_state_manager().handle_phr(cell_phr);
+      ue_cc.get_ul_power_controller().handle_phr(cell_phr, phr_ind->slot_rx);
 
-                           // Log event.
-                           scheduler_event_logger::phr_event event{};
-                           event.ue_index   = phr_ind.ue_index;
-                           event.rnti       = phr_ind.rnti;
-                           event.cell_index = cell_phr.serv_cell_id;
-                           event.ph         = cell_phr.ph;
-                           event.p_cmax     = cell_phr.p_cmax;
-                           du_cells[cell_phr.serv_cell_id].ev_logger->enqueue(event);
-
-                           // Notify metrics handler.
-                           du_cells[cell_phr.serv_cell_id].metrics->handle_ul_phr_indication(phr_ind);
-                         },
-                         "UL PHR",
-                         true})) {
-      logger.warning("Discarding PHR. Cause: Event queue is full");
+      // Log event.
+      scheduler_event_logger::phr_event event{};
+      event.ue_index   = phr_ind->ue_index;
+      event.rnti       = phr_ind->rnti;
+      event.cell_index = ue_cc.cell_index;
+      event.ph         = cell_phr.ph;
+      event.p_cmax     = cell_phr.p_cmax;
+      du_cells[phr_ind->cell_index].ev_logger->enqueue(event);
     }
+
+    // Notify metrics handler.
+    du_cells[u.get_pcell().cfg().cell_cfg_common.cell_index].metrics->handle_ul_phr_indication(*phr_ind);
+  };
+
+  if (not common_events.try_push(common_event_t{phr_ind.ue_index, std::move(handle_phr_impl)})) {
+    logger.warning("Discarding PHR. Cause: Event queue is full");
   }
 }
 
@@ -381,29 +460,31 @@ void ue_event_manager::handle_crc_indication(const ul_crc_indication& crc_ind)
   for (unsigned i = 0, e = crc_ind.crcs.size(); i != e; ++i) {
     if (not cell_specific_events[crc_ind.cell_index].try_push(cell_event_t{
             crc_ind.crcs[i].ue_index,
-            [this, sl_rx = crc_ind.sl_rx, crc = crc_ind.crcs[i]](ue_cell& ue_cc) {
-              const double delay_ms =
-                  static_cast<double>(last_sl - sl_rx) *
-                  (static_cast<double>(10) / static_cast<double>(du_cells[ue_cc.cell_index].cfg->nof_slots_per_frame));
-
-              const int tbs = ue_cc.handle_crc_pdu(sl_rx, crc);
+            [this, sl_rx = crc_ind.sl_rx, crc_ptr = ind_pdu_pool->create_crc(crc_ind.crcs[i])](ue_cell& ue_cc) {
+              // Update HARQ.
+              const int tbs = ue_cc.handle_crc_pdu(sl_rx, *crc_ptr);
               if (tbs < 0) {
                 return;
               }
 
               // Process Timing Advance Offset.
-              if (crc.tb_crc_success and crc.time_advance_offset.has_value() and crc.ul_sinr_dB.has_value()) {
+              if (crc_ptr->tb_crc_success and crc_ptr->time_advance_offset.has_value() and
+                  crc_ptr->ul_sinr_dB.has_value()) {
                 ue_db[ue_cc.ue_index].handle_ul_n_ta_update_indication(
-                    ue_cc.cell_index, crc.ul_sinr_dB.value(), crc.time_advance_offset.value());
+                    ue_cc.cell_index, crc_ptr->ul_sinr_dB.value(), crc_ptr->time_advance_offset.value());
               }
 
               // Log event.
-              du_cells[ue_cc.cell_index].ev_logger->enqueue(scheduler_event_logger::crc_event{
-                  crc.ue_index, crc.rnti, ue_cc.cell_index, sl_rx, crc.harq_id, crc.tb_crc_success, crc.ul_sinr_dB});
+              du_cells[ue_cc.cell_index].ev_logger->enqueue(scheduler_event_logger::crc_event{crc_ptr->ue_index,
+                                                                                              crc_ptr->rnti,
+                                                                                              ue_cc.cell_index,
+                                                                                              sl_rx,
+                                                                                              crc_ptr->harq_id,
+                                                                                              crc_ptr->tb_crc_success,
+                                                                                              crc_ptr->ul_sinr_dB});
 
               // Notify metrics handler.
-              du_cells[ue_cc.cell_index].metrics->handle_crc_indication(crc, units::bytes{(unsigned)tbs});
-              du_cells[ue_cc.cell_index].metrics->handle_ul_delay(crc.ue_index, delay_ms);
+              du_cells[ue_cc.cell_index].metrics->handle_crc_indication(sl_rx, *crc_ptr, units::bytes{(unsigned)tbs});
             },
             "CRC",
             true})) {
@@ -454,12 +535,13 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
   srsran_sanity_check(cell_exists(ind.cell_index), "Invalid cell index");
 
   for (unsigned i = 0, e = ind.ucis.size(); i != e; ++i) {
-    const uci_indication::uci_pdu& uci = ind.ucis[i];
+    auto uci_ptr = ind_pdu_pool->create_uci(ind.ucis[i]);
 
     if (not cell_specific_events[ind.cell_index].try_push(cell_event_t{
-            uci.ue_index,
-            [this, uci_sl = ind.slot_rx, uci_pdu = uci](ue_cell& ue_cc) {
-              if (const auto* pucch_f0f1 = std::get_if<uci_indication::uci_pdu::uci_pucch_f0_or_f1_pdu>(&uci_pdu.pdu)) {
+            ind.ucis[i].ue_index,
+            [this, uci_sl = ind.slot_rx, uci_pdu = std::move(uci_ptr)](ue_cell& ue_cc) {
+              if (const auto* pucch_f0f1 =
+                      std::get_if<uci_indication::uci_pdu::uci_pucch_f0_or_f1_pdu>(&uci_pdu->pdu)) {
                 // Process DL HARQ ACKs.
                 if (not pucch_f0f1->harqs.empty()) {
                   handle_harq_ind(ue_cc, uci_sl, pucch_f0f1->harqs, pucch_f0f1->ul_sinr_dB);
@@ -469,11 +551,17 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
                 if (pucch_f0f1->sr_detected) {
                   // Handle SR indication.
                   ue_db[ue_cc.ue_index].handle_sr_indication();
-                  du_cells[ue_cc.cell_index].fallback_sched->handle_sr_indication(ue_cc.ue_index);
+
+                  if (ue_cc.is_in_fallback_mode()) {
+                    du_cells[ue_cc.cell_index].fallback_sched->handle_sr_indication(ue_cc.ue_index);
+                  }
 
                   // Log SR event.
                   du_cells[ue_cc.cell_index].ev_logger->enqueue(
                       scheduler_event_logger::sr_event{ue_cc.ue_index, ue_cc.rnti()});
+
+                  // Report SR to metrics.
+                  du_cells[ue_cc.cell_index].metrics->handle_sr_indication(ue_cc.ue_index);
                 }
 
                 const bool is_uci_valid = not pucch_f0f1->harqs.empty() or pucch_f0f1->sr_detected;
@@ -483,7 +571,7 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
                   ue_db[ue_cc.ue_index].handle_ul_n_ta_update_indication(
                       ue_cc.cell_index, pucch_f0f1->ul_sinr_dB.value(), pucch_f0f1->time_advance_offset.value());
                 }
-              } else if (const auto* pusch_pdu = std::get_if<uci_indication::uci_pdu::uci_pusch_pdu>(&uci_pdu.pdu)) {
+              } else if (const auto* pusch_pdu = std::get_if<uci_indication::uci_pdu::uci_pusch_pdu>(&uci_pdu->pdu)) {
                 // Process DL HARQ ACKs.
                 if (not pusch_pdu->harqs.empty()) {
                   handle_harq_ind(ue_cc, uci_sl, pusch_pdu->harqs, std::nullopt);
@@ -494,7 +582,7 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
                   handle_csi(ue_cc, *pusch_pdu->csi);
                 }
               } else if (const auto* pucch_f2f3f4 =
-                             std::get_if<uci_indication::uci_pdu::uci_pucch_f2_or_f3_or_f4_pdu>(&uci_pdu.pdu)) {
+                             std::get_if<uci_indication::uci_pdu::uci_pucch_f2_or_f3_or_f4_pdu>(&uci_pdu->pdu)) {
                 // Process DL HARQ ACKs.
                 if (not pucch_f2f3f4->harqs.empty()) {
                   handle_harq_ind(ue_cc, uci_sl, pucch_f2f3f4->harqs, pucch_f2f3f4->ul_sinr_dB);
@@ -509,6 +597,9 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
                   // Log SR event.
                   du_cells[ue_cc.cell_index].ev_logger->enqueue(
                       scheduler_event_logger::sr_event{ue_cc.ue_index, ue_cc.rnti()});
+
+                  // Report SR to metrics.
+                  du_cells[ue_cc.cell_index].metrics->handle_sr_indication(ue_cc.ue_index);
                 }
 
                 // Process CSI.
@@ -529,13 +620,13 @@ void ue_event_manager::handle_uci_indication(const uci_indication& ind)
               }
 
               // Report the UCI PDU to the metrics handler.
-              du_cells[ue_cc.cell_index].metrics->handle_uci_pdu_indication(uci_pdu);
+              du_cells[ue_cc.cell_index].metrics->handle_uci_pdu_indication(*uci_pdu);
             },
             "UCI",
             // Note: We do not warn if the UE is not found, because there is this transient period when the UE
             // is about to receive and process the RRC Release, but it is still sending CSI or SR in the PUCCH. If we
-            // stop the PUCCH scheduling for the UE about to be released, we could risk interference between UEs in the
-            // PUCCH.
+            // stop the PUCCH scheduling for the UE about to be released, we could risk interference between UEs in
+            // the PUCCH.
             false})) {
       logger.warning("UCI discarded. Cause: Event queue is full");
     }
@@ -549,27 +640,30 @@ void ue_event_manager::handle_srs_indication(const srs_indication& ind)
   for (unsigned i = 0, e = ind.srss.size(); i != e; ++i) {
     const srs_indication::srs_indication_pdu& srs_pdu = ind.srss[i];
 
-    if (not cell_specific_events[ind.cell_index].try_push(cell_event_t{
-            srs_pdu.ue_index,
-            [this, channel_matrix = srs_pdu.channel_matrix, time_advance_offset = srs_pdu.time_advance_offset](
-                ue_cell& ue_cc) {
-              // Indicate the channel matrix.
-              ue_cc.handle_srs_channel_matrix(channel_matrix);
+    if (not cell_specific_events[ind.cell_index].try_push(
+            cell_event_t{srs_pdu.ue_index,
+                         [this, srs_ptr = ind_pdu_pool->create_srs(ind.srss[i])](ue_cell& ue_cc) {
+                           // Indicate the channel matrix.
+                           ue_cc.handle_srs_channel_matrix(srs_ptr->channel_matrix);
 
-              // Handle time aligment measurement if present.
-              if (time_advance_offset.has_value()) {
-                // Assume some SINR for the TA feedback using the channel matrix topology and near zero noise variance.
-                float frobenius_norm = channel_matrix.frobenius_norm();
-                float noise_var      = near_zero;
-                float sinr_dB        = convert_power_to_dB(frobenius_norm * frobenius_norm / noise_var);
+                           // Handle time aligment measurement if present.
+                           if (srs_ptr->time_advance_offset.has_value()) {
+                             // Assume some SINR for the TA feedback using the channel matrix topology and near zero
+                             // noise variance.
+                             float frobenius_norm = srs_ptr->channel_matrix.frobenius_norm();
+                             float noise_var      = near_zero;
+                             float sinr_dB        = convert_power_to_dB(frobenius_norm * frobenius_norm / noise_var);
 
-                // Notify UL TA update.
-                ue_db[ue_cc.ue_index].handle_ul_n_ta_update_indication(
-                    ue_cc.cell_index, sinr_dB, time_advance_offset.value());
-              }
-            },
-            "SRS",
-            false})) {
+                             // Notify UL TA update.
+                             ue_db[ue_cc.ue_index].handle_ul_n_ta_update_indication(
+                                 ue_cc.cell_index, sinr_dB, srs_ptr->time_advance_offset.value());
+
+                             // Report the SRS PDU to the metrics handler.
+                             du_cells[ue_cc.cell_index].metrics->handle_srs_indication(*srs_ptr);
+                           }
+                         },
+                         "SRS",
+                         false})) {
       logger.warning("SRS indication discarded. Cause: Event queue is full");
     }
   }
@@ -595,7 +689,8 @@ void ue_event_manager::handle_dl_mac_ce_indication(const dl_mac_ce_indication& c
   };
 
   if (not common_events.try_push(common_event_t{ce.ue_index, handle_mac_ce_impl})) {
-    logger.warning("ue={} lcid={}: DL MAC CE discarded. Cause: Event queue is full", ce.ue_index, ce.ce_lcid);
+    logger.warning(
+        "ue={} lcid={}: DL MAC CE discarded. Cause: Event queue is full", fmt::underlying(ce.ue_index), ce.ce_lcid);
   }
 }
 
@@ -683,7 +778,7 @@ void ue_event_manager::handle_error_indication(slot_point                       
     if (prev_slot_result == nullptr) {
       logger.warning("cell={}, slot={}: Discarding error indication. Cause: Scheduler results associated with the slot "
                      "of the error indication have already been erased",
-                     cell_index,
+                     fmt::underlying(cell_index),
                      sl_tx);
       return;
     }
@@ -777,7 +872,7 @@ void ue_event_manager::process_cell_specific(du_cell_index_t cell_index)
 
 void ue_event_manager::run(slot_point sl, du_cell_index_t cell_index)
 {
-  srsran_sanity_check(cell_exists(cell_index), "Invalid cell index {}", cell_index);
+  srsran_sanity_check(cell_exists(cell_index), "Invalid cell index {}", fmt::underlying(cell_index));
 
   // Process common events.
   process_common(sl, cell_index);
@@ -814,10 +909,13 @@ bool ue_event_manager::cell_exists(du_cell_index_t cell_index) const
 void ue_event_manager::log_invalid_ue_index(du_ue_index_t ue_index, const char* event_name, bool warn_if_ignored) const
 {
   srslog::log_channel& log_channel = warn_if_ignored ? logger.warning : logger.info;
-  log_channel("{} for ue={} discarded. Cause: UE with provided Id does not exist", event_name, ue_index);
+  log_channel(
+      "{} for ue={} discarded. Cause: UE with provided Id does not exist", event_name, fmt::underlying(ue_index));
 }
 
 void ue_event_manager::log_invalid_cc(du_ue_index_t ue_index, du_cell_index_t cell_index) const
 {
-  logger.warning("Event for ue={} ignored. Cause: Cell {} is not configured.", ue_index, cell_index);
+  logger.warning("Event for ue={} ignored. Cause: Cell {} is not configured.",
+                 fmt::underlying(ue_index),
+                 fmt::underlying(cell_index));
 }

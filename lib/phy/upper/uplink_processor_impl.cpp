@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -119,30 +119,31 @@ void uplink_processor_impl::process_pucch(upper_phy_rx_results_notifier&     not
 {
   trace_point tp = l1_tracer.now();
 
-  srsran_assert(pdu.context.format == pucch_format::FORMAT_0 || pdu.context.format == pucch_format::FORMAT_1 ||
-                    pdu.context.format == pucch_format::FORMAT_2,
-                "Currently supporting PUCCH Format 0, 1 and 2 only.");
-
   pucch_processor_result proc_result;
   // Process the PUCCH.
   switch (pdu.context.format) {
     case pucch_format::FORMAT_0:
       proc_result = pucch_proc->process(grid.get_reader(), pdu.format0);
+      l1_tracer << trace_event("pucch0", tp);
       break;
     case pucch_format::FORMAT_1:
       proc_result = pucch_proc->process(grid.get_reader(), pdu.format1);
+      l1_tracer << trace_event("pucch1", tp);
       break;
     case pucch_format::FORMAT_2:
       proc_result = pucch_proc->process(grid.get_reader(), pdu.format2);
+      l1_tracer << trace_event("pucch2", tp);
       break;
     case pucch_format::FORMAT_3:
       proc_result = pucch_proc->process(grid.get_reader(), pdu.format3);
+      l1_tracer << trace_event("pucch3", tp);
       break;
     case pucch_format::FORMAT_4:
       proc_result = pucch_proc->process(grid.get_reader(), pdu.format4);
+      l1_tracer << trace_event("pucch4", tp);
       break;
     default:
-      srsran_assert(0, "Invalid PUCCH format={}", pdu.context.format);
+      srsran_assert(0, "Invalid PUCCH format={}", fmt::underlying(pdu.context.format));
   }
 
   // Write the results.
@@ -152,8 +153,6 @@ void uplink_processor_impl::process_pucch(upper_phy_rx_results_notifier&     not
 
   // Notify the PUCCH results.
   notifier.on_new_pucch_results(result);
-
-  l1_tracer << trace_event("process_pucch", tp);
 }
 
 void uplink_processor_impl::process_srs(upper_phy_rx_results_notifier&   notifier,

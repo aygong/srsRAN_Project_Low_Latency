@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,9 +21,9 @@
  */
 
 #pragma once
+
 #include "srsran/phy/support/precoding_configuration.h"
 #include "srsran/ran/precoding/precoding_weight_matrix_formatters.h"
-#include "srsran/support/format_utils.h"
 
 namespace fmt {
 
@@ -37,14 +37,13 @@ struct formatter<srsran::precoding_configuration> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::precoding_configuration& config, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::precoding_configuration& config, FormatContext& ctx) const
   {
     format_to(ctx.out(), "prg_size={} ", config.get_prg_size());
 

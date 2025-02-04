@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,10 @@
 
 #pragma once
 
-#include "tx_scheme_configuration.h"
 #include "srsran/adt/interval.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/ran/pusch/pusch_constants.h"
+#include "srsran/ran/pusch/tx_scheme_configuration.h"
 #include "srsran/ran/srs/srs_channel_matrix.h"
 #include "srsran/support/srsran_assert.h"
 
@@ -79,10 +78,12 @@ private:
 ///
 /// \param[in] channel         Channel coefficient matrix.
 /// \param[in] noise_variance  Linear noise variance.
+/// \param[in] max_rank        Maximum number of layers.
 /// \param[in] codebook_subset Transmission scheme codebook subset.
 /// \return The TPMI information given the channel coefficients and noise variance.
 pusch_tpmi_select_info get_tpmi_select_info(const srs_channel_matrix& channel,
                                             float                     noise_variance,
+                                            unsigned                  max_rank,
                                             tx_scheme_codebook_subset codebook_subset);
 
 } // namespace srsran

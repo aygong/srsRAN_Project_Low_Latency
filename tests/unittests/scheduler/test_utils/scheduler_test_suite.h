@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,7 +29,6 @@
 #pragma once
 
 #include "lib/scheduler/cell/resource_grid.h"
-#include "srsran/scheduler/scheduler_slot_handler.h"
 
 namespace srsran {
 
@@ -71,6 +70,14 @@ void test_pdsch_sib_consistency(const cell_configuration& cell_cfg, span<const s
 /// - No repeated RA-RNTIs across RAR grants and no repeated C-RNTIs across Msg3 grants.
 /// - Consistent content in DCI of RARs (e.g. has to be f1_0, PRBs fall within CORESET#0 RB limits).
 void test_pdsch_rar_consistency(const cell_configuration& cell_cfg, span<const rar_information> rars);
+
+/// \brief Verify UE PDSCH content is valid. Current checks:
+/// - PRBs fall within BWP boundaries.
+void test_pdsch_ue_consistency(const cell_configuration& cell_cfg, span<const dl_msg_alloc> ue_grants);
+
+/// \brief Verify UE PUSCH content is valid. Current checks:
+/// - PRBs fall within BWP boundaries.
+void test_pusch_ue_consistency(const cell_configuration& cell_cfg, span<const ul_sched_info> ue_grants);
 
 /// \brief Current checks:
 /// - PRACH occasions parameters match RACH-ConfigCommon present in cell_cfg.

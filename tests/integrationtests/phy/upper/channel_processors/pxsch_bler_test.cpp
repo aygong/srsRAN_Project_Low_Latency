@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -48,13 +48,12 @@ using namespace srsran;
 static constexpr subcarrier_spacing scs                              = subcarrier_spacing::kHz30;
 static constexpr uint16_t           rnti                             = 0x1234;
 static constexpr unsigned           bwp_start_rb                     = 0;
-static constexpr unsigned           nof_layers                       = 1;
 static constexpr unsigned           nof_ofdm_symbols                 = 14;
 static const symbol_slot_mask       dmrs_symbol_mask                 = {0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0};
 static constexpr unsigned           nof_ldpc_iterations              = 10;
 static constexpr dmrs_type          dmrs                             = dmrs_type::TYPE1;
 static constexpr unsigned           nof_cdm_groups_without_data      = 2;
-static constexpr cyclic_prefix      cp                               = cyclic_prefix::NORMAL;
+static constexpr cyclic_prefix      cy_prefix                        = cyclic_prefix::NORMAL;
 static constexpr unsigned           rv                               = 0;
 static constexpr unsigned           n_id                             = 0;
 static constexpr unsigned           scrambling_id                    = 0;
@@ -68,6 +67,7 @@ static std::string                  channel_fading_distribution      = "uniform-
 static float                        sinr_dB                          = 60.0F;
 static unsigned                     nof_corrupted_re_per_ofdm_symbol = 0;
 static unsigned                     nof_rx_ports                     = 2;
+static unsigned                     nof_layers                       = 1;
 static unsigned                     bwp_size_rb                      = 273;
 static pusch_mcs_table              mcs_table                        = pusch_mcs_table::qam64;
 static sch_mcs_index                mcs_index                        = 20;
@@ -150,7 +150,7 @@ private:
     std::shared_ptr<channel_precoder_factory> precod_factory = create_channel_precoder_factory("auto");
     report_fatal_error_if_not(precod_factory, "Failed to create channel precoding factory.");
 
-    return create_resource_grid_factory(precod_factory);
+    return create_resource_grid_factory();
   }
 
   class pdsch_processor_notifier_adaptor : public pdsch_processor_notifier
@@ -284,7 +284,7 @@ private:
     pdsch_config.rnti                        = rnti;
     pdsch_config.bwp_size_rb                 = bwp_size_rb;
     pdsch_config.bwp_start_rb                = bwp_start_rb;
-    pdsch_config.cp                          = cp;
+    pdsch_config.cp                          = cy_prefix;
     pdsch_config.n_id                        = n_id;
     pdsch_config.ref_point                   = pdsch_processor::pdu_t::PRB0;
     pdsch_config.dmrs_symbol_mask            = dmrs_symbol_mask;
@@ -312,7 +312,7 @@ private:
     pusch_config.rnti               = rnti;
     pusch_config.bwp_size_rb        = bwp_size_rb;
     pusch_config.bwp_start_rb       = bwp_start_rb;
-    pusch_config.cp                 = cp;
+    pusch_config.cp                 = cy_prefix;
     pusch_config.mcs_descr          = mcs_descr;
     pusch_config.codeword           = {rv, ldpc_base_graph, true};
     pusch_config.uci                = {};
@@ -342,6 +342,7 @@ private:
                                                   channel_fading_distribution,
                                                   sinr_dB,
                                                   nof_corrupted_re_per_ofdm_symbol,
+                                                  nof_layers,
                                                   nof_rx_ports,
                                                   MAX_RB * NRE,
                                                   nof_ofdm_symbols,
@@ -377,7 +378,7 @@ private:
 
       // Process PDSCH.
       pdsch_processor_notifier_adaptor tx_notifier;
-      transmitter->process(tx_grid->get_mapper(), tx_notifier, {tx_data}, pdsch_config);
+      transmitter->process(tx_grid->get_writer(), tx_notifier, {shared_transport_block(tx_data)}, pdsch_config);
       tx_notifier.wait_for_completion();
 
       emulator->run(rx_grid->get_writer(), tx_grid->get_reader());
@@ -514,8 +515,10 @@ static void usage(std::string_view prog)
   fmt::print("\t-S       SINR. [Default {}]\n", sinr_dB);
   fmt::print("\t-N       Number of corrupted RE per OFDM symbol. [Default {}]\n", nof_corrupted_re_per_ofdm_symbol);
   fmt::print("\t-P       Number of receive ports. [Default {}]\n", nof_rx_ports);
+  fmt::print("\t-L       Number of transmit layers. It must not exceed the number of ports. [Default {}]\n",
+             nof_layers);
   fmt::print("\t-B       Number of allocated PRBs (same as BWP size). [Default {}]\n", bwp_size_rb);
-  fmt::print("\t-M       MCS table. [Default {}]\n", mcs_table);
+  fmt::print("\t-M       MCS table. [Default {}]\n", fmt::underlying(mcs_table));
   fmt::print("\t-m       MCS index. [Default {}]\n", mcs_index);
   fmt::print("\t-R       Number of slots to process. [Default {}]\n", nof_repetitions);
   fmt::print("\t-T       PxSCH implementation type [auto,acc100][Default {}]\n", pxsch_type);
@@ -527,7 +530,7 @@ static void usage(std::string_view prog)
 static void parse_args(int argc, char** argv)
 {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "C:F:S:N:P:R:B:M:m:DT:vh")) != -1) {
+  while ((opt = getopt(argc, argv, "C:F:S:N:P:L:R:B:M:m:DT:vh")) != -1) {
     switch (opt) {
       case 'C':
         if (optarg != nullptr) {
@@ -550,6 +553,9 @@ static void parse_args(int argc, char** argv)
         break;
       case 'P':
         nof_rx_ports = std::strtol(optarg, nullptr, 10);
+        break;
+      case 'L':
+        nof_layers = std::strtol(optarg, nullptr, 10);
         break;
       case 'B':
         bwp_size_rb = std::strtol(optarg, nullptr, 10);

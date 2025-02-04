@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,6 +28,9 @@
 
 namespace srsran {
 namespace srs_cu_cp {
+
+async_task<void> start_amf_connection_removal(ngap_repository&                                    ngap_db,
+                                              std::unordered_map<amf_index_t, std::atomic<bool>>& amfs_connected);
 
 /// \brief Handles the setup of the connection between the CU-CP and AMF, handling in particular the NG Setup procedure.
 class amf_connection_removal_routine

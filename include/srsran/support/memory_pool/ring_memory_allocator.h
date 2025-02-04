@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "heap_memory_resource.h"
+#include "srsran/support/memory_pool/heap_memory_resource.h"
 #include "srsran/support/srsran_assert.h"
 
 namespace srsran {

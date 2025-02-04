@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,6 +28,7 @@
 #include "srsran/fapi_adaptor/precoding_matrix_repository.h"
 #include "srsran/fapi_adaptor/uci_part2_correspondence_repository.h"
 #include "srsran/phy/upper/channel_processors/pdsch/pdsch_processor.h"
+#include "srsran/phy/upper/downlink_processor.h"
 #include "srsran/srslog/logger.h"
 #include "srsran/support/executors/task_executor.h"
 #include <atomic>
@@ -55,9 +56,9 @@ struct fapi_to_phy_translator_config {
   /// Common subcarrier spacing as per TS38.331 Section 6.2.2.
   subcarrier_spacing scs_common;
   /// FAPI PRACH configuration TLV as per SCF-222 v4.0 section 3.3.2.4.
-  const fapi::prach_config* prach_cfg;
+  fapi::prach_config prach_cfg;
   /// FAPI carrier configuration TLV as per SCF-222 v4.0 section 3.3.2.4.
-  const fapi::carrier_config* carrier_cfg;
+  fapi::carrier_config carrier_cfg;
   /// PRACH port list.
   std::vector<uint8_t> prach_ports;
 };
@@ -111,11 +112,11 @@ class fapi_to_phy_translator : public fapi::slot_message_gateway
   /// \note The lifetime of any instantiation of this class is meant to be a single slot.
   class slot_based_upper_phy_controller
   {
-    slot_point                                 slot;
-    std::reference_wrapper<downlink_processor> dl_processor;
+    slot_point                slot;
+    unique_downlink_processor dl_processor;
 
   public:
-    slot_based_upper_phy_controller();
+    slot_based_upper_phy_controller() = default;
 
     slot_based_upper_phy_controller(downlink_processor_pool& dl_processor_pool,
                                     resource_grid_pool&      rg_pool,
@@ -130,8 +131,6 @@ class fapi_to_phy_translator : public fapi::slot_message_gateway
 
     /// Overloaded member of pointer operator.
     downlink_processor* operator->() { return &dl_processor.get(); }
-    /// Overloaded member of pointer operator.
-    const downlink_processor* operator->() const { return &dl_processor.get(); }
   };
 
   /// Manages slot based controllers.

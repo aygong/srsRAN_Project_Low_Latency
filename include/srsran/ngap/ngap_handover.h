@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,10 +22,11 @@
 
 #pragma once
 
-#include "ngap_types.h"
 #include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/ngap/ngap_types.h"
 #include "srsran/security/security.h"
 #include "srsran/support/async/async_task.h"
+#include <map>
 
 namespace srsran {
 namespace srs_cu_cp {

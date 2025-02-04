@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,24 +21,38 @@
  */
 
 #include "pdsch_processor_concurrent_impl.h"
+#include "pdsch_processor_helpers.h"
 #include "pdsch_processor_validator_impl.h"
 #include "srsran/instrumentation/traces/du_traces.h"
 #include "srsran/phy/support/resource_grid_mapper.h"
 #include "srsran/ran/ptrs/ptrs_pattern.h"
-#include "srsran/support/event_tracing.h"
+#include "srsran/support/tracing/event_tracing.h"
 
 using namespace srsran;
 
-void pdsch_processor_concurrent_impl::process(resource_grid_mapper&                                        mapper_,
-                                              pdsch_processor_notifier&                                    notifier_,
-                                              static_vector<span<const uint8_t>, MAX_NOF_TRANSPORT_BLOCKS> data_,
-                                              const pdsch_processor::pdu_t&                                pdu_)
+/// \brief Looks at the output of the validator and, if unsuccessful, fills msg with the error message.
+///
+/// This is used to call the validator inside the process methods only if asserts are active.
+[[maybe_unused]] static bool handle_validation(std::string& msg, const error_type<std::string>& err)
+{
+  bool is_success = err.has_value();
+  if (!is_success) {
+    msg = err.error();
+  }
+  return is_success;
+}
+
+void pdsch_processor_concurrent_impl::process(resource_grid_writer&                                           grid_,
+                                              pdsch_processor_notifier&                                       notifier_,
+                                              static_vector<shared_transport_block, MAX_NOF_TRANSPORT_BLOCKS> data_,
+                                              const pdsch_processor::pdu_t&                                   pdu_)
 {
   // Saves inputs.
-  save_inputs(mapper_, notifier_, data_, pdu_);
+  save_inputs(grid_, notifier_, std::move(data_), pdu_);
 
   // Makes sure the PDU is valid.
-  pdsch_processor_validator_impl::assert_pdu(config);
+  [[maybe_unused]] std::string msg;
+  srsran_assert(handle_validation(msg, pdsch_processor_validator_impl().is_valid(pdu_)), "{}", msg);
 
   // Set the number of asynchronous tasks. It counts as CB processing and DM-RS generation.
   async_task_counter = 2;
@@ -48,7 +62,19 @@ void pdsch_processor_concurrent_impl::process(resource_grid_mapper&             
     ++async_task_counter;
 
     // Process PT-RS concurrently.
-    auto ptrs_task = [this]() { process_ptrs(); };
+    auto ptrs_task = [this]() {
+      trace_point process_ptrs_tp = l1_tracer.now();
+
+      pdsch_process_ptrs(*grid, ptrs_generator_pool->get(), config);
+
+      l1_tracer << trace_event("process_ptrs", process_ptrs_tp);
+
+      // Decrement asynchronous task counter.
+      if (async_task_counter.fetch_sub(1) == 1) {
+        // Notify end of the processing.
+        notifier->on_finish_processing();
+      }
+    };
 
     bool success = false;
     if (cb_processor_pool->capacity() > 1) {
@@ -61,7 +87,19 @@ void pdsch_processor_concurrent_impl::process(resource_grid_mapper&             
   }
 
   // Process DM-RS concurrently.
-  auto dmrs_task = [this]() { process_dmrs(); };
+  auto dmrs_task = [this]() {
+    trace_point process_dmrs_tp = l1_tracer.now();
+
+    pdsch_process_dmrs(*grid, dmrs_generator_pool->get(), config);
+
+    l1_tracer << trace_event("process_dmrs", process_dmrs_tp);
+
+    // Decrement asynchronous task counter.
+    if (async_task_counter.fetch_sub(1) == 1) {
+      // Notify end of the processing.
+      notifier->on_finish_processing();
+    }
+  };
   if (!executor.execute(dmrs_task)) {
     dmrs_task();
   }
@@ -70,17 +108,17 @@ void pdsch_processor_concurrent_impl::process(resource_grid_mapper&             
   fork_cb_batches();
 }
 
-void pdsch_processor_concurrent_impl::save_inputs(resource_grid_mapper&     mapper_,
+void pdsch_processor_concurrent_impl::save_inputs(resource_grid_writer&     grid_,
                                                   pdsch_processor_notifier& notifier_,
-                                                  static_vector<span<const uint8_t>, MAX_NOF_TRANSPORT_BLOCKS> data_,
-                                                  const pdsch_processor::pdu_t&                                pdu)
+                                                  static_vector<shared_transport_block, MAX_NOF_TRANSPORT_BLOCKS> data_,
+                                                  const pdsch_processor::pdu_t&                                   pdu)
 {
   using namespace units::literals;
 
   // Save process parameter inputs.
-  mapper   = &mapper_;
+  grid     = &grid_;
   notifier = &notifier_;
-  data     = data_.front();
+  data     = std::move(data_.front());
   config   = pdu;
 
   // Codeword index is fix.
@@ -90,66 +128,53 @@ void pdsch_processor_concurrent_impl::save_inputs(resource_grid_mapper&     mapp
   unsigned nof_layers = config.precoding.get_nof_layers();
 
   // Calculate the number of resource elements used to map PDSCH on the grid. Common for all codewords.
-  unsigned nof_re_pdsch = compute_nof_data_re(config);
+  unsigned nof_re_pdsch = pdsch_compute_nof_data_re(config);
 
-  // Calculate the total number of the chanel modulated symbols.
+  // Calculate the total number of the channel modulated symbols.
   nof_ch_symbols = nof_layers * nof_re_pdsch;
 
   // Calculate scrambling initial state.
   scrambler->init((static_cast<unsigned>(config.rnti) << 15U) + (i_cw << 14U) + config.n_id);
 
   // Calculate transport block size.
-  tbs = units::bytes(data.size()).to_bits();
+  tbs = units::bytes(data.get_buffer().size()).to_bits();
 
   // Calculate number of codeblocks.
   nof_cb = ldpc::compute_nof_codeblocks(tbs, config.ldpc_base_graph);
 
-  // Number of segments that will have a short rate-matched length. In TS38.212 Section 5.4.2.1, these correspond to
-  // codeblocks whose length E_r is computed by rounding down - floor. For the remaining codewords, the length is
-  // rounded up.
-  unsigned nof_short_segments = nof_cb - (nof_re_pdsch % nof_cb);
-
-  // Compute number of CRC bits for the transport block.
-  units::bits nof_tb_crc_bits = ldpc::compute_tb_crc_size(tbs);
-
-  // Compute number of CRC bits for each codeblock.
-  units::bits nof_cb_crc_bits = (nof_cb > 1) ? 24_bits : 0_bits;
-
-  // Calculate the total number of bits including transport block and codeblock CRC.
-  units::bits nof_tb_bits_out = tbs + nof_tb_crc_bits + units::bits(nof_cb_crc_bits * nof_cb);
-
-  // Compute the number of information bits that is assigned to a codeblock.
-  cb_info_bits = units::bits(divide_ceil(nof_tb_bits_out.value(), nof_cb)) - nof_cb_crc_bits;
-
-  unsigned lifting_size = ldpc::compute_lifting_size(tbs, config.ldpc_base_graph, nof_cb);
-  segment_length        = ldpc::compute_codeblock_size(config.ldpc_base_graph, lifting_size);
-
   modulation_scheme modulation = config.codewords.front().modulation;
   units::bits       bits_per_symbol(get_bits_per_symbol(modulation));
-
-  units::bits full_codeblock_size = ldpc::compute_full_codeblock_size(config.ldpc_base_graph, segment_length);
-  units::bits cw_length           = units::bits(nof_re_pdsch * nof_layers * bits_per_symbol);
-  zero_pad                        = (cb_info_bits + nof_cb_crc_bits) * nof_cb - nof_tb_bits_out;
 
   // Calculate rate match buffer size.
   units::bits Nref = ldpc::compute_N_ref(config.tbs_lbrm, nof_cb);
 
-  // Prepare codeblock metadata.
-  cb_metadata.tb_common.base_graph        = config.ldpc_base_graph;
-  cb_metadata.tb_common.lifting_size      = static_cast<ldpc::lifting_size_t>(lifting_size);
-  cb_metadata.tb_common.rv                = config.codewords.front().rv;
-  cb_metadata.tb_common.mod               = modulation;
-  cb_metadata.tb_common.Nref              = Nref.value();
-  cb_metadata.tb_common.cw_length         = cw_length.value();
-  cb_metadata.cb_specific.full_length     = full_codeblock_size.value();
-  cb_metadata.cb_specific.rm_length       = 0;
-  cb_metadata.cb_specific.nof_filler_bits = (segment_length - cb_info_bits - nof_cb_crc_bits).value();
-  cb_metadata.cb_specific.cw_offset       = 0;
-  cb_metadata.cb_specific.nof_crc_bits    = nof_tb_crc_bits.value();
+  // Initialize the segmenter.
+  segmenter_config segmenter_cfg;
+  segmenter_cfg.base_graph     = config.ldpc_base_graph;
+  segmenter_cfg.rv             = config.codewords.front().rv;
+  segmenter_cfg.mod            = modulation;
+  segmenter_cfg.Nref           = Nref.value();
+  segmenter_cfg.nof_layers     = nof_layers;
+  segmenter_cfg.nof_ch_symbols = nof_ch_symbols;
 
-  // Calculate RM length for each codeblock.
-  rm_length.resize(nof_cb);
-  cw_offset.resize(nof_cb);
+  // Initialize the segmenter.
+  segment_buffer = &segmenter->new_transmission(data.get_buffer(), segmenter_cfg);
+
+  // Retrieve the segment length.
+  segment_length = segment_buffer->get_segment_length();
+
+  // Number of segments that will have a short rate-matched length. In TS38.212 Section 5.4.2.1, these correspond to
+  // codeblocks whose length E_r is computed by rounding down - floor. For the remaining codewords, the length is
+  // rounded up.
+  unsigned nof_short_segments = segment_buffer->get_nof_short_segments();
+
+  // Compute the number of information bits that is assigned to a codeblock.
+  cb_info_bits = segment_buffer->get_cb_info_bits(0);
+
+  units::bits cw_length = segment_buffer->get_cw_length();
+  zero_pad              = segment_buffer->get_zero_pad();
+
+  // Calculate RE offset for each codeblock.
   re_offset.resize(nof_cb);
   unsigned re_count_sum = 0;
   for (unsigned i_cb = 0; i_cb != nof_cb; ++i_cb) {
@@ -158,12 +183,6 @@ void pdsch_processor_concurrent_impl::save_inputs(resource_grid_mapper&     mapp
     if (i_cb < nof_short_segments) {
       rm_length_re = nof_re_pdsch / nof_cb;
     }
-
-    // Convert RM length from RE to bits.
-    rm_length[i_cb] = rm_length_re * nof_layers * bits_per_symbol;
-
-    // Set and increment CW offset.
-    cw_offset[i_cb] = re_count_sum * nof_layers * bits_per_symbol;
 
     // Set RE offset for the resource mapper.
     re_offset[i_cb] = re_count_sum;
@@ -224,69 +243,6 @@ void pdsch_processor_concurrent_impl::save_inputs(resource_grid_mapper&     mapp
   precoding *= scaling;
 }
 
-unsigned pdsch_processor_concurrent_impl::compute_nof_data_re(const pdu_t& config)
-{
-  // Get PRB mask.
-  bounded_bitset<MAX_RB> prb_mask = config.freq_alloc.get_prb_mask(config.bwp_start_rb, config.bwp_size_rb);
-
-  // Get number of PRB.
-  unsigned nof_prb = prb_mask.count();
-
-  // Calculate the number of RE allocated in the grid.
-  unsigned nof_grid_re = nof_prb * NRE * config.nof_symbols;
-
-  // Generate DM-RS pattern.
-  re_pattern dmrs_pattern = config.dmrs.get_dmrs_pattern(
-      config.bwp_start_rb, config.bwp_size_rb, config.nof_cdm_groups_without_data, config.dmrs_symbol_mask);
-
-  // Calculate the number of RE used by DM-RS. It assumes it does not overlap with reserved elements.
-  unsigned nof_grid_dmrs = nof_prb * dmrs_pattern.re_mask.count() * dmrs_pattern.symbols.count();
-
-  // Generate reserved pattern.
-  re_pattern_list reserved = config.reserved;
-
-  // If the pattern contains PT-RS, append the reserved elements to the list.
-  if (config.ptrs) {
-    // Extract specific PT-RS configuration.
-    const ptrs_configuration& ptrs_config = config.ptrs.value();
-
-    // Create PT-RS pattern configuration.
-    ptrs_pattern_configuration ptrs_pattern_config = {
-        .rnti             = to_rnti(config.rnti),
-        .dmrs_type        = (config.dmrs == dmrs_type::TYPE1) ? dmrs_config_type::type1 : dmrs_config_type::type2,
-        .dmrs_symbol_mask = config.dmrs_symbol_mask,
-        .rb_mask          = prb_mask,
-        .time_allocation  = {config.start_symbol_index, config.start_symbol_index + config.nof_symbols},
-        .freq_density     = ptrs_config.freq_density,
-        .time_density     = ptrs_config.time_density,
-        .re_offset        = ptrs_config.re_offset,
-        .nof_ports        = 1};
-
-    // Calculate PT-RS pattern and convert it to an RE pattern.
-    ptrs_pattern ptrs_reserved_pattern = get_ptrs_pattern(ptrs_pattern_config);
-
-    re_pattern ptrs_reserved_re_pattern;
-    for (unsigned i_prb = ptrs_reserved_pattern.rb_begin; i_prb < ptrs_reserved_pattern.rb_end;
-         i_prb += ptrs_reserved_pattern.rb_stride) {
-      ptrs_reserved_re_pattern.prb_mask.set(i_prb);
-    }
-    ptrs_reserved_re_pattern.symbols = ptrs_reserved_pattern.symbol_mask;
-    ptrs_reserved_re_pattern.re_mask.set(ptrs_reserved_pattern.re_offset.front());
-
-    reserved.merge(ptrs_reserved_re_pattern);
-  }
-
-  // Calculate the number of reserved resource elements.
-  unsigned nof_reserved_re = reserved.get_inclusion_count(config.start_symbol_index, config.nof_symbols, prb_mask);
-
-  // Subtract the number of reserved RE from the number of allocated RE.
-  srsran_assert(nof_grid_re > nof_reserved_re,
-                "The number of reserved RE ({}) exceeds the number of RE allocated in the transmission ({})",
-                nof_grid_re,
-                nof_reserved_re);
-  return nof_grid_re - nof_reserved_re - nof_grid_dmrs;
-}
-
 void pdsch_processor_concurrent_impl::fork_cb_batches()
 {
   // Create a task for eack thread in the pool.
@@ -313,36 +269,35 @@ void pdsch_processor_concurrent_impl::fork_cb_batches()
       absolute_i_cb = nof_cb - 1 - absolute_i_cb;
 
       // Limit the codeblock number of information bits.
-      units::bits nof_info_bits = std::min<units::bits>(cb_info_bits, tbs - cb_info_bits * absolute_i_cb);
+      units::bits nof_info_bits = segment_buffer->get_cb_info_bits(absolute_i_cb);
 
       // Set CB processor configuration.
       pdsch_codeblock_processor::configuration cb_config;
+      cb_config.cb_index     = absolute_i_cb;
       cb_config.tb_offset    = cb_info_bits * absolute_i_cb;
       cb_config.has_cb_crc   = nof_cb > 1;
       cb_config.cb_info_size = nof_info_bits;
       cb_config.cb_size      = segment_length;
       cb_config.zero_pad     = zero_pad;
-      cb_config.metadata     = cb_metadata;
+      cb_config.metadata     = segment_buffer->get_cb_metadata(absolute_i_cb);
       cb_config.c_init       = scrambler->get_state();
 
-      // Update codeblock specific metadata fields.
-      cb_config.metadata.cb_specific.cw_offset = cw_offset[absolute_i_cb].value();
-      cb_config.metadata.cb_specific.rm_length = rm_length[absolute_i_cb].value();
-
       // Process codeblock.
-      pdsch_codeblock_processor::result result = cb_processor.process(data, cb_config);
+      pdsch_codeblock_processor::result result = cb_processor.process(data.get_buffer(), *segment_buffer, cb_config);
 
       // Build resource grid mapper adaptor.
       resource_grid_mapper::symbol_buffer_adapter buffer(result.cb_symbols);
 
       // Map into the resource grid.
-      mapper->map(buffer, allocation, reserved, precoding, re_offset[absolute_i_cb]);
+      mapper->map(*grid, buffer, allocation, reserved, precoding, re_offset[absolute_i_cb]);
 
       l1_tracer << trace_event((absolute_i_cb == (nof_cb - 1)) ? "Last CB" : "CB", process_pdsch_tp);
     }
 
     // Decrement code block batch counter.
     if (cb_task_counter.fetch_sub(1) == 1) {
+      // No more code block tasks pending to execute, it is now safe to discard the TB buffer.
+      data.release();
       // Decrement asynchronous task counter.
       if (async_task_counter.fetch_sub(1) == 1) {
         // Notify end of the processing.
@@ -363,89 +318,5 @@ void pdsch_processor_concurrent_impl::fork_cb_batches()
     if (!successful) {
       async_task();
     }
-  }
-}
-
-void pdsch_processor_concurrent_impl::process_dmrs()
-{
-  trace_point process_dmrs_tp = l1_tracer.now();
-
-  bounded_bitset<MAX_RB> rb_mask_bitset = config.freq_alloc.get_prb_mask(config.bwp_start_rb, config.bwp_size_rb);
-
-  // Select the DM-RS reference point.
-  unsigned dmrs_reference_point_k_rb = 0;
-  if (config.ref_point == pdu_t::PRB0) {
-    dmrs_reference_point_k_rb = config.bwp_start_rb;
-  }
-
-  // Prepare DM-RS configuration.
-  dmrs_pdsch_processor::config_t dmrs_config;
-  dmrs_config.slot                 = config.slot;
-  dmrs_config.reference_point_k_rb = dmrs_reference_point_k_rb;
-  dmrs_config.type                 = config.dmrs;
-  dmrs_config.scrambling_id        = config.scrambling_id;
-  dmrs_config.n_scid               = config.n_scid;
-  dmrs_config.amplitude            = convert_dB_to_amplitude(-config.ratio_pdsch_dmrs_to_sss_dB);
-  dmrs_config.symbols_mask         = config.dmrs_symbol_mask;
-  dmrs_config.rb_mask              = rb_mask_bitset;
-  dmrs_config.precoding            = config.precoding;
-
-  // Put DM-RS.
-  dmrs_generator_pool->get().map(*mapper, dmrs_config);
-
-  l1_tracer << trace_event("process_dmrs", process_dmrs_tp);
-
-  // Decrement asynchronous task counter.
-  if (async_task_counter.fetch_sub(1) == 1) {
-    // Notify end of the processing.
-    notifier->on_finish_processing();
-  }
-}
-
-void pdsch_processor_concurrent_impl::process_ptrs()
-{
-  trace_point process_ptrs_tp = l1_tracer.now();
-
-  // Extract PT-RS configuration parameters.
-  const ptrs_configuration& ptrs = config.ptrs.value();
-
-  bounded_bitset<MAX_RB> rb_mask_bitset = config.freq_alloc.get_prb_mask(config.bwp_start_rb, config.bwp_size_rb);
-
-  // Select the DM-RS reference point.
-  unsigned ptrs_reference_point_k_rb = 0;
-  if (config.ref_point == pdu_t::PRB0) {
-    ptrs_reference_point_k_rb = config.bwp_start_rb;
-  }
-
-  // Calculate the PT-RS sequence amplitude following TS38.214 Section 4.1.
-  float amplitude = convert_dB_to_amplitude(ptrs.ratio_ptrs_to_pdsch_data_dB - config.ratio_pdsch_data_to_sss_dB);
-
-  // Prepare PT-RS configuration.
-  ptrs_pdsch_generator::configuration ptrs_config;
-  ptrs_config.slot                 = config.slot;
-  ptrs_config.rnti                 = to_rnti(config.rnti);
-  ptrs_config.dmrs_config_type     = config.dmrs;
-  ptrs_config.reference_point_k_rb = ptrs_reference_point_k_rb;
-  ptrs_config.scrambling_id        = config.scrambling_id;
-  ptrs_config.n_scid               = config.n_scid;
-  ptrs_config.amplitude            = amplitude;
-  ptrs_config.dmrs_symbols_mask    = config.dmrs_symbol_mask;
-  ptrs_config.rb_mask              = rb_mask_bitset;
-  ptrs_config.time_allocation      = {config.start_symbol_index, config.start_symbol_index + config.nof_symbols};
-  ptrs_config.freq_density         = ptrs.freq_density;
-  ptrs_config.time_density         = ptrs.time_density;
-  ptrs_config.re_offset            = ptrs.re_offset;
-  ptrs_config.reserved             = config.reserved;
-  ptrs_config.precoding            = config.precoding;
-
-  // Put PT-RS.
-  ptrs_generator_pool->get().generate(*mapper, ptrs_config);
-
-  l1_tracer << trace_event("process_ptrs", process_ptrs_tp);
-
-  // Decrement asynchronous task counter.
-  if (async_task_counter.fetch_sub(1) == 1) {
-    // Notify end of the processing.
-    notifier->on_finish_processing();
   }
 }

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,8 @@
 
 #pragma once
 
-#include "srs_resource_configuration.h"
+#include "srsran/ran/srs/srs_resource_configuration.h"
+
 namespace srsran {
 
 /// \brief Collects Sounding Reference Signal information.

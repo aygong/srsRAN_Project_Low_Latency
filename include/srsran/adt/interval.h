@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -184,8 +184,7 @@ namespace fmt {
 template <typename T, bool RightClosed>
 struct formatter<srsran::interval<T, RightClosed>> : public formatter<T> {
   template <typename FormatContext>
-  auto format(const srsran::interval<T, RightClosed>& interv, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::interval<T, RightClosed>& interv, FormatContext& ctx) const
   {
     return format_to(ctx.out(),
                      "[{}{}{}{}",

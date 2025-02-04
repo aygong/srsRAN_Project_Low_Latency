@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #include "ue_security_manager_impl.h"
+#include "fmt/ranges.h"
 
 using namespace srsran;
 using namespace srs_cu_cp;
@@ -46,8 +47,13 @@ security::sec_128_as_config ue_security_manager::get_up_128_as_config() const
   return sec_context.get_128_as_config(security::sec_domain::up);
 }
 
+uint8_t ue_security_manager::get_ncc() const
+{
+  return sec_context.ncc;
+}
+
 // ngap_ue_security_manager
-bool ue_security_manager::init_security_context(security::security_context sec_ctxt)
+bool ue_security_manager::init_security_context(const security::security_context& sec_ctxt)
 {
   // Update the security context
   sec_context = sec_ctxt;
@@ -62,8 +68,8 @@ bool ue_security_manager::init_security_context(security::security_context sec_c
     return false;
   }
   logger.debug("Selected security algorithms integrity=NIA{} ciphering=NEA{}",
-               sec_context.sel_algos.integ_algo,
-               sec_context.sel_algos.cipher_algo);
+               fmt::underlying(sec_context.sel_algos.integ_algo),
+               fmt::underlying(sec_context.sel_algos.cipher_algo));
 
   // Generate K_rrc_enc and K_rrc_int
   sec_context.generate_as_keys();

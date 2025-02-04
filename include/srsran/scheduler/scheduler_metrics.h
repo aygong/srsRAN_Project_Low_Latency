@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,35 +28,41 @@
 #include "srsran/ran/rnti.h"
 #include "srsran/ran/sch/sch_mcs.h"
 #include "srsran/ran/slot_point.h"
-#include "srsran/support/stats.h"
+#include "srsran/support/math/stats.h"
 #include <optional>
 
 namespace srsran {
 
 /// \brief Snapshot of the metrics for a UE.
 struct scheduler_ue_metrics {
-  pci_t                        pci;
-  rnti_t                       rnti;
-  sch_mcs_index                dl_mcs;
-  unsigned                     tot_dl_prbs_used;
-  double                       mean_dl_prbs_used;
-  double                       dl_brate_kbps;
-  unsigned                     dl_nof_ok;
-  unsigned                     dl_nof_nok;
-  float                        pusch_snr_db;
-  float                        pusch_rsrp_db;
-  float                        pucch_snr_db;
-  sch_mcs_index                ul_mcs;
-  unsigned                     tot_ul_prbs_used;
-  double                       mean_ul_prbs_used;
-  double                       ul_brate_kbps;
-  double                       ul_delay_ms;
-  unsigned                     ul_nof_ok;
-  unsigned                     ul_nof_nok;
-  unsigned                     bsr;
-  unsigned                     dl_bs;
-  std::optional<phy_time_unit> last_ta;
-  std::optional<int>           last_phr;
+  pci_t                pci;
+  rnti_t               rnti;
+  sch_mcs_index        dl_mcs;
+  unsigned             tot_dl_prbs_used;
+  double               dl_brate_kbps;
+  unsigned             dl_nof_ok;
+  unsigned             dl_nof_nok;
+  float                pusch_snr_db;
+  float                pusch_rsrp_db;
+  float                pucch_snr_db;
+  sch_mcs_index        ul_mcs;
+  unsigned             tot_ul_prbs_used;
+  double               ul_brate_kbps;
+  double               crc_delay_ms;
+  unsigned             ul_nof_ok;
+  unsigned             ul_nof_nok;
+  unsigned             bsr;
+  unsigned             sr_count;
+  unsigned             dl_bs;
+  std::optional<float> last_dl_olla;
+  std::optional<float> last_ul_olla;
+  std::optional<int>   last_phr;
+  std::optional<float> mean_ce_delay_msec;
+  /// Time advance statistics in seconds.
+  sample_statistics<float> ta_stats;
+  sample_statistics<float> pusch_ta_stats;
+  sample_statistics<float> pucch_ta_stats;
+  sample_statistics<float> srs_ta_stats;
   /// CQI statistics over the metrics report interval.
   sample_statistics<unsigned> cqi_stats;
   /// RI statistics over the metrics report interval.
@@ -71,6 +77,12 @@ struct scheduler_cell_event {
   rnti_t     rnti = rnti_t::INVALID_RNTI;
   event_type type;
 };
+
+inline const char* sched_event_to_string(scheduler_cell_event::event_type ev)
+{
+  std::array<const char*, 3> names = {"ue_add", "ue_reconf", "ue_rem"};
+  return names[std::min(static_cast<size_t>(ev), names.size() - 1)];
+}
 
 /// \brief Snapshot of the metrics for a cell and its UEs.
 struct scheduler_cell_metrics {

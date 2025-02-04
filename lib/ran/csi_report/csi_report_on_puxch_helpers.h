@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #pragma once
+
 #include "srsran/ran/csi_report/csi_report_configuration.h"
 #include "srsran/ran/csi_report/csi_report_data.h"
 #include "srsran/ran/csi_report/csi_report_packed.h"

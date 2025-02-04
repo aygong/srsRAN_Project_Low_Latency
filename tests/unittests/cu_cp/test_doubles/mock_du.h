@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/f1ap/f1ap_ue_id_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include <memory>
 
 namespace srsran {

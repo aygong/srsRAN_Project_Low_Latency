@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -37,7 +37,7 @@ enum serv_cell_index_t : uint8_t {
   SERVING_CELL_INVALID   = MAX_NOF_SERVING_CELLS
 };
 
-inline serv_cell_index_t to_serv_cell_index(std::underlying_type_t<serv_cell_index_t> val)
+constexpr serv_cell_index_t to_serv_cell_index(std::underlying_type_t<serv_cell_index_t> val)
 {
   return static_cast<serv_cell_index_t>(val);
 }

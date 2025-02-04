@@ -47,7 +47,7 @@ variables:
       dotenv: ${SRSRANDIR}/.gitlab/ci/e2e/.env
 
 .prepare_test:
-  variables:
+  variables: &setup_kube_variables
     KUBECONFIG_VAR_NAME: "RETINA_NAMESPACE_KUBECONFIG"
     KUBECONFIG_VAR_NAME_EXTRA: "RETINA_NAMESPACE_KUBECONFIG_EXTRA"
   before_script: &setup_kube_config
@@ -66,20 +66,19 @@ variables:
     name: ${RETINA_REGISTRY_PREFIX}/launcher:${RETINA_VERSION}
     entrypoint: ["/bin/sh", "-c"]
   variables:
-    ARTIFACT_COMPRESSION_LEVEL: "slowest"
-    KUBERNETES_CPU_REQUEST: 2
+    TRANSFER_METER_FREQUENCY: 5s
+    ARTIFACT_COMPRESSION_LEVEL: slowest
+    RUNNER_AFTER_SCRIPT_TIMEOUT: 1m
+    KUBERNETES_CPU_REQUEST: 1
     KUBERNETES_CPU_LIMIT: 2
     KUBERNETES_MEMORY_REQUEST: 2Gi
     KUBERNETES_MEMORY_LIMIT: 2Gi
     KUBERNETES_EPHEMERAL_STORAGE_REQUEST: "20G"
     KUBERNETES_EPHEMERAL_STORAGE_LIMIT: "20G"
-    KUBECONFIG_VAR_NAME: "RETINA_NAMESPACE_KUBECONFIG"
-    KUBECONFIG_VAR_NAME_EXTRA: "RETINA_NAMESPACE_KUBECONFIG_EXTRA"
+    <<: *setup_kube_variables
     GROUP: zmq
   tags:
-    - "${RETINA_TAG}"
-  extends:
-    - .prepare_test
+    - retina-e2e-amd64
   artifacts:
     paths:
       - ${SRSRANDIR}/tests/e2e/log
@@ -88,6 +87,7 @@ variables:
     reports:
       junit: ${SRSRANDIR}/tests/e2e/out.xml
   script:
+    - *setup_kube_config
     - |
       # Print E2E parameters
       echo "GROUP=${GROUP}"
@@ -113,7 +113,9 @@ variables:
       cat $RETINA_CONFIG_ENV >> .gitlab/ci/e2e/.env
     # Modify request to shared the complete folder with the gnb container
     - |
-      yq -i '(.[] | select(.type == "gnb") | .shared_files) += [{"local_path": "../../", "remote_path": env(SRSRANDIR), "is_executable": false}]' ${SRSRANDIR}/.gitlab/ci/e2e/retina_request_${TESTBED}.yml
+      if [ "$CI_JOB_NAME_SLUG" != "smoke-zmq" ]; then
+        yq -i '(.[] | select(.type == "gnb") | .shared_files) += [{"local_path": "../../", "remote_path": env(SRSRANDIR), "is_executable": false}]' ${SRSRANDIR}/.gitlab/ci/e2e/retina_request_${TESTBED}.yml
+      fi
     # Set username for retina
     - |
       cd tests/e2e

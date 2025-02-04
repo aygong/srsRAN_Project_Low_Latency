@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "uci_status.h"
 #include "srsran/adt/span.h"
+#include "srsran/phy/upper/channel_processors/uci/uci_status.h"
 #include "srsran/phy/upper/log_likelihood_ratio.h"
 #include "srsran/ran/sch/modulation_scheme.h"
 

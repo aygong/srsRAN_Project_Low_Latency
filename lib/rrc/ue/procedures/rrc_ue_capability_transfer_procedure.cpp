@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -77,7 +77,7 @@ void rrc_ue_capability_transfer_procedure::operator()(coro_context<async_task<bo
           }
 
         } else {
-          logger.log_warning("Unsupported RAT type {}", ue_cap_rat_container.rat_type);
+          logger.log_warning("Unsupported RAT type {}", fmt::underlying(ue_cap_rat_container.rat_type.value));
         }
       }
     }

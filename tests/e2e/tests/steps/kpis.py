@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -29,7 +29,7 @@ from google.protobuf.empty_pb2 import Empty
 from retina.launcher.public import MetricsSummary
 from retina.protocol import RanStub
 from retina.protocol.base_pb2 import Metrics
-from retina.viavi.client import ViaviFailureManager
+from retina.viavi.client import ViaviKPIs
 
 
 @dataclass
@@ -47,7 +47,8 @@ class KPIs:
     dl_brate_max: float = 0
     ul_bler_aggregate: float = 0
     dl_bler_aggregate: float = 0
-    nof_ko_aggregate: int = 0
+    nof_ko_ul: int = 0
+    nof_ko_dl: int = 0
     nof_attach_failures: int = 0
     nof_reestablishments: int = 0
     nof_handovers: int = 0
@@ -57,7 +58,7 @@ class KPIs:
 def get_kpis(
     gnb: RanStub,
     ue_array: Sequence[RanStub] = (),
-    viavi_failure_manager: Optional[ViaviFailureManager] = None,
+    viavi_kpis: Optional[ViaviKPIs] = None,
     metrics_summary: Optional[MetricsSummary] = None,
 ) -> KPIs:
     """
@@ -77,7 +78,8 @@ def get_kpis(
     kpis.dl_brate_min = gnb_metrics.total.dl_bitrate_min
     kpis.dl_brate_max = gnb_metrics.total.dl_bitrate_max
 
-    kpis.nof_ko_aggregate = gnb_metrics.total.dl_nof_ko + gnb_metrics.total.ul_nof_ko
+    kpis.nof_ko_dl = gnb_metrics.total.dl_nof_ko
+    kpis.nof_ko_ul = gnb_metrics.total.ul_nof_ko
 
     total_ul_ko_ok = gnb_metrics.total.ul_nof_ok + gnb_metrics.total.ul_nof_ko
     total_dl_ko_ok = gnb_metrics.total.dl_nof_ok + gnb_metrics.total.dl_nof_ko
@@ -93,8 +95,8 @@ def get_kpis(
             kpis.nof_handovers += ue_info.nof_handovers
 
     # Viavi
-    if viavi_failure_manager:
-        nof_failure = viavi_failure_manager.get_nof_failure_by_group_procedure("EMM_PROCEDURE", "attach")
+    if viavi_kpis:
+        nof_failure = viavi_kpis.get_nof_procedure_failure_by_group("EMM_PROCEDURE", "attach")
         if nof_failure:
             kpis.nof_attach_failures += nof_failure
 

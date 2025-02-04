@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "srsran/adt/to_array.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/fmt_to_c_str.h"
 #include "fmt/format.h"
 
 #ifdef __aarch64__
@@ -143,7 +143,7 @@ inline bool cpu_supports_feature(cpu_feature feature)
       return true;
 #endif // __ARM_NEON
     case cpu_feature::pmull:
-      return getauxval(AT_HWCAP) & HWCAP_PMULL;
+      return ::getauxval(AT_HWCAP) & HWCAP_PMULL;
 #endif // __aarch64__
     default:
       return false;
@@ -200,11 +200,14 @@ inline std::string get_cpu_feature_info()
   fmt::memory_buffer buffer;
   for (cpu_feature feature : detail::cpu_features_included) {
 #ifdef __x86_64__
-    format_to(
-        buffer, "{}{}{}", buffer.size() == 0 ? "" : " ", feature, cpu_supports_feature(feature) ? "(ok)" : "(na)");
+    fmt::format_to(std::back_inserter(buffer),
+                   "{}{}{}",
+                   buffer.size() == 0 ? "" : " ",
+                   feature,
+                   cpu_supports_feature(feature) ? "(ok)" : "(na)");
 #endif // __x86_64__
 #ifdef __aarch64__
-    format_to(buffer, "{}{}", buffer.size() == 0 ? "" : " ", feature);
+    fmt::format_to(std::back_inserter(buffer), "{}{}", buffer.size() == 0 ? "" : " ", feature);
 #endif // __aarch64__
   }
   return std::string{srsran::to_c_str(buffer)};
@@ -226,13 +229,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::cpu_feature> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::cpu_feature feature, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::cpu_feature feature, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{}", srsran::to_string(feature));
   }

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,7 @@
 
 using namespace srsran;
 
-std::unique_ptr<io_broker> srsran::create_io_broker(io_broker_type type, io_broker_config config)
+std::unique_ptr<io_broker> srsran::create_io_broker(io_broker_type type, const io_broker_config& config)
 {
   switch (type) {
     case io_broker_type::epoll:

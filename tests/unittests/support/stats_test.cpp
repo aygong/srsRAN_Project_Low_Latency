@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,8 +26,8 @@
 /// The test takes a sample of 100 random real values and compares the statistics provided by the sample_statistics
 /// class with benchmark ones computed off line.
 
+#include "srsran/support/math/stats.h"
 #include "srsran/support/srsran_test.h"
-#include "srsran/support/stats.h"
 #include <array>
 
 /// \cond

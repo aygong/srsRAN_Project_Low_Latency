@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
+#include "srsran/ran/pdcch/dci_format.h"
 #include "srsran/ran/pdcch/search_space.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/scheduler/config/bwp_configuration.h"
-#include "srsran/scheduler/scheduler_dci.h"
-#include "srsran/scheduler/vrb_alloc.h"
+#include "srsran/scheduler/result/vrb_alloc.h"
 #include "srsran/support/error_handling.h"
 
 namespace srsran {

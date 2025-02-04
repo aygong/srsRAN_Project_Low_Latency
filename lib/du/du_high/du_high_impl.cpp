@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,8 +24,7 @@
 #include "adapters/adapters.h"
 #include "adapters/du_high_adapter_factories.h"
 #include "adapters/f1ap_adapters.h"
-#include "adapters/f1ap_test_mode_adapter.h"
-#include "du_high_executor_strategies.h"
+#include "test_mode/f1ap_test_mode_adapter.h"
 #include "srsran/du/du_high/du_manager/du_manager_factory.h"
 #include "srsran/f1ap/du/f1ap_du_factory.h"
 #include "srsran/support/executors/task_redispatcher.h"
@@ -38,8 +37,8 @@ using namespace srs_du;
 class du_high_impl::layer_connector
 {
 public:
-  explicit layer_connector(const du_high_configuration& config_) :
-    f1_to_du_notifier(timer_factory{*config_.timers, config_.exec_mapper->du_control_executor()})
+  explicit layer_connector(timer_manager& timers, task_executor& executor) :
+    f1_to_du_notifier(timer_factory{timers, executor})
   {
   }
 
@@ -107,40 +106,44 @@ public:
   }
 };
 
-du_high_impl::du_high_impl(const du_high_configuration& config_) :
+du_high_impl::du_high_impl(const du_high_configuration& config_, const du_high_dependencies& dependencies) :
   cfg(config_),
   logger(srslog::fetch_basic_logger("DU")),
-  timers(*config_.timers),
-  adapters(std::make_unique<layer_connector>(config_)),
+  timers(*dependencies.timers),
+  adapters(std::make_unique<layer_connector>(*dependencies.timers, dependencies.exec_mapper->du_control_executor())),
   metrics_notifier(std::make_unique<scheduler_ue_metrics_null_notifier>())
 {
   // Create layers
-  mac =
-      create_du_high_mac(mac_config{adapters->mac_ev_notifier,
-                                    cfg.exec_mapper->ue_mapper(),
-                                    cfg.exec_mapper->cell_mapper(),
-                                    cfg.exec_mapper->du_control_executor(),
-                                    *cfg.phy_adapter,
-                                    cfg.ran.mac_cfg,
-                                    *cfg.mac_p,
-                                    cfg.ran.sched_cfg,
-                                    cfg.sched_ue_metrics_notifier ? *cfg.sched_ue_metrics_notifier : *metrics_notifier,
-                                    timers},
-                         cfg.test_cfg);
-  f1ap = create_du_high_f1ap(*cfg.f1c_client,
+  mac = create_du_high_mac(
+      mac_config{adapters->mac_ev_notifier,
+                 dependencies.exec_mapper->ue_mapper(),
+                 dependencies.exec_mapper->cell_mapper(),
+                 dependencies.exec_mapper->du_control_executor(),
+                 *dependencies.phy_adapter,
+                 cfg.ran.mac_cfg,
+                 *dependencies.mac_p,
+                 cfg.ran.sched_cfg,
+                 dependencies.sched_ue_metrics_notifier ? *dependencies.sched_ue_metrics_notifier : *metrics_notifier,
+                 timers},
+      cfg.test_cfg,
+      cfg.ran.cells.size());
+  f1ap = create_du_high_f1ap(*dependencies.f1c_client,
                              adapters->f1_to_du_notifier,
-                             cfg.exec_mapper->du_control_executor(),
-                             cfg.exec_mapper->ue_mapper(),
+                             dependencies.exec_mapper->du_control_executor(),
+                             dependencies.exec_mapper->ue_mapper(),
                              adapters->f1ap_paging_notifier,
                              timers,
                              cfg.test_cfg);
 
   du_manager = create_du_manager(du_manager_params{
       {cfg.ran.gnb_du_name, cfg.ran.gnb_du_id, 1, cfg.ran.cells, cfg.ran.srbs, cfg.ran.qos},
-      {timers, cfg.exec_mapper->du_control_executor(), cfg.exec_mapper->ue_mapper(), cfg.exec_mapper->cell_mapper()},
+      {timers,
+       dependencies.exec_mapper->du_control_executor(),
+       dependencies.exec_mapper->ue_mapper(),
+       dependencies.exec_mapper->cell_mapper()},
       {*f1ap, *f1ap},
-      {*config_.f1u_gw},
-      {mac->get_ue_control_info_handler(), *f1ap, *f1ap, *cfg.rlc_p, cfg.rlc_metrics_notif},
+      {*dependencies.f1u_gw},
+      {mac->get_ue_control_info_handler(), *f1ap, *f1ap, *dependencies.rlc_p, dependencies.rlc_metrics_notif},
       {mac->get_cell_manager(), mac->get_ue_configurator(), cfg.ran.sched_cfg},
       cfg.test_cfg});
 
@@ -148,18 +151,8 @@ du_high_impl::du_high_impl(const du_high_configuration& config_) :
   adapters->connect(*du_manager, *mac);
 
   // Cell slot handler.
-  main_cell_slot_handler = std::make_unique<du_high_slot_handler>(timers, *mac, cfg.exec_mapper->du_timer_executor());
-
-  if (cfg.e2_client) {
-    // todo: subscribe e2_metric_manager to a metric hub (currently not present)
-    e2ap_entity = create_e2_du_entity(cfg.e2ap_config,
-                                      cfg.e2_client,
-                                      cfg.e2_du_metric_iface,
-                                      f1ap.get(),
-                                      &(get_du_configurator()),
-                                      timer_factory{timers, cfg.exec_mapper->du_e2_executor()},
-                                      cfg.exec_mapper->du_e2_executor());
-  }
+  main_cell_slot_handler =
+      std::make_unique<du_high_slot_handler>(timers, *mac, dependencies.exec_mapper->du_timer_executor());
 }
 
 du_high_impl::~du_high_impl()
@@ -173,23 +166,24 @@ void du_high_impl::start()
   du_manager->start();
   logger.info("DU-High started successfully");
 
-  if (e2ap_entity) {
-    e2ap_entity->start();
-  }
-
   // If test mode is enabled, create a test-mode UE by injecting a Msg3.
   if (cfg.test_cfg.test_ue.has_value()) {
-    // Push an UL-CCCH message that will trigger the creation of a UE for testing purposes.
-    for (unsigned ue_num = 0, nof_ues = cfg.test_cfg.test_ue->nof_ues; ue_num != nof_ues; ++ue_num) {
-      auto rx_buf = byte_buffer::create({0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00});
-      if (not rx_buf.has_value()) {
-        logger.warning("Unable to allocate byte_buffer");
-        continue;
+    for (unsigned cell_id = 0, cell_end = cfg.ran.cells.size(); cell_id != cell_end; ++cell_id) {
+      // Push an UL-CCCH message that will trigger the creation of a UE for testing purposes.
+      for (unsigned ue_num = 0, nof_ues = cfg.test_cfg.test_ue->nof_ues; ue_num != nof_ues; ++ue_num) {
+        auto rx_buf = byte_buffer::create({0x34, 0x1e, 0x4f, 0xc0, 0x4f, 0xa6, 0x06, 0x3f, 0x00, 0x00, 0x00});
+        if (not rx_buf.has_value()) {
+          logger.warning("Unable to allocate byte_buffer");
+          continue;
+        }
+        mac->get_pdu_handler().handle_rx_data_indication(mac_rx_data_indication{
+            slot_point{0, 0},
+            to_du_cell_index(cell_id),
+            {mac_rx_pdu{to_rnti(to_value(cfg.test_cfg.test_ue->rnti) + (cell_id * nof_ues) + ue_num),
+                        0,
+                        0,
+                        std::move(rx_buf.value())}}});
       }
-      mac->get_pdu_handler().handle_rx_data_indication(mac_rx_data_indication{
-          slot_point{0, 0},
-          to_du_cell_index(0),
-          {mac_rx_pdu{to_rnti(to_value(cfg.test_cfg.test_ue->rnti) + ue_num), 0, 0, std::move(rx_buf.value())}}});
     }
   }
 }
@@ -202,13 +196,10 @@ void du_high_impl::stop()
 
   logger.info("Stopping DU-High...");
   du_manager->stop();
-  if (e2ap_entity) {
-    e2ap_entity->stop();
-  }
   logger.info("DU-High stopped successfully");
 }
 
-f1ap_message_handler& du_high_impl::get_f1ap_message_handler()
+f1ap_du& du_high_impl::get_f1ap_du()
 {
   return *f1ap;
 }

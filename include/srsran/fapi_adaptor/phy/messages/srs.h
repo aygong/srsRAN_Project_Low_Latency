@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -31,6 +31,7 @@ namespace fapi_adaptor {
 /// Helper function that converts from a SRS FAPI PDU to a SRS uplink slot PDU using the system frame number and slot.
 void convert_srs_fapi_to_phy(uplink_processor::srs_pdu& pdu,
                              const fapi::ul_srs_pdu&    fapi_pdu,
+                             unsigned                   nof_rx_antennas,
                              uint16_t                   sfn,
                              uint16_t                   slot);
 

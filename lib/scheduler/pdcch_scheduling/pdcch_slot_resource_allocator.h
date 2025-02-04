@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,8 +24,7 @@
 
 #include "../support/pdcch/pdcch_mapping.h"
 #include "srsran/ran/pdcch/pdcch_candidates.h"
-#include "srsran/scheduler/scheduler_dci.h"
-#include "srsran/scheduler/scheduler_slot_handler.h"
+#include "srsran/scheduler/result/pdcch_info.h"
 
 namespace srsran {
 
@@ -54,6 +53,7 @@ public:
     unsigned record_index;
   };
 
+  pdcch_slot_allocator();
   ~pdcch_slot_allocator();
 
   /// Erase the current PDCCH allocations and stored context for this slot.

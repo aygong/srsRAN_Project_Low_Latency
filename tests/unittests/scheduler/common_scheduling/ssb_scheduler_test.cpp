@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #include "lib/scheduler/cell/resource_grid.h"
 #include "lib/scheduler/common_scheduling/ssb_scheduler.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "srsran/ran/frame_types.h"
 #include "srsran/ran/ssb_mapping.h"
@@ -112,9 +113,9 @@ private:
                                                                            subcarrier_spacing init_bwp_scs,
                                                                            uint8_t            k_ssb)
   {
-    sched_cell_configuration_request_message msg     = test_helpers::make_default_sched_cell_configuration_request();
-    msg.dl_carrier.arfcn_f_ref                       = freq_arfcn;
-    msg.dl_carrier.band                              = band_helper::get_band_from_dl_arfcn(freq_arfcn);
+    sched_cell_configuration_request_message msg = sched_config_helper::make_default_sched_cell_configuration_request();
+    msg.dl_carrier.arfcn_f_ref                   = freq_arfcn;
+    msg.dl_carrier.band                          = band_helper::get_band_from_dl_arfcn(freq_arfcn);
     msg.dl_cfg_common.freq_info_dl.offset_to_point_a = offset_to_point_A;
     msg.dl_cfg_common.init_dl_bwp.generic_params.scs = init_bwp_scs;
     msg.ssb_config.scs                               = init_bwp_scs;
@@ -211,7 +212,7 @@ void test_ssb_case_A_C(const slot_point&             slot_tx,
   // in_burst_bitmap).
   if (cell_cfg.dl_carrier.arfcn_f_ref <= freq_cutoff) {
     TESTASSERT((cell_cfg.ssb_cfg.ssb_bitmap & 0b00001111) == 0,
-               TEST_HARQ_ASSERT_MSG(slot_tx.to_uint(), ssb_cfg.ssb_period, cell_cfg.ssb_case));
+               TEST_HARQ_ASSERT_MSG(slot_tx.to_uint(), fmt::underlying(ssb_cfg.ssb_period), cell_cfg.ssb_case));
   }
 
   uint32_t sl_point_mod =
@@ -231,8 +232,9 @@ void test_ssb_case_A_C(const slot_point&             slot_tx,
 
   const ssb_information_list& ssb_list = slot_alloc.result.dl.bc.ssb_info;
   // Check the SSB list size.
-  TESTASSERT_EQ(
-      ssb_list_size, ssb_list.size(), TEST_HARQ_ASSERT_MSG(sl_point_mod, ssb_cfg.ssb_period, cell_cfg.ssb_case));
+  TESTASSERT_EQ(ssb_list_size,
+                ssb_list.size(),
+                TEST_HARQ_ASSERT_MSG(sl_point_mod, fmt::underlying(ssb_cfg.ssb_period), cell_cfg.ssb_case));
 
   unsigned expected_ssb_per_slot;
   if (sl_point_mod == 0 or sl_point_mod == 1 or sl_point_mod == 2 or sl_point_mod == 3) {
@@ -293,7 +295,7 @@ void test_ssb_case_B(const slot_point&             slot_tx,
   // in_burst_bitmap).
   if (cell_cfg.dl_carrier.arfcn_f_ref <= CUTOFF_FREQ_ARFCN_CASE_A_B_C) {
     TESTASSERT((in_burst_bitmap & 0b00001111) == 0,
-               TEST_HARQ_ASSERT_MSG(slot_tx.to_uint(), ssb_cfg.ssb_period, cell_cfg.ssb_case));
+               TEST_HARQ_ASSERT_MSG(slot_tx.to_uint(), fmt::underlying(ssb_cfg.ssb_period), cell_cfg.ssb_case));
   }
 
   uint32_t sl_point_mod =
@@ -313,8 +315,9 @@ void test_ssb_case_B(const slot_point&             slot_tx,
 
   const ssb_information_list& ssb_list = slot_alloc.result.dl.bc.ssb_info;
   // Check the SSB list size
-  TESTASSERT_EQ(
-      ssb_list_size, ssb_list.size(), TEST_HARQ_ASSERT_MSG(sl_point_mod, ssb_cfg.ssb_period, cell_cfg.ssb_case));
+  TESTASSERT_EQ(ssb_list_size,
+                ssb_list.size(),
+                TEST_HARQ_ASSERT_MSG(sl_point_mod, fmt::underlying(ssb_cfg.ssb_period), cell_cfg.ssb_case));
 
   unsigned expected_ssb_per_slot;
   // This block targets SSB occasions at ssb_burst_ofdm_symbols = {4, 8, 32, 36}.

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,6 @@
 #include "srsran/phy/generic_functions/dft_processor.h"
 #include "srsran/phy/lower/modulation/ofdm_modulator.h"
 #include "srsran/ran/cyclic_prefix.h"
-#include "srsran/srsvec/aligned_vec.h"
 
 namespace srsran {
 

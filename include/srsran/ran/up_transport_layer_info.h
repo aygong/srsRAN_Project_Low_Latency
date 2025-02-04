@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -93,7 +93,7 @@ namespace fmt {
 template <>
 struct formatter<srsran::up_transport_layer_info> : public formatter<std::string> {
   template <typename FormatContext>
-  auto format(const srsran::up_transport_layer_info& s, FormatContext& ctx)
+  auto format(const srsran::up_transport_layer_info& s, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{{Addr={} TEID={}}}", s.tp_address, s.gtp_teid);
   }

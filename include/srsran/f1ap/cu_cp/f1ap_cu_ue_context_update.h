@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,8 +27,8 @@
 #include "srsran/f1ap/ue_context_management_configs.h"
 #include "srsran/ran/cause/f1ap_cause.h"
 #include "srsran/ran/cu_types.h"
-#include "srsran/ran/lcid.h"
 #include "srsran/ran/nr_cgi.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/ran/s_nssai.h"
 #include "srsran/rlc/rlc_config.h"

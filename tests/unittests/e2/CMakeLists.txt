@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -55,6 +55,11 @@ add_executable(e2sm_kpm_meas_provider_test e2sm_kpm_meas_provider_test.cpp)
 target_link_libraries(e2sm_kpm_meas_provider_test srslog srsran_network srsran_e2 e2ap_asn1 srsran_pcap srsran_gateway srsran_support gtest gtest_main)
 target_include_directories(e2sm_kpm_meas_provider_test PRIVATE ${CMAKE_SOURCE_DIR})
 gtest_discover_tests(e2sm_kpm_meas_provider_test)
+
+add_executable(e2sm_kpm_meas_provider_metrics_test e2sm_kpm_meas_provider_metrics_test.cpp)
+target_link_libraries(e2sm_kpm_meas_provider_metrics_test srslog srsran_network srsran_e2 e2ap_asn1 srsran_pcap srsran_gateway srsran_support gtest gtest_main)
+target_include_directories(e2sm_kpm_meas_provider_metrics_test PRIVATE ${CMAKE_SOURCE_DIR})
+gtest_discover_tests(e2sm_kpm_meas_provider_metrics_test)
 
 add_executable(e2sm_kpm_test e2sm_kpm_test.cpp)
 target_link_libraries(e2sm_kpm_test srslog srsran_network srsran_e2 e2ap_asn1 srsran_pcap srsran_gateway srsran_support gtest gtest_main)

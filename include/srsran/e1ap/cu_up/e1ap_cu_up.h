@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,12 +22,12 @@
 
 #pragma once
 
-#include "e1ap_cu_up_bearer_context_update.h"
 #include "srsran/adt/expected.h"
 #include "srsran/cu_up/cu_up_types.h"
 #include "srsran/e1ap/common/e1_setup_messages.h"
 #include "srsran/e1ap/common/e1ap_common.h"
 #include "srsran/e1ap/common/e1ap_types.h"
+#include "srsran/e1ap/cu_up/e1ap_cu_up_bearer_context_update.h"
 #include "srsran/support/async/async_task.h"
 
 namespace srsran {
@@ -40,7 +40,7 @@ public:
   virtual ~e1ap_connection_manager() = default;
 
   /// \brief Connect the CU-UP to CU-CP via E1AP interface.
-  virtual SRSRAN_NODISCARD bool connect_to_cu_cp() = 0;
+  [[nodiscard]] virtual bool connect_to_cu_cp() = 0;
 
   /// \brief Initiates the E1 Setup procedure as per TS 38.463, Section 8.2.3.
   /// \param[in] request The E1SetupRequest message to transmit.

@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -20,7 +20,7 @@
 
 set(transform_precoding_sources
         transform_precoder_dft_impl.cpp
-        tansform_precoding_factories.cpp)
+        transform_precoding_factories.cpp)
 
 add_library(srsran_transform_precoding STATIC ${transform_precoding_sources})
 

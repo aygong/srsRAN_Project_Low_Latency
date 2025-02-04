@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -131,6 +131,13 @@ bool srsran::test_helpers::is_valid_handover_cancel(const srs_cu_cp::ngap_messag
   return true;
 }
 
+bool srsran::test_helpers::is_valid_ul_ue_associated_nrppa_transport(const srs_cu_cp::ngap_message& msg)
+{
+  TRUE_OR_RETURN(msg.pdu.type() == asn1::ngap::ngap_pdu_c::types_opts::init_msg);
+  TRUE_OR_RETURN(msg.pdu.init_msg().proc_code == ASN1_NGAP_ID_UL_UE_ASSOCIATED_NRPPA_TRANSPORT);
+  return true;
+}
+
 bool srsran::test_helpers::is_expected_pdu_session_resource_setup_response(
     const ngap_message&                  ngap_pdu,
     const std::vector<pdu_session_id_t>& expected_pdu_sessions_to_setup,
@@ -193,4 +200,20 @@ bool srsran::test_helpers::is_expected_pdu_session_resource_setup_response(
   }
 
   return true;
+}
+
+byte_buffer srsran::test_helpers::get_rrc_container(const srs_cu_cp::ngap_message& msg)
+{
+  if (msg.pdu.init_msg().proc_code == ASN1_NGAP_ID_HO_PREP) {
+    asn1::cbit_ref bref(msg.pdu.init_msg().value.ho_required()->source_to_target_transparent_container);
+    asn1::ngap::source_ngran_node_to_target_ngran_node_transparent_container_s asn1_transparent_container;
+    if (asn1_transparent_container.unpack(bref) != asn1::SRSASN_SUCCESS) {
+      srslog::fetch_basic_logger("NGAP").error("Couldn't unpack Source to Target Transparent Container.");
+      return byte_buffer{};
+    }
+
+    return std::move(asn1_transparent_container.rrc_container);
+  }
+
+  return byte_buffer{};
 }

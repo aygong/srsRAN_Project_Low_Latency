@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -51,5 +51,3 @@ add_library(srsran_e2 STATIC ${SOURCES})
 target_link_libraries(srsran_e2 e2ap_asn1 srsran_support)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
-add_to_exported_libs(srsran_e2)

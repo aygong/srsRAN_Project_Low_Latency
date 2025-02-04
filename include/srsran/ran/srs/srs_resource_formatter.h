@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "srsran/ran/srs/srs_resource_configuration.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/delimited_formatter.h"
 
 namespace fmt {
 
@@ -37,16 +37,15 @@ struct formatter<srsran::srs_resource_configuration> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::srs_resource_configuration& resource, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::srs_resource_configuration& resource, FormatContext& ctx) const
   {
-    helper.format_if_verbose(ctx, "nof_antenna_ports={}", resource.nof_antenna_ports);
+    helper.format_if_verbose(ctx, "nof_antenna_ports={}", fmt::underlying(resource.nof_antenna_ports));
     helper.format_if_verbose(ctx,
                              "symb=[{}, {})",
                              resource.start_symbol,
@@ -54,13 +53,13 @@ struct formatter<srsran::srs_resource_configuration> {
     helper.format_if_verbose(ctx, "configuration_index={}", resource.configuration_index);
     helper.format_if_verbose(ctx, "sequence_id={}", resource.sequence_id);
     helper.format_if_verbose(ctx, "bandwidth_index={}", resource.bandwidth_index);
-    helper.format_if_verbose(ctx, "comb_size={}", resource.comb_size);
+    helper.format_if_verbose(ctx, "comb_size={}", fmt::underlying(resource.comb_size));
     helper.format_if_verbose(ctx, "comb_offset={}", resource.comb_offset);
     helper.format_if_verbose(ctx, "cyclic_shift={}", resource.cyclic_shift);
     helper.format_if_verbose(ctx, "freq_position={}", resource.freq_position);
     helper.format_if_verbose(ctx, "freq_shift={}", resource.freq_shift);
     helper.format_if_verbose(ctx, "freq_hopping={}", resource.freq_hopping);
-    helper.format_if_verbose(ctx, "hopping={}", resource.hopping);
+    helper.format_if_verbose(ctx, "hopping={}", fmt::underlying(resource.hopping));
     if (resource.periodicity.has_value()) {
       helper.format_if_verbose(
           ctx, "periodicity={}/{}", resource.periodicity->periodicity, resource.periodicity->offset);

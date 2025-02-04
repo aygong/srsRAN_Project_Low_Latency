@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,8 +21,9 @@
  */
 
 #pragma once
+
 #include "srsran/ran/precoding/precoding_weight_matrix.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/delimited_formatter.h"
 
 namespace fmt {
 
@@ -36,14 +37,13 @@ struct formatter<srsran::precoding_weight_matrix> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::precoding_weight_matrix& matrix, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::precoding_weight_matrix& matrix, FormatContext& ctx) const
   {
     unsigned nof_layers = matrix.get_nof_layers();
     unsigned nof_ports  = matrix.get_nof_ports();

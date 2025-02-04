@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #include "../config/cell_configuration.h"
 #include "scheduler_metrics_handler.h"
+#include "srsran/scheduler/result/sched_result.h"
 #include "srsran/scheduler/scheduler_configurator.h"
 #include "srsran/srslog/srslog.h"
 
@@ -71,7 +72,9 @@ void cell_metrics_handler::handle_rach_indication(const rach_indication_message&
   }
 }
 
-void cell_metrics_handler::handle_crc_indication(const ul_crc_pdu_indication& crc_pdu, units::bytes tbs)
+void cell_metrics_handler::handle_crc_indication(slot_point                   sl_rx,
+                                                 const ul_crc_pdu_indication& crc_pdu,
+                                                 units::bytes                 tbs)
 {
   if (ues.contains(crc_pdu.ue_index)) {
     auto& u = ues[crc_pdu.ue_index];
@@ -89,7 +92,20 @@ void cell_metrics_handler::handle_crc_indication(const ul_crc_pdu_indication& cr
       u.data.sum_ul_tb_bytes += tbs.value();
     }
     if (crc_pdu.time_advance_offset.has_value()) {
-      u.last_ta = crc_pdu.time_advance_offset;
+      u.data.ta.update(crc_pdu.time_advance_offset.value().to_seconds());
+      u.data.pusch_ta.update(crc_pdu.time_advance_offset.value().to_seconds());
+    }
+    u.data.sum_crc_delay_slots += last_slot_tx - sl_rx;
+  }
+}
+
+void cell_metrics_handler::handle_srs_indication(const srs_indication::srs_indication_pdu& srs_pdu)
+{
+  if (ues.contains(srs_pdu.ue_index)) {
+    auto& u = ues[srs_pdu.ue_index];
+    if (srs_pdu.time_advance_offset.has_value()) {
+      u.data.ta.update(srs_pdu.time_advance_offset.value().to_seconds());
+      u.data.srs_ta.update(srs_pdu.time_advance_offset.value().to_seconds());
     }
   }
 }
@@ -146,7 +162,8 @@ void cell_metrics_handler::handle_uci_pdu_indication(const uci_indication::uci_p
       }
 
       if (f1->time_advance_offset.has_value()) {
-        u.last_ta = f1->time_advance_offset;
+        u.data.ta.update(f1->time_advance_offset->to_seconds());
+        u.data.pucch_ta.update(f1->time_advance_offset->to_seconds());
       }
     } else if (const auto* f2 = std::get_if<uci_indication::uci_pdu::uci_pucch_f2_or_f3_or_f4_pdu>(&pdu.pdu)) {
       if (f2->ul_sinr_dB.has_value()) {
@@ -158,7 +175,8 @@ void cell_metrics_handler::handle_uci_pdu_indication(const uci_indication::uci_p
       }
 
       if (f2->time_advance_offset.has_value()) {
-        u.last_ta = f2->time_advance_offset;
+        u.data.ta.update(f2->time_advance_offset->to_seconds());
+        u.data.pucch_ta.update(f2->time_advance_offset->to_seconds());
       }
     } else {
       // PUSCH case.
@@ -168,6 +186,14 @@ void cell_metrics_handler::handle_uci_pdu_indication(const uci_indication::uci_p
         handle_csi_report(u, pusch.csi.value());
       }
     }
+  }
+}
+
+void cell_metrics_handler::handle_sr_indication(du_ue_index_t ue_index)
+{
+  if (ues.contains(ue_index)) {
+    auto& u = ues[ue_index];
+    u.data.count_sr++;
   }
 }
 
@@ -195,6 +221,8 @@ void cell_metrics_handler::handle_ul_phr_indication(const ul_phr_indication_mess
       // Log the floor of the average of the PH interval.
       interval<int> rg = phr_ind.phr.get_phr().front().ph;
       u.last_phr       = (rg.start() + rg.stop()) / 2;
+      u.data.sum_ul_ce_delay_slots += last_slot_tx - phr_ind.slot_rx;
+      u.data.nof_ul_ces++;
     }
   }
 }
@@ -218,12 +246,7 @@ void cell_metrics_handler::report_metrics()
 {
   for (ue_metric_context& ue : ues) {
     // Compute statistics of the UE metrics and push the result to the report.
-    scheduler_ue_metrics sched_ue_metrics = ue.compute_report(report_period);
-    sched_ue_metrics.mean_dl_prbs_used =
-        nof_dl_slots > 0 ? static_cast<double>(1.0 * sched_ue_metrics.tot_dl_prbs_used / nof_dl_slots) : 0;
-    sched_ue_metrics.mean_ul_prbs_used =
-        nof_ul_slots > 0 ? static_cast<double>(1.0 * sched_ue_metrics.tot_ul_prbs_used / nof_ul_slots) : 0;
-    next_report.ue_metrics.push_back(sched_ue_metrics);
+    next_report.ue_metrics.push_back(ue.compute_report(report_period, nof_slots_per_sf));
   }
 
   next_report.nof_error_indications    = error_indication_counter;
@@ -253,10 +276,6 @@ void cell_metrics_handler::report_metrics()
 void cell_metrics_handler::handle_slot_result(const sched_result&       slot_result,
                                               std::chrono::microseconds slot_decision_latency)
 {
-  // Count only full DL/UL slots.
-  bool full_dl_slot = (slot_result.dl.nof_dl_symbols == 14);
-  bool full_ul_slot = (slot_result.ul.nof_ul_symbols == 14);
-
   for (const dl_msg_alloc& dl_grant : slot_result.dl.ue_grants) {
     auto it = rnti_to_ue_index_lookup.find(dl_grant.pdsch_cfg.rnti);
     if (it == rnti_to_ue_index_lookup.end()) {
@@ -269,14 +288,14 @@ void cell_metrics_handler::handle_slot_result(const sched_result&       slot_res
       u.data.nof_dl_cws++;
     }
     if (dl_grant.pdsch_cfg.rbs.is_type0()) {
-      u.data.tot_dl_prbs_used += full_dl_slot ? convert_rbgs_to_prbs(dl_grant.pdsch_cfg.rbs.type0(),
-                                                                     {0, cell_cfg.nof_dl_prbs},
-                                                                     get_nominal_rbg_size(cell_cfg.nof_dl_prbs, true))
-                                                    .count()
-                                              : 0;
+      u.data.tot_dl_prbs_used += convert_rbgs_to_prbs(dl_grant.pdsch_cfg.rbs.type0(),
+                                                      {0, cell_cfg.nof_dl_prbs},
+                                                      get_nominal_rbg_size(cell_cfg.nof_dl_prbs, true))
+                                     .count();
     } else if (dl_grant.pdsch_cfg.rbs.is_type1()) {
-      u.data.tot_dl_prbs_used += full_dl_slot ? (dl_grant.pdsch_cfg.rbs.type1().length()) : 0;
+      u.data.tot_dl_prbs_used += (dl_grant.pdsch_cfg.rbs.type1().length());
     }
+    u.last_dl_olla = dl_grant.context.olla_offset;
   }
 
   for (const ul_sched_info& ul_grant : slot_result.ul.puschs) {
@@ -286,22 +305,22 @@ void cell_metrics_handler::handle_slot_result(const sched_result&       slot_res
       continue;
     }
     if (ul_grant.pusch_cfg.rbs.is_type0()) {
-      ues[it->second].data.tot_ul_prbs_used +=
-          full_ul_slot ? convert_rbgs_to_prbs(ul_grant.pusch_cfg.rbs.type0(),
-                                              {0, cell_cfg.nof_dl_prbs},
-                                              get_nominal_rbg_size(cell_cfg.nof_dl_prbs, true))
-                             .count()
-                       : 0;
+      ues[it->second].data.tot_ul_prbs_used += convert_rbgs_to_prbs(ul_grant.pusch_cfg.rbs.type0(),
+                                                                    {0, cell_cfg.nof_dl_prbs},
+                                                                    get_nominal_rbg_size(cell_cfg.nof_dl_prbs, true))
+                                                   .count();
     } else if (ul_grant.pusch_cfg.rbs.is_type1()) {
-      ues[it->second].data.tot_ul_prbs_used += full_ul_slot ? (ul_grant.pusch_cfg.rbs.type1().length()) : 0;
+      ues[it->second].data.tot_ul_prbs_used += (ul_grant.pusch_cfg.rbs.type1().length());
     }
     ue_metric_context& u = ues[it->second];
     u.data.ul_mcs += ul_grant.pusch_cfg.mcs_index.to_uint();
+    u.last_ul_olla = ul_grant.context.olla_offset;
     u.data.nof_puschs++;
   }
 
-  nof_dl_slots += full_dl_slot;
-  nof_ul_slots += full_ul_slot;
+  // Count only full DL/UL slots.
+  nof_dl_slots += (slot_result.dl.nof_dl_symbols > 0);
+  nof_ul_slots += (slot_result.ul.nof_ul_symbols == 14); // Note: PUSCH in special slot not supported.;
 
   // Process latency.
   decision_latency_sum += slot_decision_latency;
@@ -310,19 +329,13 @@ void cell_metrics_handler::handle_slot_result(const sched_result&       slot_res
   decision_latency_hist[bin_idx]++;
 }
 
-void cell_metrics_handler::handle_ul_delay(du_ue_index_t ue_index, double delay_ms)
-{
-  if (ues.contains(ue_index)) {
-    ues[ue_index].data.sum_ul_delay_ms += delay_ms;
-  }
-}
-
 void cell_metrics_handler::push_result(slot_point                sl_tx,
                                        const sched_result&       slot_result,
                                        std::chrono::microseconds slot_decision_latency)
 {
   if (report_period_slots == 0) {
     // The SCS common is now known.
+    nof_slots_per_sf    = get_nof_slots_per_subframe(to_subcarrier_spacing(sl_tx.numerology()));
     usecs slot_dur      = usecs{1000U >> sl_tx.numerology()};
     report_period_slots = usecs{report_period} / slot_dur;
   }
@@ -339,7 +352,8 @@ void cell_metrics_handler::push_result(slot_point                sl_tx,
 }
 
 scheduler_ue_metrics
-cell_metrics_handler::ue_metric_context::compute_report(std::chrono::milliseconds metric_report_period)
+cell_metrics_handler::ue_metric_context::compute_report(std::chrono::milliseconds metric_report_period,
+                                                        unsigned                  slots_per_sf)
 {
   scheduler_ue_metrics ret{};
   ret.pci              = pci;
@@ -362,16 +376,23 @@ cell_metrics_handler::ue_metric_context::compute_report(std::chrono::millisecond
   ret.pusch_rsrp_db    = data.nof_pusch_rsrp_reports > 0 ? data.sum_pusch_rsrp / data.nof_pusch_rsrp_reports
                                                          : -std::numeric_limits<float>::infinity();
   ret.pucch_snr_db     = data.nof_pucch_snr_reports > 0 ? data.sum_pucch_snrs / data.nof_pucch_snr_reports : 0;
-  ret.ul_delay_ms      = data.count_crc_pdus > 0 ? data.sum_ul_delay_ms / data.count_crc_pdus : 0;
-  ret.bsr              = last_bsr;
-  ret.dl_bs            = 0;
+  ret.last_dl_olla     = last_dl_olla;
+  ret.last_ul_olla     = last_ul_olla;
+  ret.crc_delay_ms = (data.count_crc_pdus > 0) ? data.sum_crc_delay_slots / (data.count_crc_pdus * slots_per_sf) : 0;
+  ret.bsr          = last_bsr;
+  ret.sr_count     = data.count_sr;
+  ret.dl_bs        = 0;
   for (const unsigned value : last_dl_bs) {
     ret.dl_bs += value;
   }
-  if (last_ta.has_value()) {
-    ret.last_ta = last_ta;
+  ret.ta_stats       = data.ta;
+  ret.pusch_ta_stats = data.pusch_ta;
+  ret.pucch_ta_stats = data.pucch_ta;
+  ret.srs_ta_stats   = data.srs_ta;
+  ret.last_phr       = last_phr;
+  if (data.nof_ul_ces > 0) {
+    ret.mean_ce_delay_msec = (static_cast<float>(data.sum_ul_ce_delay_slots) / (data.nof_ul_ces * slots_per_sf));
   }
-  ret.last_phr = last_phr;
 
   // Reset UE stats metrics on every report.
   reset();
@@ -394,11 +415,11 @@ scheduler_metrics_handler::scheduler_metrics_handler(msecs                      
 cell_metrics_handler* scheduler_metrics_handler::add_cell(const cell_configuration& cell_cfg)
 {
   if (cells.contains(cell_cfg.cell_index)) {
-    srslog::fetch_basic_logger("SCHED").warning("Cell={} already exists", cell_cfg.cell_index);
+    srslog::fetch_basic_logger("SCHED").warning("Cell={} already exists", fmt::underlying(cell_cfg.cell_index));
     return nullptr;
   }
 
-  cells.emplace(cell_cfg.cell_index, report_period, notifier, cell_cfg);
+  cells.emplace(cell_cfg.cell_index, std::make_unique<cell_metrics_handler>(report_period, notifier, cell_cfg));
 
-  return &cells[cell_cfg.cell_index];
+  return cells[cell_cfg.cell_index].get();
 }

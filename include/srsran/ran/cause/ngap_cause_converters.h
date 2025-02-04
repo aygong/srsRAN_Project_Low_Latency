@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "e1ap_cause.h"
-#include "f1ap_cause.h"
-#include "ngap_cause.h"
+#include "srsran/ran/cause/e1ap_cause.h"
+#include "srsran/ran/cause/f1ap_cause.h"
+#include "srsran/ran/cause/ngap_cause.h"
 
 namespace srsran {
 

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -91,7 +91,7 @@ static void usage(const char* prog)
              dedicated_queue ? "dedicated_queue" : "shared_queue");
   fmt::print("\t-x       Force TB mode [Default {}]\n", cb_mode ? "cb_mode" : "tb_mode");
   fmt::print("\t-y       Force logging output written to a file [Default {}]\n", std_out_sink ? "std_out" : "file");
-  fmt::print("\t-z       Set logging level for the HAL [Default {}]\n", hal_log_level);
+  fmt::print("\t-z       Set logging level for the HAL [Default {}]\n", fmt::underlying(hal_log_level));
   fmt::print("\teal_args EAL arguments\n");
 #endif // DPDK_FOUND
   fmt::print("\t-h This help\n");
@@ -201,13 +201,6 @@ static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelera
     TESTASSERT(dpdk_interface, "Failed to open DPDK EAL with arguments.");
   }
 
-  // Create a bbdev accelerator factory.
-  static std::unique_ptr<dpdk::bbdev_acc_factory> bbdev_acc_factory = nullptr;
-  if (!bbdev_acc_factory) {
-    bbdev_acc_factory = srsran::dpdk::create_bbdev_acc_factory("srs");
-    TESTASSERT(bbdev_acc_factory, "Failed to create the bbdev accelerator factory.");
-  }
-
   // Intefacing to the bbdev-based hardware-accelerator.
   dpdk::bbdev_acc_configuration bbdev_config;
   bbdev_config.id                                    = 0;
@@ -215,7 +208,7 @@ static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelera
   bbdev_config.nof_ldpc_dec_lcores                   = 0;
   bbdev_config.nof_fft_lcores                        = 0;
   bbdev_config.nof_mbuf                              = static_cast<unsigned>(pow2(log2_ceil(MAX_NOF_SEGMENTS)));
-  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = bbdev_acc_factory->create(bbdev_config, logger);
+  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = create_bbdev_acc(bbdev_config, logger);
   TESTASSERT(bbdev_accelerator);
 
   // Set the PDSCH encoder hardware-accelerator factory configuration for the ACC100.
@@ -227,7 +220,7 @@ static std::shared_ptr<hal::hw_accelerator_pdsch_enc_factory> create_hw_accelera
   hw_encoder_config.dedicated_queue   = dedicated_queue;
 
   // ACC100 hardware-accelerator implementation.
-  return srsran::hal::create_bbdev_pdsch_enc_acc_factory(hw_encoder_config, "srs");
+  return srsran::hal::create_bbdev_pdsch_enc_acc_factory(hw_encoder_config);
 #else  // DPDK_FOUND
   return nullptr;
 #endif // DPDK_FOUND
@@ -401,7 +394,7 @@ int main(int argc, char** argv)
     fmt::print(
         "PDSCH RB={:<3} Mod={:<2} tbs={:<8}: latency gain {:<3.2f}%% (generic {:<10.2f} us, {:<5} {:<10.2f} us)\n",
         nof_prb,
-        cfg.mod,
+        fmt::underlying(cfg.mod),
         tbs,
         perf_gain,
         gen_lat,

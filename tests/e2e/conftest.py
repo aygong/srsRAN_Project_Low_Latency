@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -41,3 +41,6 @@ def pytest_addoption(parser: pytest.Parser):
     )
     parser.addoption("--viavi-manual-test-name", action="store", default="default_test", help="Viavi test name")
     parser.addoption("--viavi-manual-test-timeout", action="store", type=int, default=1800, help="Viavi test timeout")
+    parser.addoption(
+        "--viavi-manual-extra-gnb-arguments", action="store", type=str, default="", help="Viavi gnb extra arguments"
+    )

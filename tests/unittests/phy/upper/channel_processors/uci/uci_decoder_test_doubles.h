@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,7 @@
 #pragma once
 
 #include "srsran/phy/upper/channel_processors/channel_processor_factories.h"
+#include "srsran/phy/upper/channel_processors/pucch/factories.h"
 #include "srsran/phy/upper/channel_processors/uci/uci_decoder.h"
 #include <random>
 

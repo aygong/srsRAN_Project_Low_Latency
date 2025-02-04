@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -19,6 +19,7 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #include "gtpu_pdu.h"
 #include "gtpu_tunnel_logger.h"
 #include "srsran/support/bit_encoding.h"
@@ -457,7 +458,7 @@ bool gtpu_read_msg_error_indication(gtpu_msg_error_indication& error_indication,
   // Read TEID I
   read_ok &= gtpu_read_ie_type(ie_type, decoder, logger);
   if (ie_type != gtpu_information_element_type::tunnel_endpoint_identifier_data_i) {
-    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", ie_type);
+    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", fmt::underlying(ie_type));
     return false;
   }
   read_ok &= gtpu_read_ie_teid_i(error_indication.teid_i, decoder, logger);
@@ -465,7 +466,7 @@ bool gtpu_read_msg_error_indication(gtpu_msg_error_indication& error_indication,
   // Read GTP-U peer address
   read_ok &= gtpu_read_ie_type(ie_type, decoder, logger);
   if (ie_type != gtpu_information_element_type::gsn_address) {
-    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", ie_type);
+    logger.error("Unexpected or misplaced IE type in error indication. ie_type={}", fmt::underlying(ie_type));
     return false;
   }
   read_ok &= gtpu_read_ie_gtpu_peer_address(error_indication.gtpu_peer_address, decoder, logger);

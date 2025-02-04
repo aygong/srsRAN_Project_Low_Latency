@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,13 @@
 
 #include "lib/du/du_high/du_manager/ran_resource_management/du_pucch_resource_manager.h"
 #include "scheduler_test_doubles.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "srsran/adt/circular_array.h"
+#include "srsran/du/du_cell_config_helpers.h"
+#include "srsran/scheduler/result/sched_result.h"
 #include "srsran/scheduler/scheduler_factory.h"
+#include "srsran/srslog/srslog.h"
 #include "srsran/support/benchmark_utils.h"
 #include <getopt.h>
 
@@ -88,15 +92,16 @@ public:
     sch(create_scheduler(scheduler_config{expert_cfg, cfg_notif, metric_notif})),
     next_sl_tx(builder_params.scs_common, 0)
   {
-    du_cell_cfgs                                      = {config_helpers::make_default_du_cell_config(builder_params)};
-    du_cell_cfgs[0].pucch_cfg.f2_params.max_code_rate = max_pucch_code_rate::dot_35;
-    du_cell_cfgs[0].pucch_cfg.nof_csi_resources       = 4;
-    du_cell_cfgs[0].pucch_cfg.nof_sr_resources        = 2;
-    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f0_or_f1_res_harq = 3;
-    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f2_res_harq       = 6;
+    du_cell_cfgs = {config_helpers::make_default_du_cell_config(builder_params)};
+    std::get<srs_du::pucch_f2_params>(du_cell_cfgs[0].pucch_cfg.f2_or_f3_or_f4_params).max_code_rate =
+        max_pucch_code_rate::dot_35;
+    du_cell_cfgs[0].pucch_cfg.nof_csi_resources                    = 4;
+    du_cell_cfgs[0].pucch_cfg.nof_sr_resources                     = 2;
+    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f0_or_f1_res_harq       = 3;
+    du_cell_cfgs[0].pucch_cfg.nof_ue_pucch_f2_or_f3_or_f4_res_harq = 6;
 
     sched_cell_configuration_request_message cell_cfg_msg =
-        test_helpers::make_default_sched_cell_configuration_request(builder_params);
+        sched_config_helper::make_default_sched_cell_configuration_request(builder_params);
 
     cell_cfg_msg.pucch_guardbands = config_helpers::build_pucch_guardbands_list(
         du_cell_cfgs[0].pucch_cfg, cell_cfg_msg.ul_cfg_common.init_ul_bwp.generic_params.crbs.length());
@@ -109,7 +114,7 @@ public:
 
   void add_ue()
   {
-    sched_ue_creation_request_message ue_cfg_msg = test_helpers::create_default_sched_ue_creation_request(
+    sched_ue_creation_request_message ue_cfg_msg = sched_config_helper::create_default_sched_ue_creation_request(
         builder_params, {lcid_t::LCID_SRB2, lcid_t::LCID_MIN_DRB});
     ue_cfg_msg.ue_index           = to_du_ue_index(ue_count);
     ue_cfg_msg.crnti              = to_rnti(0x4601 + ue_count);

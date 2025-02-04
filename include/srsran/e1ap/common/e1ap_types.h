@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,12 +23,11 @@
 #pragma once
 
 #include "srsran/adt/byte_buffer.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/slotted_array.h"
 #include "srsran/pdcp/pdcp_config.h"
 #include "srsran/ran/cause/e1ap_cause.h"
 #include "srsran/ran/cu_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/up_transport_layer_info.h"
 #include "srsran/security/security.h"
 #include <cstdint>

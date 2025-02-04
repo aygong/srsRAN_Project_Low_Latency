@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -103,16 +103,19 @@ private:
 class ue_cell_configuration
 {
 public:
-  ue_cell_configuration(rnti_t                     crnti_,
-                        const cell_configuration&  cell_cfg_common_,
-                        const serving_cell_config& serv_cell_cfg_,
-                        bool                       multi_cells_configured = false);
+  ue_cell_configuration(rnti_t                                crnti_,
+                        const cell_configuration&             cell_cfg_common_,
+                        const serving_cell_config&            serv_cell_cfg_,
+                        const std::optional<meas_gap_config>& meas_gap_cfg_          = std::nullopt,
+                        bool                                  multi_cells_configured = false);
   ue_cell_configuration(const ue_cell_configuration& other);
   ue_cell_configuration(ue_cell_configuration&&)                 = delete;
   ue_cell_configuration& operator=(const ue_cell_configuration&) = delete;
   ue_cell_configuration& operator=(ue_cell_configuration&&)      = delete;
 
-  void reconfigure(const serving_cell_config& cell_cfg_ded_);
+  void reconfigure(const serving_cell_config&            cell_cfg_ded_,
+                   const std::optional<meas_gap_config>& meas_gaps = std::nullopt,
+                   const std::optional<drx_config>&      drx_cfg_  = std::nullopt);
 
   void set_rrm_config(const sched_ue_resource_alloc_config& ue_res_alloc_cfg);
 
@@ -122,7 +125,8 @@ public:
   /// Retrieve the parameters relative to the RRM of a UE in the scheduler.
   const sched_ue_resource_alloc_config& rrm_cfg() const { return ue_res_alloc_cfg; }
 
-  const serving_cell_config& cfg_dedicated() const { return cell_cfg_ded; }
+  const serving_cell_config&       cfg_dedicated() const { return cell_cfg_ded; }
+  const std::optional<drx_config>& get_drx_cfg() const { return drx_cfg; }
 
   /// Returns whether UE dedicated configuration is considered complete or not for scheduling the UE as a non-fallback
   /// UE.
@@ -136,7 +140,7 @@ public:
   const bwp_info& bwp(bwp_id_t bwp_id) const
   {
     const bwp_info* bwp = find_bwp(bwp_id);
-    srsran_assert(bwp != nullptr, "Invalid BWP-Id={} access", bwp_id);
+    srsran_assert(bwp != nullptr, "Invalid BWP-Id={} access", fmt::underlying(bwp_id));
     return *bwp;
   }
 
@@ -145,7 +149,7 @@ public:
   const coreset_configuration& coreset(coreset_id cs_id) const
   {
     const coreset_configuration* ret = find_coreset(cs_id);
-    srsran_assert(ret != nullptr, "Inexistent CORESET-Id={}", cs_id);
+    srsran_assert(ret != nullptr, "Inexistent CORESET-Id={}", fmt::underlying(cs_id));
     return *ret;
   }
 
@@ -159,6 +163,12 @@ public:
 
   /// Get the number of active DL ports for this UE.
   unsigned get_nof_dl_ports() const { return nof_dl_ports; }
+
+  /// Determines whether DL allocations are possible in the provided slot.
+  bool is_dl_enabled(slot_point dl_slot) const;
+
+  /// Determines whether UL allocations are possible in the provided slot.
+  bool is_ul_enabled(slot_point ul_slot) const;
 
   /// Determines the use of transform precoding for DCI Format 0_1 for C-RNTI.
   bool use_pusch_transform_precoding_dci_0_1() const
@@ -174,12 +184,12 @@ public:
     return cell_cfg_ded.ul_config->init_ul_bwp.pusch_cfg->trans_precoder == pusch_config::transform_precoder::enabled;
   }
 
-  /// \brief Gets the PUSCH transmit scheme codebook subset.
+  /// \brief Gets the PUSCH transmit scheme codebook configuration.
   ///
-  /// The codebook subset is selection procedure is described in TS 38.214 Section 6.1.1.1.
+  /// The codebook subset selection procedure is described in TS 38.214 Section 6.1.1.1.
   ///
   /// \remark An assertion is triggered if the transmission scheme is not present or not set to codebook.
-  tx_scheme_codebook_subset get_pusch_codebook_subset() const
+  const tx_scheme_codebook& get_pusch_codebook_config() const
   {
     srsran_assert(cell_cfg_ded.ul_config.has_value(), "Missing dedicated UL configuration.");
     srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.has_value(),
@@ -189,29 +199,19 @@ public:
     srsran_assert(std::holds_alternative<tx_scheme_codebook>(
                       cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value()),
                   "PUSCH Transmission scheme must be set to codebook.");
-    const auto& tx_config =
-        std::get<tx_scheme_codebook>(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value());
-    return tx_config.codebook_subset;
+    return std::get<tx_scheme_codebook>(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value());
   }
 
-  /// \brief Gets the PUSCH maximum number of layers.
-  ///
-  /// The maximum number of layers selection procedudre is described in TS 38.214 Section 6.1.1.1.
-  ///
-  /// \remark An assertion is triggered if the transmission scheme is not present or not set to codebook.
-  uint8_t get_pusch_max_rank() const
+  /// \brief Gets the SRS transmit number of ports.
+  /// \remark An assertion is triggered if no SRS resource is present.
+  const auto& get_srs_nof_ports() const
   {
     srsran_assert(cell_cfg_ded.ul_config.has_value(), "Missing dedicated UL configuration.");
-    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.has_value(),
-                  "Missing dedicated PUSCH configuration.");
-    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.has_value(),
-                  "Missing transmit configuration.");
-    srsran_assert(std::holds_alternative<tx_scheme_codebook>(
-                      cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value()),
-                  "PUSCH Transmission scheme must be set to codebook.");
-    const auto& tx_config =
-        std::get<tx_scheme_codebook>(cell_cfg_ded.ul_config.value().init_ul_bwp.pusch_cfg.value().tx_cfg.value());
-    return tx_config.max_rank.to_uint();
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.srs_cfg.has_value(),
+                  "Missing dedicated SRS configuration.");
+    srsran_assert(cell_cfg_ded.ul_config.value().init_ul_bwp.srs_cfg.value().srs_res_list.size() == 1,
+                  "SRS resource list size must be one.");
+    return cell_cfg_ded.ul_config.value().init_ul_bwp.srs_cfg.value().srs_res_list.front().nof_ports;
   }
 
 private:
@@ -221,8 +221,10 @@ private:
   void configure_bwp_ded_cfg(bwp_id_t bwpid, const bwp_uplink_dedicated& bwp_ul_ded);
 
   /// Dedicated cell configuration.
-  serving_cell_config cell_cfg_ded;
-  bool                multi_cells_configured;
+  serving_cell_config            cell_cfg_ded;
+  std::optional<meas_gap_config> meas_gap_cfg;
+  std::optional<drx_config>      drx_cfg;
+  bool                           multi_cells_configured;
 
   /// Lookup table for BWP params indexed by BWP-Id.
   std::array<bwp_info, MAX_NOF_BWPS> bwp_table = {};
@@ -273,7 +275,7 @@ public:
   /// Get the configuration of a cell that is common to all UEs.
   const cell_configuration& common_cell_cfg(du_cell_index_t cell_index) const
   {
-    srsran_assert(du_cells.contains(cell_index), "Invalid cell_index={}", cell_index);
+    srsran_assert(du_cells.contains(cell_index), "Invalid cell_index={}", fmt::underlying(cell_index));
     return du_cells[cell_index]->cell_cfg_common;
   }
   const cell_configuration& pcell_common_cfg() const
@@ -284,12 +286,13 @@ public:
   /// Get the configuration of a cell that is dedicated to the UE.
   const ue_cell_configuration& ue_cell_cfg(du_cell_index_t cell_index) const
   {
-    srsran_assert(du_cells.contains(cell_index), "Invalid cell_index={}", cell_index);
+    srsran_assert(du_cells.contains(cell_index), "Invalid cell_index={}", fmt::underlying(cell_index));
     return *du_cells[cell_index];
   }
   const ue_cell_configuration& ue_cell_cfg(ue_cell_index_t ue_cell_index) const
   {
-    srsran_assert(ue_cell_index < ue_cell_to_du_cell_index.size(), "Invalid cell_index={}", ue_cell_index);
+    srsran_assert(
+        ue_cell_index < ue_cell_to_du_cell_index.size(), "Invalid cell_index={}", fmt::underlying(ue_cell_index));
     return ue_cell_cfg(ue_cell_to_du_cell_index[ue_cell_index]);
   }
   const ue_cell_configuration& pcell_cfg() const { return ue_cell_cfg(to_ue_cell_index(0)); }
@@ -304,18 +307,21 @@ public:
   /// \remark UE can be scheduled in fallback scheduler even if UE does not have a complete configuration.
   bool is_ue_cfg_complete() const;
 
+  /// Get DRX configuration for the UE cell group.
+  const std::optional<drx_config>& drx_cfg() const { return ue_drx_cfg; }
+
 private:
   // List of configured logical channels
   std::vector<logical_channel_config> lc_list;
-
-  // List of QoS and slice information for DRBs.
-  std::vector<sched_drb_info> drb_qos_list;
 
   // List of cells configured for a UE.
   slotted_id_vector<du_cell_index_t, std::unique_ptr<ue_cell_configuration>> du_cells;
 
   // Mapping of UE Cell indexes to DU cell indexes.
   std::vector<du_cell_index_t> ue_cell_to_du_cell_index;
+
+  // DRX config for the UE cell group.
+  std::optional<drx_config> ue_drx_cfg;
 };
 
 } // namespace srsran

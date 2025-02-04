@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -235,6 +235,31 @@ bool srsran::test_helpers::is_valid_paging(const f1ap_message& msg)
   TRUE_OR_RETURN(msg.pdu.type() == asn1::f1ap::f1ap_pdu_c::types_opts::init_msg);
   TRUE_OR_RETURN(msg.pdu.init_msg().proc_code == ASN1_F1AP_ID_PAGING);
   TRUE_OR_RETURN(is_packable(msg));
+
+  return true;
+}
+
+bool srsran::test_helpers::is_valid_f1_reset_ack(const f1ap_message& msg)
+{
+  TRUE_OR_RETURN(msg.pdu.type().value == asn1::f1ap::f1ap_pdu_c::types_opts::successful_outcome);
+  TRUE_OR_RETURN(msg.pdu.successful_outcome().value.type().value ==
+                 asn1::f1ap::f1ap_elem_procs_o::successful_outcome_c::types_opts::reset_ack);
+  return true;
+}
+
+bool srsran::test_helpers::is_valid_f1_reset_ack(const f1ap_message& req, const f1ap_message& resp)
+{
+  TRUE_OR_RETURN(is_valid_f1_reset_ack(resp));
+
+  const auto& reset = req.pdu.init_msg().value.reset();
+
+  const reset_ack_s& ack = resp.pdu.successful_outcome().value.reset_ack();
+  TRUE_OR_RETURN(ack->transaction_id == reset->transaction_id);
+  if (reset->reset_type.type().value == reset_type_c::types_opts::f1_interface) {
+    TRUE_OR_RETURN(not ack->ue_associated_lc_f1_conn_list_res_ack_present);
+  } else if (reset->reset_type.type().value == reset_type_c::types_opts::part_of_f1_interface) {
+    TRUE_OR_RETURN(ack->ue_associated_lc_f1_conn_list_res_ack_present);
+  }
 
   return true;
 }

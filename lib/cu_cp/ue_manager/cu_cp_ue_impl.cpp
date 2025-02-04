@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -62,6 +62,7 @@ cu_cp_ue::cu_cp_ue(ue_index_t                     ue_index_,
 
   rrc_ue_cu_cp_ue_ev_notifier.connect_ue(*this);
   ngap_cu_cp_ue_ev_notifier.connect_ue(*this);
+  nrppa_cu_cp_ue_ev_notifier.connect_ue(*this);
 }
 
 /// \brief Update a UE with PCI and/or C-RNTI.

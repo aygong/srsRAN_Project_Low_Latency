@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #include "srsran/phy/upper/vrb_to_prb_mapper.h"
 #include "srsran/adt/span.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include <numeric>
 
 using namespace srsran;

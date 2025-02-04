@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -19,13 +19,6 @@
 #
 
 set(SOURCES
-        dl_logical_channel_manager.cpp
-        ul_logical_channel_manager.cpp
-        ta_manager.cpp
-        ue_channel_state_manager.cpp
-        ue_link_adaptation_controller.cpp
-        ue.cpp
-        ue_cell.cpp
         ue_cell_grid_allocator.cpp
         ue_event_manager.cpp
         ue_fallback_scheduler.cpp

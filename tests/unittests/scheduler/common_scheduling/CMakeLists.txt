@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -28,8 +28,10 @@ target_link_libraries(common_scheduler_test
         srsran_sched
         srslog
         sched_config
+        sched_config_manager
         mac_configuration_helpers
         scheduler_test_suite
+        sched_test_doubles
         gtest
         gtest_main)
 add_test(common_scheduler_test common_scheduler_test)

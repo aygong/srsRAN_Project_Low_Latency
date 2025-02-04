@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -37,8 +37,8 @@ protected:
     run_f1_setup_procedure();
     du_ue_index_t ue_index = to_du_ue_index(test_rgen::uniform_int<unsigned>(0, MAX_DU_UE_INDEX));
     test_ue                = run_f1ap_ue_create(ue_index);
-    f1ap_message msg =
-        test_helpers::create_ue_context_setup_request(gnb_cu_ue_f1ap_id_t{0}, gnb_du_ue_f1ap_id_t{0}, 1, {});
+    f1ap_message msg       = test_helpers::create_ue_context_setup_request(
+        gnb_cu_ue_f1ap_id_t{0}, gnb_du_ue_f1ap_id_t{0}, 1, {}, config_helpers::make_default_du_cell_config().nr_cgi);
     run_ue_context_setup_procedure(ue_index, msg);
   }
 
@@ -87,11 +87,11 @@ TEST_F(f1ap_du_ue_context_release_test,
   }
 
   // F1AP sends UE CONTEXT SETUP RESPONSE to CU-CP.
-  ASSERT_EQ(this->f1c_gw.last_tx_f1ap_pdu.pdu.type().value, f1ap_pdu_c::types_opts::successful_outcome);
-  ASSERT_EQ(this->f1c_gw.last_tx_f1ap_pdu.pdu.successful_outcome().value.type().value,
+  ASSERT_EQ(this->f1c_gw.last_tx_pdu().pdu.type().value, f1ap_pdu_c::types_opts::successful_outcome);
+  ASSERT_EQ(this->f1c_gw.last_tx_pdu().pdu.successful_outcome().value.type().value,
             f1ap_elem_procs_o::successful_outcome_c::types_opts::ue_context_release_complete);
-  ue_context_release_complete_s& resp =
-      this->f1c_gw.last_tx_f1ap_pdu.pdu.successful_outcome().value.ue_context_release_complete();
+  const ue_context_release_complete_s& resp =
+      this->f1c_gw.last_tx_pdu().pdu.successful_outcome().value.ue_context_release_complete();
   ASSERT_EQ(resp->gnb_du_ue_f1ap_id, (uint64_t)*test_ue->gnb_du_ue_f1ap_id);
   ASSERT_EQ(resp->gnb_cu_ue_f1ap_id, (uint64_t)*test_ue->gnb_cu_ue_f1ap_id);
 }

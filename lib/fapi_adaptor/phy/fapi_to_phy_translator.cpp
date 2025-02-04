@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #include "fapi_to_phy_translator.h"
+#include "srsran/adt/expected.h"
 #include "srsran/fapi/message_builders.h"
 #include "srsran/fapi_adaptor/phy/messages/csi_rs.h"
 #include "srsran/fapi_adaptor/phy/messages/pdcch.h"
@@ -44,15 +45,15 @@ using namespace fapi_adaptor;
 
 namespace {
 
-class downlink_processor_dummy : public downlink_processor
+class downlink_processor_dummy : public unique_downlink_processor::downlink_processor_callback
 {
 public:
   void process_pdcch(const pdcch_processor::pdu_t& pdu) override
   {
     srslog::fetch_basic_logger("FAPI").warning("Could not enqueue PDCCH PDU in the downlink processor");
   }
-  void process_pdsch(const static_vector<span<const uint8_t>, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS>& data,
-                     const pdsch_processor::pdu_t&                                                        pdu) override
+  void process_pdsch(static_vector<shared_transport_block, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS> data,
+                     const pdsch_processor::pdu_t&                                                    pdu) override
   {
     srslog::fetch_basic_logger("FAPI").warning("Could not enqueue PDSCH PDU in the downlink processor");
   }
@@ -63,10 +64,6 @@ public:
   void process_nzp_csi_rs(const nzp_csi_rs_generator::config_t& config) override
   {
     srslog::fetch_basic_logger("FAPI").warning("Could not enqueue NZP-CSI-RS PDU in the downlink processor");
-  }
-  bool configure_resource_grid(const resource_grid_context& context, shared_resource_grid grid) override
-  {
-    return true;
   }
   void finish_processing_pdus() override {}
 };
@@ -106,8 +103,8 @@ fapi_to_phy_translator::fapi_to_phy_translator(const fapi_to_phy_translator_conf
   error_notifier(dummy_error_notifier),
   scs(config.scs),
   scs_common(config.scs_common),
-  prach_cfg(*config.prach_cfg),
-  carrier_cfg(*config.carrier_cfg),
+  prach_cfg(config.prach_cfg),
+  carrier_cfg(config.carrier_cfg),
   prach_ports(config.prach_ports.begin(), config.prach_ports.end())
 {
   srsran_assert(pm_repo, "Invalid precoding matrix repository");
@@ -115,37 +112,32 @@ fapi_to_phy_translator::fapi_to_phy_translator(const fapi_to_phy_translator_conf
   srsran_assert(!prach_ports.empty(), "The PRACH ports must not be empty.");
 }
 
-fapi_to_phy_translator::slot_based_upper_phy_controller::slot_based_upper_phy_controller() :
-  dl_processor(dummy_dl_processor)
-{
-}
-
 fapi_to_phy_translator::slot_based_upper_phy_controller::slot_based_upper_phy_controller(
     downlink_processor_pool& dl_processor_pool,
     resource_grid_pool&      rg_pool,
     slot_point               slot_,
     unsigned                 sector_id) :
-  slot(slot_), dl_processor(dl_processor_pool.get_processor(slot_, 0))
+  slot(slot_)
 {
   resource_grid_context context = {slot_, sector_id};
   // Grab the resource grid.
-  // FIXME: 0 is hardcoded as the sector as in this implementation there is one DU per sector, so each DU have its own
-  // resource grid pool and downlink processor pool. It is also in the previous get processor call of the downlink
-  // processor pool
-  shared_resource_grid grid = rg_pool.allocate_resource_grid({slot_, 0});
+  shared_resource_grid grid = rg_pool.allocate_resource_grid(slot_);
 
   // If the resource grid is not valid, all DL transmissions for this slot shall be discarded.
   if (!grid) {
-    dl_processor = dummy_dl_processor;
+    dl_processor = unique_downlink_processor(dummy_dl_processor);
     return;
   }
 
+  // Obtain the downlink processor controller associated with the given slot.
+  downlink_processor_controller& dl_proc_controller = dl_processor_pool.get_processor_controller(slot);
+
   // Configure the downlink processor.
-  bool success = dl_processor.get().configure_resource_grid(context, std::move(grid));
+  dl_processor = dl_proc_controller.configure_resource_grid(context, std::move(grid));
 
   // Swap the DL processor with a dummy if it failed to configure the resource grid.
-  if (!success) {
-    dl_processor = dummy_dl_processor;
+  if (!dl_processor.is_valid()) {
+    dl_processor = unique_downlink_processor(dummy_dl_processor);
   }
 }
 
@@ -161,7 +153,7 @@ fapi_to_phy_translator::slot_based_upper_phy_controller::operator=(
 
 fapi_to_phy_translator::slot_based_upper_phy_controller::~slot_based_upper_phy_controller()
 {
-  dl_processor.get().finish_processing_pdus();
+  dl_processor = unique_downlink_processor(dummy_dl_processor);
 }
 
 namespace {
@@ -272,9 +264,11 @@ static expected<downlink_pdus> translate_dl_tti_pdus_to_phy_pdus(const fapi::dl_
       case fapi::dl_pdu_type::PDSCH: {
         pdsch_processor::pdu_t& pdsch_pdu = pdus.pdsch.emplace_back();
         convert_pdsch_fapi_to_phy(pdsch_pdu, pdu.pdsch_pdu, msg.sfn, msg.slot, csi_re_patterns, pm_repo);
-        if (!dl_pdu_validator.is_valid(pdsch_pdu)) {
-          logger.warning("Upper PHY flagged a PDSCH PDU as having an invalid configuration. Skipping DL_TTI.request");
-
+        error_type<std::string> phy_pdsch_validator = dl_pdu_validator.is_valid(pdsch_pdu);
+        if (!phy_pdsch_validator.has_value()) {
+          logger.warning(
+              "Skipping DL_TTI.request: PDSCH PDU flagged as invalid by the Upper PHY with the following error\n    {}",
+              phy_pdsch_validator.error());
           return make_unexpected(default_error_t{});
         }
         break;
@@ -425,9 +419,12 @@ static expected<uplink_pdus> translate_ul_tti_pdus_to_phy_pdus(const fapi::ul_tt
       case fapi::ul_pdu_type::PRACH: {
         prach_buffer_context& context = pdus.prach.emplace_back();
         convert_prach_fapi_to_phy(context, pdu.prach_pdu, prach_cfg, carrier_cfg, ports, msg.sfn, msg.slot, sector_id);
-        if (!ul_pdu_validator.is_valid(get_prach_dectector_config_from(context))) {
-          logger.warning(
-              "Upper PHY flagged a PRACH PDU as having an invalid configuration. Skipping UL_TTI.request in slot");
+        error_type<std::string> phy_prach_validation =
+            ul_pdu_validator.is_valid(get_prach_dectector_config_from(context));
+        if (!phy_prach_validation.has_value()) {
+          logger.warning("Skipping UL_TTI.request in slot: PRACH PDU flagged as invalid by the Upper PHY with the "
+                         "following error\n    {}",
+                         phy_prach_validation.error());
 
           return make_unexpected(default_error_t{});
         }
@@ -462,10 +459,11 @@ static expected<uplink_pdus> translate_ul_tti_pdus_to_phy_pdus(const fapi::ul_tt
       }
       case fapi::ul_pdu_type::SRS: {
         uplink_processor::srs_pdu& ul_pdu = pdus.srs.emplace_back();
-        convert_srs_fapi_to_phy(ul_pdu, pdu.srs_pdu, msg.sfn, msg.slot);
-        if (!ul_pdu_validator.is_valid(ul_pdu.config)) {
-          logger.warning("Upper PHY flagged a SRS PDU as having an invalid configuration. Skipping UL_TTI.request");
-
+        convert_srs_fapi_to_phy(ul_pdu, pdu.srs_pdu, carrier_cfg.num_rx_ant, msg.sfn, msg.slot);
+        error_type<std::string> srs_validation = ul_pdu_validator.is_valid(ul_pdu.config);
+        if (!srs_validation.has_value()) {
+          logger.warning("Skipping UL_TTI.request: SRS PDU flagged as invalid with the following error\n    {}",
+                         srs_validation.error());
           return make_unexpected(default_error_t{});
         }
         break;
@@ -537,10 +535,7 @@ void fapi_to_phy_translator::ul_tti_request(const fapi::ul_tti_request_message& 
   rg_context.slot   = slot;
   rg_context.sector = sector_id;
 
-  // Get ul_resource_grid.
-  resource_grid_context pool_context = rg_context;
-  pool_context.sector                = 0;
-  shared_resource_grid ul_rg         = ul_rg_pool.allocate_resource_grid(pool_context);
+  shared_resource_grid ul_rg = ul_rg_pool.allocate_resource_grid(slot);
 
   // Abort UL processing for this slot if the resource grid is not available.
   if (!ul_rg) {
@@ -658,13 +653,10 @@ void fapi_to_phy_translator::tx_data_request(const fapi::tx_data_request_message
 
   slot_based_upper_phy_controller& controller = slot_controller_mngr.get_controller(slot);
   for (unsigned i = 0, e = msg.pdus.size(); i != e; ++i) {
-    // Get transport block data.
-    static_vector<span<const uint8_t>, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS> data;
-    const fapi::tx_data_req_pdu&                                                  pdu = msg.pdus[i];
-    data.emplace_back(pdu.tlv_custom.payload, pdu.tlv_custom.length.value());
-
     // Process PDSCH.
-    controller->process_pdsch(data, pdsch_repository.pdus[i]);
+    controller->process_pdsch(
+        static_vector<shared_transport_block, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS>{msg.pdus[i].pdu},
+        pdsch_repository.pdus[i]);
   }
 
   slot_controller_mngr.release_controller(slot);

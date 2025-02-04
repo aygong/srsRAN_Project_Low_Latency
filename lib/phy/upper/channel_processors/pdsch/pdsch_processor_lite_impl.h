@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -19,20 +19,21 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #pragma once
 
 #include "pdsch_codeblock_processor.h"
 #include "srsran/phy/support/resource_grid_mapper.h"
 #include "srsran/phy/upper/channel_coding/ldpc/ldpc_encoder.h"
 #include "srsran/phy/upper/channel_coding/ldpc/ldpc_rate_matcher.h"
+#include "srsran/phy/upper/channel_coding/ldpc/ldpc_segmenter_buffer.h"
 #include "srsran/phy/upper/channel_coding/ldpc/ldpc_segmenter_tx.h"
 #include "srsran/phy/upper/channel_modulation/modulation_mapper.h"
-#include "srsran/phy/upper/channel_processors/pdsch/pdsch_encoder.h"
 #include "srsran/phy/upper/channel_processors/pdsch/pdsch_processor.h"
 #include "srsran/phy/upper/sequence_generators/pseudo_random_generator.h"
 #include "srsran/phy/upper/signal_processors/dmrs_pdsch_processor.h"
+#include "srsran/phy/upper/signal_processors/ptrs/ptrs_pdsch_generator.h"
 #include "srsran/ran/pdsch/pdsch_constants.h"
-#include "srsran/srsvec/bit.h"
 
 namespace srsran {
 
@@ -80,8 +81,12 @@ private:
   pseudo_random_generator& scrambler;
   /// Modulation mapper.
   modulation_mapper& modulator;
-  /// Buffer for storing data segments obtained after transport block segmentation.
-  static_vector<described_segment, MAX_NOF_SEGMENTS> d_segments;
+  /// Pointer to an LDPC segmenter output buffer interface.
+  const ldpc_segmenter_buffer* segment_buffer;
+  /// \brief Temporary codeblock message.
+  ///
+  /// It contains codeblock information bits, codeblock CRC (if applicable) and filler bits.
+  static_bit_buffer<ldpc::MAX_CODEBLOCK_SIZE> cb_data;
   /// Temporary packed bits.
   static_bit_buffer<ldpc::MAX_CODEBLOCK_RM_SIZE> temp_codeblock;
   /// Current transmission modulation.
@@ -92,6 +97,10 @@ private:
   std::array<ci8_t, ldpc::MAX_CODEBLOCK_RM_SIZE> temp_codeblock_symbols;
   /// Current view of the codeblock modulated symbols.
   span<ci8_t> codeblock_symbols;
+  /// Codeblock size. It includes information, CRC, and filler bits.
+  units::bits cb_size;
+  /// Local pointer to the input data.
+  span<const uint8_t> transport_block;
 
   /// Processes a new codeblock and writes the new data in \ref temp_codeblock_symbols.
   void new_codeblock();
@@ -107,32 +116,33 @@ public:
                             std::unique_ptr<ldpc_rate_matcher>       rate_matcher_,
                             std::unique_ptr<pseudo_random_generator> scrambler_,
                             std::unique_ptr<modulation_mapper>       modulator_,
-                            std::unique_ptr<dmrs_pdsch_processor>    dmrs_) :
+                            std::unique_ptr<dmrs_pdsch_processor>    dmrs_,
+                            std::unique_ptr<ptrs_pdsch_generator>    ptrs_,
+                            std::unique_ptr<resource_grid_mapper>    mapper_) :
     segmenter(std::move(segmenter_)),
     encoder(std::move(encoder_)),
     rate_matcher(std::move(rate_matcher_)),
     scrambler(std::move(scrambler_)),
     modulator(std::move(modulator_)),
     dmrs(std::move(dmrs_)),
+    ptrs(std::move(ptrs_)),
+    mapper(std::move(mapper_)),
     subprocessor(*segmenter, *encoder, *rate_matcher, *scrambler, *modulator)
   {
     srsran_assert(segmenter != nullptr, "Invalid segmenter pointer.");
     srsran_assert(scrambler != nullptr, "Invalid scrambler pointer.");
     srsran_assert(dmrs != nullptr, "Invalid dmrs pointer.");
+    srsran_assert(ptrs != nullptr, "Invalid ptrs pointer.");
+    srsran_assert(mapper != nullptr, "Invalid resource grid mapper pointer.");
   }
 
   // See interface for documentation.
-  void process(resource_grid_mapper&                                        mapper,
-               pdsch_processor_notifier&                                    notifier,
-               static_vector<span<const uint8_t>, MAX_NOF_TRANSPORT_BLOCKS> data,
-               const pdu_t&                                                 pdu) override;
+  void process(resource_grid_writer&                                           grid,
+               pdsch_processor_notifier&                                       notifier,
+               static_vector<shared_transport_block, MAX_NOF_TRANSPORT_BLOCKS> data,
+               const pdu_t&                                                    pdu) override;
 
 private:
-  /// \brief Processes DM-RS.
-  /// \param[out] mapper Resource grid mapper interface.
-  /// \param[in]  pdu Necessary parameters to process the DM-RS.
-  void process_dmrs(resource_grid_mapper& mapper, const pdu_t& pdu);
-
   /// Pointer to an LDPC segmenter.
   std::unique_ptr<ldpc_segmenter_tx> segmenter;
   /// Pointer to an LDPC encoder.
@@ -145,6 +155,10 @@ private:
   std::unique_ptr<modulation_mapper> modulator;
   /// Pointer to DM-RS processor.
   std::unique_ptr<dmrs_pdsch_processor> dmrs;
+  /// Pointer to PT-RS generator.
+  std::unique_ptr<ptrs_pdsch_generator> ptrs;
+  /// Pointer to resource grid mapper.
+  std::unique_ptr<resource_grid_mapper> mapper;
   /// Internal block processor.
   pdsch_block_processor subprocessor;
 };

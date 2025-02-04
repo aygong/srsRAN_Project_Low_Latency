@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "ldpc_base_graph.h"
+#include "srsran/ran/sch/ldpc_base_graph.h"
 #include "srsran/support/units.h"
 
 namespace srsran {

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,9 @@
 
 #include "srsran/cu_up/cu_up_executor_mapper.h"
 #include "srsran/adt/mpmc_queue.h"
-#include "srsran/srslog/srslog.h"
+#include "srsran/support/async/async_no_op_task.h"
 #include "srsran/support/async/execute_on.h"
+#include "srsran/support/async/execute_on_blocking.h"
 #include "srsran/support/executors/inline_task_executor.h"
 #include "srsran/support/executors/strand_executor.h"
 #include <variant>
@@ -37,28 +38,20 @@ namespace {
 class cancellable_task_executor final : public task_executor
 {
 public:
-  cancellable_task_executor(task_executor& exec_) : exec(&exec_) {}
+  cancellable_task_executor(task_executor& exec_, const std::atomic<bool>& cancelled_flag, timer_manager& timers_) :
+    exec(&exec_), cancelled(cancelled_flag), timers(timers_)
+  {
+  }
 
-  /// Note: This needs to be called from within the executor's context.
   ~cancellable_task_executor() override
   {
-    // cancel pending tasks.
-    *cancelled = true;
-
-    // extend life-time of cancelled flag by moving it into an executor.
-    while (not exec->defer([flag_moved = std::move(cancelled)]() mutable {
-      // flag is finally destroyed.
-      flag_moved.reset();
-    })) {
-      srslog::fetch_basic_logger("ALL").warning("Unable to dispatch UE task executor deletion. Retrying...");
-      std::this_thread::sleep_for(std::chrono::microseconds{100});
-    }
+    srsran_assert(cancelled, "cancellable_task_executor destroyed before tasks being cancelled");
   }
 
   [[nodiscard]] bool execute(unique_task task) override
   {
-    return exec->execute([&cancelled_ref = *cancelled, task = std::move(task)]() {
-      if (cancelled_ref) {
+    return exec->execute([this, task = std::move(task)]() {
+      if (cancelled.load(std::memory_order_acquire)) {
         return;
       }
       task();
@@ -67,17 +60,24 @@ public:
 
   [[nodiscard]] bool defer(unique_task task) override
   {
-    return exec->defer([&cancelled_ref = *cancelled, task = std::move(task)]() {
-      if (cancelled_ref) {
+    return exec->defer([this, task = std::move(task)]() {
+      if (cancelled.load(std::memory_order_acquire)) {
         return;
       }
       task();
     });
   }
 
+  auto defer_on()
+  {
+    // We use the underlying executor to ignore cancelled flag.
+    return defer_on_blocking(*exec, timers);
+  }
+
 private:
-  task_executor*        exec;
-  std::unique_ptr<bool> cancelled = std::make_unique<bool>(false);
+  task_executor*           exec;
+  const std::atomic<bool>& cancelled;
+  timer_manager&           timers;
 };
 
 /// Implementation of the UE executor mapper.
@@ -88,45 +88,53 @@ public:
                           task_executor& ul_exec_,
                           task_executor& dl_exec_,
                           task_executor& crypto_exec_,
-                          task_executor& main_exec_) :
-    ctrl_exec(ctrl_exec_), ul_exec(ul_exec_), dl_exec(dl_exec_), crypto_exec(crypto_exec_), main_exec(main_exec_)
+                          timer_manager& timers_) :
+    timers(timers_),
+    ctrl_exec(ctrl_exec_, cancelled_flag, timers),
+    ul_exec(ul_exec_, cancelled_flag, timers),
+    dl_exec(dl_exec_, cancelled_flag, timers),
+    crypto_exec(crypto_exec_)
   {
   }
 
-  ~ue_executor_mapper_impl() override = default;
+  ~ue_executor_mapper_impl() override
+  {
+    srsran_assert(cancelled_flag.load(std::memory_order_relaxed),
+                  "cancellable_task_executor destroyed before tasks being cancelled");
+  }
 
   async_task<void> stop() override
   {
     return launch_async([this](coro_context<async_task<void>>& ctx) mutable {
       CORO_BEGIN(ctx);
 
-      // Switch to the UE execution context.
-      CORO_AWAIT(defer_to_blocking(*ctrl_exec));
-
-      // Cancel all pending tasks.
-      // Note: this operation is only thread-safe because we are calling it from the UE executor's context.
-      ctrl_exec.reset();
-      ul_exec.reset();
-      dl_exec.reset();
-
-      // Return back to main control execution context.
-      CORO_AWAIT(defer_to_blocking(main_exec));
+      if (cancel_tasks()) {
+        // Await for tasks for the given UE to be completely flushed, before proceeding.
+        // TODO: Use when_all.
+        CORO_AWAIT(dl_exec.defer_on());
+        CORO_AWAIT(ul_exec.defer_on());
+        // Revert back to ctrl exec.
+        CORO_AWAIT(ctrl_exec.defer_on());
+      }
 
       CORO_RETURN();
     });
   }
 
-  task_executor& ctrl_executor() override { return *ctrl_exec; }
-  task_executor& ul_pdu_executor() override { return *ul_exec; }
-  task_executor& dl_pdu_executor() override { return *dl_exec; }
+  task_executor& ctrl_executor() override { return ctrl_exec; }
+  task_executor& ul_pdu_executor() override { return ul_exec; }
+  task_executor& dl_pdu_executor() override { return dl_exec; }
   task_executor& crypto_executor() override { return crypto_exec; }
 
 private:
-  std::optional<cancellable_task_executor> ctrl_exec;
-  std::optional<cancellable_task_executor> ul_exec;
-  std::optional<cancellable_task_executor> dl_exec;
-  task_executor&                           crypto_exec;
-  task_executor&                           main_exec;
+  bool cancel_tasks() { return not cancelled_flag.exchange(true, std::memory_order_acq_rel); }
+
+  std::atomic<bool>         cancelled_flag{false};
+  timer_manager&            timers;
+  cancellable_task_executor ctrl_exec;
+  cancellable_task_executor ul_exec;
+  cancellable_task_executor dl_exec;
+  task_executor&            crypto_exec;
 };
 
 struct base_cu_up_executor_pool_config {
@@ -135,12 +143,13 @@ struct base_cu_up_executor_pool_config {
   span<task_executor*> ul_executors;
   span<task_executor*> ctrl_executors;
   task_executor&       crypto_exec;
+  timer_manager&       timers;
 };
 
 class round_robin_cu_up_exec_pool
 {
 public:
-  round_robin_cu_up_exec_pool(base_cu_up_executor_pool_config config) : main_exec(config.main_exec)
+  round_robin_cu_up_exec_pool(base_cu_up_executor_pool_config config) : timers(config.timers)
   {
     srsran_assert(config.ctrl_executors.size() > 0, "At least one DL executor must be specified");
     if (config.dl_executors.empty()) {
@@ -166,7 +175,7 @@ public:
   {
     auto& ctxt = execs[round_robin_index.fetch_add(1, std::memory_order_relaxed) % execs.size()];
     return std::make_unique<ue_executor_mapper_impl>(
-        ctxt.ctrl_exec, ctxt.ul_exec, ctxt.dl_exec, ctxt.crypto_exec, main_exec);
+        ctxt.ctrl_exec, ctxt.ul_exec, ctxt.dl_exec, ctxt.crypto_exec, timers);
   }
 
 private:
@@ -186,7 +195,7 @@ private:
   };
 
   // Main executor of the CU-UP.
-  task_executor& main_exec;
+  timer_manager& timers;
 
   // List of UE executor mapper contexts created.
   std::vector<ue_executor_context> execs;
@@ -216,7 +225,7 @@ public:
 
   task_executor& ctrl_executor() override { return cu_up_strand; }
 
-  task_executor& io_ul_executor() override { return *io_ul_exec; }
+  task_executor& io_ul_executor() override { return *io_ul_exec_ptr; }
 
   task_executor& e2_executor() override { return cu_up_strand; }
 
@@ -227,7 +236,7 @@ public:
 
 private:
   using cu_up_strand_type        = task_strand<task_executor*, concurrent_queue_policy::lockfree_mpmc>;
-  using io_dedicated_strand_type = task_strand<cu_up_strand_type*, concurrent_queue_policy::lockfree_mpmc>;
+  using io_dedicated_strand_type = task_strand<task_executor*, concurrent_queue_policy::lockfree_mpmc>;
   using ue_strand_type           = priority_task_strand<cu_up_strand_type*>;
 
   base_cu_up_executor_pool_config create_strands(const strand_based_executor_config& config)
@@ -237,11 +246,11 @@ private:
 
     // Create IO executor that can be either inlined with CU-UP strand or its own strand.
     if (config.dedicated_io_strand) {
-      io_ul_strand.emplace<io_dedicated_strand_type>(&cu_up_strand, config.default_task_queue_size);
-      io_ul_exec = &std::get<io_dedicated_strand_type>(io_ul_strand);
+      io_ul_exec.emplace<io_dedicated_strand_type>(&config.worker_pool_executor, config.gtpu_task_queue_size);
+      io_ul_exec_ptr = &std::get<io_dedicated_strand_type>(io_ul_exec);
     } else {
-      io_ul_strand.emplace<inline_task_executor>();
-      io_ul_exec = &std::get<inline_task_executor>(io_ul_strand);
+      io_ul_exec.emplace<inline_task_executor>();
+      io_ul_exec_ptr = &std::get<inline_task_executor>(io_ul_exec);
     }
 
     // Create UE-dedicated strands.
@@ -260,15 +269,15 @@ private:
     }
 
     return base_cu_up_executor_pool_config{
-        cu_up_strand, ue_dl_execs, ue_ul_execs, ue_ctrl_execs, config.worker_pool_executor};
+        cu_up_strand, ue_dl_execs, ue_ul_execs, ue_ctrl_execs, config.worker_pool_executor, *config.timers};
   }
 
   // Base strand that sequentializes accesses to the worker pool executor.
   cu_up_strand_type cu_up_strand;
 
   // IO executor with two modes
-  std::variant<inline_task_executor, io_dedicated_strand_type> io_ul_strand;
-  task_executor*                                               io_ul_exec;
+  std::variant<inline_task_executor, io_dedicated_strand_type> io_ul_exec;
+  task_executor*                                               io_ul_exec_ptr;
 
   // UE strands and respective executors.
   std::vector<std::unique_ptr<ue_strand_type>> ue_strands;

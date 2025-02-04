@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,14 +20,12 @@
  *
  */
 
-#include "../../../support/resource_grid_test_doubles.h"
-#include "../../rx_buffer_test_doubles.h"
-#include "pusch_processor_result_test_doubles.h"
 #include "srsran/phy/upper/channel_processors/pusch/factories.h"
 #include "srsran/phy/upper/channel_processors/pusch/formatters.h"
 #include "srsran/phy/upper/equalization/equalization_factories.h"
 #include "fmt/ostream.h"
 #include "gtest/gtest.h"
+#include <regex>
 
 using namespace srsran;
 
@@ -104,7 +102,7 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        pdu.uci.csi_part2_size.entries.front().parameters.front().width = 10;
        return pdu;
      },
-     R"(CSI Part 1 UCI field length \(i\.e\., 0) does not correspond with the CSI Part 2)"},
+     R"(CSI Part 1 UCI field length \(i\.e\., 0\) does not correspond with the CSI Part 2 \(i\.e\., entries=\[params=\[offset=0 width=10\] map=\[1\]\]\)\.)"},
     {[] {
        pusch_processor::pdu_t pdu = base_pdu;
        pdu.dmrs_symbol_mask       = {true};
@@ -136,7 +134,7 @@ const std::vector<test_case_t> pusch_processor_validator_test_data = {
        pdu.nof_symbols        = 13;
        return pdu;
      },
-     R"(The index of the last OFDM symbol carrying DM-RS \(i\.e\., 13) must be less than or equal to the last symbol allocated to transmission \(i\.e\., 12\)\.)"},
+     R"(The index of the last OFDM symbol carrying DM-RS \(i\.e\., 13\) must be less than or equal to the last symbol allocated to transmission \(i\.e\., 12\)\.)"},
     {[] {
        pusch_processor::pdu_t pdu = base_pdu;
        pdu.start_symbol_index     = 0;
@@ -330,6 +328,12 @@ protected:
     pdu_validator = pusch_proc_factory->create_validator();
     ASSERT_NE(pdu_validator, nullptr);
   }
+
+  static void TearDownTestSuite()
+  {
+    pdu_validator.reset();
+    pusch_proc.reset();
+  }
 };
 
 std::unique_ptr<pusch_processor>     PuschProcessorFixture::pusch_proc;
@@ -343,24 +347,10 @@ TEST_P(PuschProcessorFixture, PuschProcessorValidatortest)
   const test_case_t& param = GetParam();
 
   // Make sure the configuration is invalid.
-  ASSERT_FALSE(pdu_validator->is_valid(param.get_pdu()));
-
-  // Prepare resource grid.
-  resource_grid_reader_spy grid;
-
-  // Prepare receive data.
-  std::vector<uint8_t> data;
-
-  // Prepare buffer.
-  rx_buffer_spy    rm_buffer_spy(ldpc::MAX_CODEBLOCK_SIZE, 0);
-  unique_rx_buffer rm_buffer(rm_buffer_spy);
-
-  // Process PUSCH PDU.
-#ifdef ASSERTS_ENABLED
-  pusch_processor_result_notifier_spy result_notifier_spy;
-  ASSERT_DEATH({ pusch_proc->process(data, std::move(rm_buffer), result_notifier_spy, grid, param.get_pdu()); },
-               param.expr);
-#endif // ASSERTS_ENABLED
+  error_type<std::string> validator_out = pdu_validator->is_valid(param.get_pdu());
+  ASSERT_FALSE(validator_out.has_value()) << "Validation should fail.";
+  ASSERT_TRUE(std::regex_match(validator_out.error(), std::regex(param.expr)))
+      << "The assertion message doesn't match the expected pattern.";
 }
 
 // Creates test suite that combines all possible parameters.

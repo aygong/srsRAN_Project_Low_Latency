@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,10 +23,10 @@
 #pragma once
 
 #include "srsran/adt/bounded_bitset.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/phy/constants.h"
 #include "srsran/phy/upper/vrb_to_prb_mapper.h"
+#include <optional>
 
 namespace srsran {
 
@@ -221,14 +221,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::rb_allocation> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::rb_allocation& rb_alloc, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::rb_allocation& rb_alloc, FormatContext& ctx) const
   {
     if (rb_alloc.is_contiguous()) {
       return format_to(

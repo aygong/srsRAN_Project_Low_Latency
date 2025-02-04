@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,8 +25,10 @@
 #include "pdcp_bearer_logger.h"
 #include "pdcp_entity_tx_rx_base.h"
 #include "pdcp_interconnect.h"
+#include "pdcp_metrics_aggregator.h"
 #include "pdcp_pdu.h"
 #include "pdcp_tx_metrics_impl.h"
+#include "pdcp_tx_window.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/byte_buffer_chain.h"
 #include "srsran/adt/expected.h"
@@ -69,8 +71,7 @@ class pdcp_entity_tx final : public pdcp_entity_tx_rx_base,
                              public pdcp_tx_status_handler,
                              public pdcp_tx_upper_data_interface,
                              public pdcp_tx_upper_control_interface,
-                             public pdcp_tx_lower_interface,
-                             public pdcp_tx_metrics
+                             public pdcp_tx_lower_interface
 {
 public:
   pdcp_entity_tx(uint32_t                        ue_index,
@@ -80,37 +81,13 @@ public:
                  pdcp_tx_upper_control_notifier& upper_cn_,
                  timer_factory                   ue_dl_timer_factory_,
                  task_executor&                  ue_dl_executor_,
-                 task_executor&                  crypto_executor_) :
-    pdcp_entity_tx_rx_base(rb_id_, cfg_.rb_type, cfg_.rlc_mode, cfg_.sn_size),
-    logger("PDCP", {ue_index, rb_id_, "DL"}),
-    cfg(cfg_),
-    lower_dn(lower_dn_),
-    upper_cn(upper_cn_),
-    ue_dl_timer_factory(ue_dl_timer_factory_),
-    ue_dl_executor(ue_dl_executor_),
-    crypto_executor(crypto_executor_),
-    tx_window(create_tx_window(cfg.sn_size))
-  {
-    // Validate configuration
-    if (is_srb() && (cfg.sn_size != pdcp_sn_size::size12bits)) {
-      report_error("PDCP SRB with invalid sn_size. {}", cfg);
-    }
-    if (is_srb() && is_um()) {
-      report_error("PDCP SRB cannot be used with RLC UM. {}", cfg);
-    }
-    if (is_srb() && cfg.discard_timer.has_value()) {
-      logger.log_error("Invalid SRB config with discard_timer={}", cfg.discard_timer);
-    }
-    if (is_drb() && !cfg.discard_timer.has_value()) {
-      logger.log_error("Invalid DRB config, discard_timer is not configured");
-    }
+                 task_executor&                  crypto_executor_,
+                 pdcp_metrics_aggregator&        metrics_agg_);
 
-    logger.log_info("PDCP configured. {}", cfg);
+  ~pdcp_entity_tx() override;
 
-    // TODO: implement usage of crypto_executor
-    (void)ue_dl_executor;
-    (void)crypto_executor;
-  }
+  /// \brief Stop handling SDUs and stop timers
+  void stop();
 
   /// \brief Triggers re-establishment as specified in TS 38.323, section 5.1.2
   void reestablish(security::sec_128_as_config sec_cfg) override;
@@ -121,12 +98,13 @@ public:
   /*
    * SDU/PDU handlers
    */
-  void handle_sdu(byte_buffer sdu) override;
+  void handle_sdu(byte_buffer buf) override;
 
   void handle_transmit_notification(uint32_t notif_sn) override;
   void handle_delivery_notification(uint32_t notif_sn) override;
   void handle_retransmit_notification(uint32_t notif_sn) override;
   void handle_delivery_retransmitted_notification(uint32_t notif_sn) override;
+  void handle_desired_buffer_size_notification(uint32_t desired_bs) override;
 
   /// \brief Evaluates a PDCP status report
   ///
@@ -145,7 +123,7 @@ public:
   /// \brief Writes the header of a PDCP data PDU according to the content of the associated object
   /// \param[out] buf Reference to a byte_buffer that is appended by the header bytes
   /// \param[in] hdr Reference to a pdcp_data_pdu_header that represents the header content
-  SRSRAN_NODISCARD bool write_data_pdu_header(byte_buffer& buf, const pdcp_data_pdu_header& hdr) const;
+  [[nodiscard]] bool write_data_pdu_header(byte_buffer& buf, const pdcp_data_pdu_header& hdr) const;
 
   /*
    * Testing helpers
@@ -158,7 +136,7 @@ public:
 
   const pdcp_tx_state& get_state() const { return st; };
 
-  uint32_t nof_discard_timers() { return st.tx_next - st.tx_next_ack; }
+  uint32_t nof_discard_timers() const { return st.tx_next - st.tx_next_ack; }
 
   /*
    * Security configuration
@@ -180,18 +158,20 @@ public:
   void retransmit_all_pdus();
 
 private:
-  pdcp_bearer_logger   logger;
-  const pdcp_tx_config cfg;
-
+  pdcp_bearer_logger              logger;
+  const pdcp_tx_config            cfg;
+  bool                            stopped         = false;
   pdcp_rx_status_provider*        status_provider = nullptr;
   pdcp_tx_lower_notifier&         lower_dn;
   pdcp_tx_upper_control_notifier& upper_cn;
   timer_factory                   ue_dl_timer_factory;
+  unique_timer                    metrics_timer;
 
   task_executor& ue_dl_executor;
   task_executor& crypto_executor;
 
-  pdcp_tx_state st = {};
+  pdcp_tx_state st                  = {};
+  uint32_t      desired_buffer_size = 0;
 
   std::unique_ptr<security::security_engine_tx> sec_engine;
 
@@ -202,7 +182,7 @@ private:
   void write_control_pdu_to_lower_layers(byte_buffer buf);
 
   /// Apply ciphering and integrity protection to the payload
-  expected<byte_buffer> apply_ciphering_and_integrity_protection(byte_buffer sdu_plus_header, uint32_t count);
+  expected<byte_buffer> apply_ciphering_and_integrity_protection(byte_buffer buf, uint32_t count);
 
   uint32_t notification_count_estimation(uint32_t notification_sn);
 
@@ -219,22 +199,13 @@ private:
   void discard_pdu(uint32_t count);
 
   /// \brief Discard timer information and, only for AM, a copy of the SDU for data recovery procedure.
-  struct pdcp_tx_sdu_info {
-    uint32_t     count;
-    byte_buffer  sdu;
-    unique_timer discard_timer;
-  };
+  pdcp_tx_window tx_window;
 
-  /// \brief Tx window.
-  /// This container is used to store discard timers of transmitted SDUs and, only for AM, a copy of the SDU for data
-  /// recovery procedure. Upon expiry of a discard timer, the PDCP Tx entity instructs the lower layers to discard the
-  /// associated PDCP PDU. See section 5.2.1 and 7.3 of TS 38.323.
-  std::unique_ptr<sdu_window<pdcp_tx_sdu_info>> tx_window;
+  /// \brief Get estimated size of a PDU from an SDU
+  uint32_t get_pdu_size(const byte_buffer& sdu);
 
-  /// Creates the tx_window according to sn_size
-  /// \param sn_size Size of the sequence number (SN)
-  /// \return unique pointer to tx_window instance
-  std::unique_ptr<sdu_window<pdcp_tx_sdu_info>> create_tx_window(pdcp_sn_size sn_size_);
+  pdcp_tx_metrics          metrics;
+  pdcp_metrics_aggregator& metrics_agg;
 
   class discard_callback;
 };
@@ -255,13 +226,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::pdcp_tx_state> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::pdcp_tx_state& st, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::pdcp_tx_state& st, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "tx_next_ack={} tx_trans={} tx_next={}", st.tx_next_ack, st.tx_trans, st.tx_next);
   }

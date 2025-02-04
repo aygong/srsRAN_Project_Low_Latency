@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,7 +29,6 @@
 
 namespace srsran {
 
-class resource_grid_mapper;
 class resource_grid_reader;
 class resource_grid_writer;
 
@@ -47,9 +46,6 @@ public:
 
   /// Gets the resource grid reader.
   virtual const resource_grid_reader& get_reader() const = 0;
-
-  /// Gets the resource grid mapper.
-  virtual resource_grid_mapper& get_mapper() = 0;
 };
 
 } // namespace srsran

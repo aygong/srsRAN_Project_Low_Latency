@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -69,6 +69,10 @@ std::ostream& operator<<(std::ostream& os, test_case_t test_case)
 }
 
 } // namespace srsran
+
+template <>
+struct fmt::formatter<srsran::ofdm_prach_demodulator::configuration> : ostream_formatter {
+};
 
 using namespace srsran;
 

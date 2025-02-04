@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -18,8 +18,8 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-add_library(rrc_test_doubles rrc_test_messages.cpp rrc_test_message_validators.cpp)
-set_target_properties(rrc_test_doubles PROPERTIES UNITY_BUILD ON)
-target_link_libraries(rrc_test_doubles rrc_nr_asn1 srsran_support srslog)
+include_directories(../../..)
 
-add_to_exported_libs(rrc_test_doubles)
+add_library(rrc_test_doubles rrc_test_messages.cpp rrc_test_message_validators.cpp rrc_packed_test_messages.cpp)
+set_target_properties(rrc_test_doubles PROPERTIES UNITY_BUILD ON)
+target_link_libraries(rrc_test_doubles rrc_nr_asn1 srsran_rrc srsran_support srslog)

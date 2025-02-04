@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,6 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
-#include "srsran/adt/slotted_array.h"
 #include "srsran/ran/band_helper.h"
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/ran/frame_types.h"
@@ -36,8 +34,8 @@
 #include "srsran/ran/resource_allocation/ofdm_symbol_range.h"
 #include "srsran/ran/resource_block.h"
 #include "srsran/scheduler/config/dmrs.h"
-#include "srsran/scheduler/vrb_alloc.h"
-#include <bitset>
+#include "srsran/scheduler/result/vrb_alloc.h"
+#include <optional>
 
 namespace srsran {
 

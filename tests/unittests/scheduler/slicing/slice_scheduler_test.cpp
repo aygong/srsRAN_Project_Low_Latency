@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,7 @@
 #include "lib/scheduler/slicing/slice_scheduler.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "tests/unittests/scheduler/test_utils/dummy_test_components.h"
+#include "srsran/scheduler/config/logical_channel_config_factory.h"
 #include "srsran/srslog/srslog.h"
 #include <gtest/gtest.h>
 
@@ -280,8 +281,9 @@ protected:
   static constexpr ran_slice_id_t drb2_slice_id{3};
 
   rb_ratio_slice_scheduler_test() :
-    slice_scheduler_test({{{plmn_identity::test_value(), s_nssai_t{1}}, MIN_SLICE_RB, MAX_SLICE_RB},
-                          {{plmn_identity::test_value(), s_nssai_t{2}}, MIN_SLICE_RB, MAX_SLICE_RB}})
+    slice_scheduler_test(
+        {{{plmn_identity::test_value(), s_nssai_t{slice_service_type{1}}}, MIN_SLICE_RB, MAX_SLICE_RB},
+         {{plmn_identity::test_value(), s_nssai_t{slice_service_type{2}}}, MIN_SLICE_RB, MAX_SLICE_RB}})
   {
   }
 
@@ -295,7 +297,7 @@ protected:
     req.starts_in_fallback  = false;
     if (lc_cfgs.size() == 0) {
       (*req.cfg.lc_config_list)[drb1_idx].rrm_policy.plmn_id = plmn_identity::test_value();
-      (*req.cfg.lc_config_list)[drb1_idx].rrm_policy.s_nssai = s_nssai_t{1};
+      (*req.cfg.lc_config_list)[drb1_idx].rrm_policy.s_nssai = s_nssai_t{slice_service_type{1}};
     } else {
       *req.cfg.lc_config_list = lc_cfgs;
     }
@@ -339,6 +341,7 @@ TEST_F(rb_ratio_slice_scheduler_test,
   run_slot();
 
   auto next_dl_slice = slice_sched.get_next_dl_candidate();
+  ASSERT_TRUE(next_dl_slice.has_value());
   // Default SRB slice has very high priority. We ignore it as candidate for this test.
   if (next_dl_slice->id() == default_srb_slice_id) {
     next_dl_slice = slice_sched.get_next_dl_candidate();
@@ -350,9 +353,6 @@ TEST_F(rb_ratio_slice_scheduler_test,
 
   // No more slices to schedule.
   next_dl_slice = slice_sched.get_next_dl_candidate();
-  if (next_dl_slice->id() == default_srb_slice_id) {
-    next_dl_slice = slice_sched.get_next_dl_candidate();
-  }
   ASSERT_FALSE(next_dl_slice.has_value());
 }
 
@@ -393,11 +393,14 @@ TEST_F(rb_ratio_slice_scheduler_test,
   run_slot();
 
   // High priority slices
-  auto next_dl_slice = slice_sched.get_next_dl_candidate();
-  ASSERT_EQ(next_dl_slice->id(), drb1_slice_id);
-  next_dl_slice->store_grant(MIN_SLICE_RB);
-  next_dl_slice = slice_sched.get_next_dl_candidate();
-  ASSERT_EQ(next_dl_slice->id(), default_srb_slice_id);
+  std::optional<dl_ran_slice_candidate> next_dl_slice;
+  for (unsigned i = 0; i != 2; ++i) {
+    next_dl_slice = slice_sched.get_next_dl_candidate();
+    ASSERT_TRUE(next_dl_slice->id() == drb1_slice_id or next_dl_slice->id() == default_srb_slice_id);
+    if (next_dl_slice->id() == drb1_slice_id) {
+      next_dl_slice->store_grant(MIN_SLICE_RB);
+    }
+  }
 
   // Lower priority candidates.
   next_dl_slice = slice_sched.get_next_dl_candidate();

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,6 @@
 #pragma once
 
 #include "srsran/adt/bounded_bitset.h"
-#include "srsran/adt/optional.h"
 #include "srsran/phy/upper/channel_estimation.h"
 #include "srsran/phy/upper/dmrs_mapping.h"
 #include "srsran/phy/upper/re_measurement.h"

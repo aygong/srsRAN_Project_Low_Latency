@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,6 @@
  */
 
 #include "lib/cu_cp/ue_manager/ue_manager_impl.h"
-#include "lib/ngap/ngap_asn1_helpers.h"
 #include "lib/ngap/ngap_error_indication_helper.h"
 #include "tests/unittests/ngap/test_helpers.h"
 #include "srsran/cu_cp/cu_cp_configuration_helpers.h"
@@ -29,6 +28,7 @@
 #include "srsran/ngap/ngap_configuration_helpers.h"
 #include "srsran/ngap/ngap_factory.h"
 #include "srsran/support/async/async_test_utils.h"
+#include "srsran/support/executors/inline_task_executor.h"
 #include "srsran/support/executors/manual_task_worker.h"
 #include "srsran/support/io/io_broker_factory.h"
 #include "srsran/support/timers.h"
@@ -49,7 +49,7 @@ public:
   ngap_network_adapter(const sctp_network_connector_config& nw_config_) :
     nw_config(nw_config_),
     epoll_broker(create_io_broker(io_broker_type::epoll)),
-    gw(create_sctp_network_gateway({nw_config, *this, *this}))
+    gw(create_sctp_network_gateway({nw_config, *this, *this, rx_executor}))
   {
     report_fatal_error_if_not(gw->create_and_connect(), "Failed to connect NGAP GW");
     if (!gw->subscribe_to(*epoll_broker)) {
@@ -75,7 +75,7 @@ public:
             return;
           }
         }
-        parent.gw->handle_pdu(std::move(pdu));
+        parent.gw->handle_pdu(pdu);
       }
 
     private:
@@ -107,6 +107,7 @@ private:
 
   /// We require a network gateway and a packer
   const sctp_network_connector_config&  nw_config;
+  inline_task_executor                  rx_executor;
   std::unique_ptr<io_broker>            epoll_broker;
   std::unique_ptr<sctp_network_gateway> gw;
 
@@ -133,15 +134,15 @@ protected:
       cu_cp_configuration cucfg     = config_helpers::make_default_cu_cp_config();
       cucfg.services.timers         = &timers;
       cucfg.services.cu_cp_executor = &ctrl_worker;
-      cucfg.ngaps.push_back(
-          cu_cp_configuration::ngap_params{adapter.get(), {{7, {{plmn_identity::test_value(), {{1}}}}}}});
+      cucfg.ngaps.push_back(cu_cp_configuration::ngap_params{
+          adapter.get(), {{7, {{plmn_identity::test_value(), {{slice_service_type{1}}}}}}}});
       return cucfg;
     }())
   {
-    cfg.gnb_id                    = cu_cp_cfg.node.gnb_id;
-    cfg.ran_node_name             = cu_cp_cfg.node.ran_node_name;
-    cfg.supported_tas             = cu_cp_cfg.ngaps.front().supported_tas;
-    cfg.pdu_session_setup_timeout = cu_cp_cfg.ue.pdu_session_setup_timeout;
+    cfg.gnb_id                      = cu_cp_cfg.node.gnb_id;
+    cfg.ran_node_name               = cu_cp_cfg.node.ran_node_name;
+    cfg.supported_tas               = cu_cp_cfg.ngaps.front().supported_tas;
+    cfg.request_pdu_session_timeout = cu_cp_cfg.ue.request_pdu_session_timeout;
   }
 
   void SetUp() override

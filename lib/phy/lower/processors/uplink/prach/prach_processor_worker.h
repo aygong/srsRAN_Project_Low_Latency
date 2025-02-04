@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -33,7 +33,6 @@
 #include "srsran/ran/phy_time_unit.h"
 #include "srsran/ran/prach/prach_constants.h"
 #include "srsran/srslog/srslog.h"
-#include "srsran/srsvec/aligned_vec.h"
 #include "srsran/support/executors/task_executor.h"
 
 namespace srsran {

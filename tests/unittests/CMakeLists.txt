@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -40,7 +40,6 @@ macro(ADD_TEST_VECTOR TARGET VECTOR_FILE TEST_ARGS)
                     POST_BUILD
                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_data
                     COMMAND ${CMAKE_COMMAND} -E tar xf ${CMAKE_CURRENT_SOURCE_DIR}/${VECTOR_FILE}
-                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${VECTOR_FILE}
                     VERBATIM)
         else (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${VECTOR_FILE})
             message(FATAL_ERROR "Vector file ${CMAKE_CURRENT_SOURCE_DIR}/${VECTOR_FILE} does not exist.")
@@ -69,18 +68,11 @@ add_subdirectory(gtpu)
 add_subdirectory(mac)
 add_subdirectory(ngap)
 add_subdirectory(nru)
-if (DU_SPLIT_7_2 OR DU_SPLIT_DYNAMIC)
-    add_subdirectory(ofh)
-endif ()
+add_subdirectory(ofh)
 add_subdirectory(pcap)
 add_subdirectory(pdcp)
-if (NOT DU_SPLIT_6)
-    add_subdirectory(phy)
-endif ()
-add_subdirectory(psup)
-if (DU_SPLIT_DYNAMIC OR DU_SPLIT_8)
-    add_subdirectory(radio)
-endif ()
+add_subdirectory(phy)
+add_subdirectory(radio)
 add_subdirectory(ran)
 add_subdirectory(rlc)
 add_subdirectory(rrc)

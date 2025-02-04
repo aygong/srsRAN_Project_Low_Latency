@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -33,7 +33,6 @@ namespace srs_du {
 struct du_qos_config {
   rlc_config         rlc;
   srs_du::f1u_config f1u;
-  mac_lc_config      mac;
 };
 
 } // namespace srs_du

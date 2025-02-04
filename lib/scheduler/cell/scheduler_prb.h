@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,7 @@
 #include "../support/rb_helper.h"
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/interval.h"
-#include "srsran/scheduler/vrb_alloc.h"
+#include "srsran/scheduler/result/vrb_alloc.h"
 
 namespace srsran {
 

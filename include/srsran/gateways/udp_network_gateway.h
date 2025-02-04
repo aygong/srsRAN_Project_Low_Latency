@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
 #include "srsran/gateways/network_gateway.h"
 #include "srsran/support/io/io_broker.h"
 #include <netdb.h>
@@ -33,8 +32,10 @@ struct sockaddr_storage;
 namespace srsran {
 
 struct udp_network_gateway_config : common_network_gateway_config {
-  unsigned rx_max_mmsg              = 256;
-  float    pool_occupancy_threshold = 0.9;
+  unsigned               rx_max_mmsg              = 256;
+  float                  pool_occupancy_threshold = 0.9;
+  std::optional<uint8_t> dscp;
+  std::string            ext_bind_addr = "auto";
 };
 
 /// Interface to inject PDUs into gateway entity.

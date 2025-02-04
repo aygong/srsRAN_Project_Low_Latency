@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,10 @@
 
 #pragma once
 
-#include "srsran/adt/optional.h"
-#include "srsran/mac/time_alignment_group_config.h"
 #include "srsran/ran/carrier_configuration.h"
+#include "srsran/ran/drx_config.h"
 #include "srsran/ran/du_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/ran/pci.h"
 #include "srsran/ran/phy_time_unit.h"
 #include "srsran/ran/prach/prach_constants.h"
@@ -42,13 +41,14 @@
 #include "srsran/ran/ssb_configuration.h"
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/ran/tdd/tdd_ul_dl_config.h"
+#include "srsran/ran/time_alignment_config.h"
 #include "srsran/scheduler/config/bwp_configuration.h"
 #include "srsran/scheduler/config/dmrs.h"
 #include "srsran/scheduler/config/logical_channel_config.h"
 #include "srsran/scheduler/config/serving_cell_config.h"
 #include "srsran/scheduler/config/si_scheduling_config.h"
 #include "srsran/scheduler/config/slice_rrm_policy_config.h"
-#include "srsran/scheduler/scheduler_dci.h"
+#include "srsran/scheduler/result/dci_info.h"
 
 namespace srsran {
 
@@ -131,18 +131,6 @@ struct sched_ue_resource_alloc_config {
   rrm_policy_ratio_group rrm_policy_group;
 };
 
-/// QoS and slicing information associated with a DRB provided to the scheduler.
-struct sched_drb_info {
-  /// Logical Channel ID.
-  lcid_t lcid;
-  /// Single Network Slice Selection Assistance Information (S-NSSAI).
-  s_nssai_t s_nssai;
-  /// QoS characteristics associated with the logical channel.
-  standardized_qos_characteristics qos_info;
-  /// QoS information present only for GBR QoS flows.
-  std::optional<gbr_qos_flow_information> gbr_qos_info;
-};
-
 /// Request for a new UE configuration provided to the scheduler during UE creation or reconfiguration.
 struct sched_ue_config_request {
   /// List of configured Logical Channels. See \c mac-LogicalChannelConfig, TS38.331.
@@ -153,8 +141,10 @@ struct sched_ue_config_request {
   std::optional<std::vector<cell_config_dedicated>> cells;
   /// Resource allocation configuration for the given UE.
   std::optional<sched_ue_resource_alloc_config> res_alloc_cfg;
-  /// List of QoS and slicing information for DRBs.
-  std::vector<sched_drb_info> drb_info_list;
+  /// DRX-Config.
+  std::optional<drx_config> drx_cfg;
+  /// measGapConfig.
+  std::optional<meas_gap_config> meas_gap_cfg;
 };
 
 /// Request to create a new UE in scheduler.
@@ -163,10 +153,12 @@ struct sched_ue_creation_request_message {
   rnti_t        crnti;
   /// Whether the UE starts in fallback mode, i.e. without using its dedicated configuration.
   bool starts_in_fallback;
+  /// Slot at which UL-CCCH message was received, in case of RA-based UE creation. Invalid, otherwise.
+  std::optional<slot_point> ul_ccch_slot_rx;
   /// Configuration to be applied to the new UE.
   sched_ue_config_request cfg;
   /// Time Alignment Group configuration.
-  static_vector<tag, MAX_NOF_TAGS> tag_config;
+  static_vector<time_alignment_group, MAX_NOF_TIME_ALIGNMENT_GROUPS> tag_config;
 };
 
 /// UE Reconfiguration Request.

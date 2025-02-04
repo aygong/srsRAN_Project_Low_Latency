@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -19,9 +19,7 @@
 #
 
 add_subdirectory(mac)
-if (NOT DU_SPLIT_6)
-    add_subdirectory(phy)
-endif ()
+add_subdirectory(phy)
 
 set(PRECODING_SOURCES
         precoding_matrix_mapper.cpp

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,6 @@
  */
 
 #include "srsran/scheduler/config/serving_cell_config_factory.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/duplex_mode.h"
 #include "srsran/ran/pdcch/pdcch_candidates.h"
 #include "srsran/ran/pdcch/pdcch_type0_css_coreset_config.h"
@@ -304,11 +303,10 @@ srsran::config_helpers::generate_k2_candidates(cyclic_prefix cp, const tdd_ul_dl
 {
   static const unsigned SYMBOLS_PER_SLOT = get_nsymb_per_slot(cp);
 
-  const unsigned tdd_period_slots = nof_slots_per_tdd_period(tdd_cfg);
-  const unsigned nof_dl_slots     = nof_full_dl_slots_per_tdd_period(tdd_cfg);
-  const unsigned nof_ul_slots     = nof_full_ul_slots_per_tdd_period(tdd_cfg);
+  const unsigned tdd_period_slots  = nof_slots_per_tdd_period(tdd_cfg);
+  const unsigned nof_dl_slots      = nof_dl_slots_per_tdd_period(tdd_cfg);
+  const unsigned nof_full_ul_slots = nof_full_ul_slots_per_tdd_period(tdd_cfg);
 
-  // TODO: This algorithm may need to be revisited for partial UL slots to avoid that the partial slot is always picked.
   std::vector<pusch_time_domain_resource_allocation> result;
   for (unsigned idx = 0; idx < tdd_period_slots and result.size() < pusch_constants::MAX_NOF_PUSCH_TD_RES_ALLOCS;
        ++idx) {
@@ -327,7 +325,7 @@ srsran::config_helpers::generate_k2_candidates(cyclic_prefix cp, const tdd_ul_dl
           // k2 values are generated based on nof. DL slots i.e. one k2 value per DL slot. But in the case of UL
           // heavy TDD configuration we generate all applicable k2 value(s) for each DL slot to allow multiple UL PDCCH
           // allocations in the same slot for same UE.
-          if (nof_dl_slots > nof_ul_slots) {
+          if (nof_dl_slots > nof_full_ul_slots) {
             break;
           }
         }
@@ -442,7 +440,7 @@ ssb_configuration srsran::config_helpers::make_default_ssb_config(const cell_con
 pusch_config srsran::config_helpers::make_default_pusch_config(const cell_config_builder_params_extended& params)
 {
   // Default PUSCH transmission scheme is codebook with at maximum one layer. It assumes the UE Capability parameter
-  // pusch-TransCoherence is fullCoherent.
+  // pusch-TransCoherence is nonCoherent.
   static constexpr unsigned                  max_rank        = 1;
   static constexpr tx_scheme_codebook_subset codebook_subset = tx_scheme_codebook_subset::non_coherent;
 
@@ -699,8 +697,13 @@ static csi_helper::csi_builder_params make_default_csi_builder_params(const cell
     // Set a default CSI report slot offset that falls in an UL slot.
     const auto& tdd_pattern = *params.tdd_ul_dl_cfg_common;
 
+    constexpr unsigned default_ssb_period_ms = 10U;
+
+    const unsigned max_csi_symbol = *std::max_element(csi_params.tracking_csi_ofdm_symbol_indexes.begin(),
+                                                      csi_params.tracking_csi_ofdm_symbol_indexes.end());
+
     if (not csi_helper::derive_valid_csi_rs_slot_offsets(
-            csi_params, std::nullopt, std::nullopt, std::nullopt, tdd_pattern)) {
+            csi_params, std::nullopt, std::nullopt, std::nullopt, tdd_pattern, max_csi_symbol, default_ssb_period_ms)) {
       report_fatal_error("Failed to find valid csi-MeasConfig");
     }
 
@@ -795,9 +798,6 @@ srsran::config_helpers::create_default_initial_ue_serving_cell_config(const cell
     // Generate CSI resources.
     serv_cell.csi_meas_cfg = make_csi_meas_config(params);
   }
-
-  // > TAG-ID.
-  serv_cell.tag_id = static_cast<tag_id_t>(0);
 
   return serv_cell;
 }

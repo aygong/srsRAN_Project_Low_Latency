@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,6 @@
 #pragma once
 
 #include "srsran/du/du_high/du_qos_config.h"
-#include "srsran/mac/config/mac_config_helpers.h"
 #include "srsran/ran/qos/five_qi.h"
 #include <map>
 
@@ -74,10 +73,6 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
     // F1-U
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
-    // MAC
-    cfg.mac          = make_default_drb_mac_lc_config();
-    cfg.mac.priority = 4;
-    cfg.mac.lcg_id   = uint_to_lcg_id(1);
 
     qos_list[uint_to_five_qi(1)] = cfg;
   }
@@ -95,10 +90,6 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
     // F1-U
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
-    // MAC
-    cfg.mac          = make_default_drb_mac_lc_config();
-    cfg.mac.priority = 4;
-    cfg.mac.lcg_id   = uint_to_lcg_id(1);
 
     qos_list[uint_to_five_qi(2)] = cfg;
   }
@@ -123,8 +114,6 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
     // F1-U
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
-    // MAC
-    cfg.mac = make_default_drb_mac_lc_config();
 
     qos_list[uint_to_five_qi(5)] = cfg;
   }
@@ -134,19 +123,15 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
     // RLC
     cfg.rlc.mode                   = rlc_mode::um_bidir;
     cfg.rlc.um.tx.sn_field_length  = rlc_um_sn_size::size12bits;
-    cfg.rlc.um.rx.sn_field_length  = rlc_um_sn_size::size12bits;
-    cfg.rlc.um.rx.t_reassembly     = 100;
     cfg.rlc.um.tx.queue_size       = default_rlc_queue_size_sdus;
     cfg.rlc.um.tx.queue_size_bytes = default_rlc_queue_size_bytes;
+    cfg.rlc.um.rx.sn_field_length  = rlc_um_sn_size::size12bits;
+    cfg.rlc.um.rx.t_reassembly     = 100;
     cfg.rlc.metrics_period         = std::chrono::milliseconds(rlc_metrics_report);
     // F1-U
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
     cfg.f1u.warn_on_drop          = warn_on_drop;
-    // MAC
-    cfg.mac          = make_default_drb_mac_lc_config();
-    cfg.mac.priority = 4;
-    cfg.mac.lcg_id   = uint_to_lcg_id(1);
 
     qos_list[uint_to_five_qi(7)] = cfg;
   }
@@ -172,8 +157,6 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
     cfg.f1u.warn_on_drop          = warn_on_drop;
-    // MAC
-    cfg.mac = make_default_drb_mac_lc_config();
 
     qos_list[uint_to_five_qi(9)] = cfg;
   }

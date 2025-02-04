@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,7 @@
  */
 
 #include "srsran/ran/uci/uci_part2_size_calculator.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 
 using namespace srsran;
 

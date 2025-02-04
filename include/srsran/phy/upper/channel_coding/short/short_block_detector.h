@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,7 +28,6 @@
 #include "srsran/adt/span.h"
 #include "srsran/phy/upper/log_likelihood_ratio.h"
 #include "srsran/ran/sch/modulation_scheme.h"
-
 #include <memory>
 
 namespace srsran {

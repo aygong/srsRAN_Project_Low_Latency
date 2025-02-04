@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -38,6 +38,22 @@ enum class pusch_mcs_table {
   /// Identifies MCS index table 3, TS38.214 Table 5.1.3.1-3.
   qam64LowSe = 2,
 };
+
+/// Convert PUSCH MCS table to string.
+constexpr const char* pusch_mcs_table_to_string(pusch_mcs_table table)
+{
+  switch (table) {
+    case pusch_mcs_table::qam64:
+      return "qam64";
+    case pusch_mcs_table::qam256:
+      return "qam256";
+    case pusch_mcs_table::qam64LowSe:
+      return "qam64LowSe";
+    default:
+      break;
+  }
+  return "invalid";
+}
 
 /// \brief Gets the Modulation and Coding Scheme configuration for PUSCH.
 ///

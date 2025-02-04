@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -19,6 +19,7 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #pragma once
 
 #include "../common/e2ap_asn1_utils.h"
@@ -35,23 +36,28 @@ namespace srsran {
 class e2_subscription_delete_procedure
 {
 public:
-  e2_subscription_delete_procedure(e2_message_notifier&  ric_notif_,
-                                   e2_subscription_proc& subscription_mngr_,
-                                   timer_factory         timers_,
-                                   srslog::basic_logger& logger_);
+  e2_subscription_delete_procedure(const asn1::e2ap::ric_sub_delete_request_s& request_,
+                                   e2_event_manager&                           event_manager_,
+                                   e2_message_notifier&                        ric_notif_,
+                                   e2_subscription_proc&                       subscription_mngr_,
+                                   timer_factory                               timers_,
+                                   srslog::basic_logger&                       logger_);
 
-  void run_subscription_delete_procedure(const asn1::e2ap::ric_sub_delete_request_s request_,
-                                         e2_event_manager&                          event_manager);
+  void operator()(coro_context<async_task<void>>& ctx);
+
+  static const char* name() { return "E2 Subscription Delete Procedure"; }
 
 private:
   // results senders
   void send_e2_subscription_delete_response(const e2_subscribe_delete_response_message& response);
   void send_e2_subscription_delete_failure(const e2_subscribe_delete_response_message& failure);
 
-  srslog::basic_logger& logger;
-  e2_message_notifier&  ric_notif;
-  e2_subscription_proc& subscription_mngr;
-  timer_factory         timers;
+  const asn1::e2ap::ric_sub_delete_request_s request;
+  e2_event_manager&                          event_manager;
+  srslog::basic_logger&                      logger;
+  e2_message_notifier&                       ric_notif;
+  e2_subscription_proc&                      subscription_mngr;
+  timer_factory                              timers;
 };
 
 } // namespace srsran

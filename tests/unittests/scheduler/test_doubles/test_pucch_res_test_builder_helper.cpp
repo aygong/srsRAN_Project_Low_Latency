@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #include "../tests/test_doubles/scheduler/pucch_res_test_builder_helper.h"
 #include "lib/scheduler/config/sched_config_manager.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
-#include "srsran/ran/duplex_mode.h"
 #include <gtest/gtest.h>
 #include <random>
 
@@ -34,7 +34,7 @@ class sched_pucch_res_builder_tester : public ::testing::TestWithParam<bool>
 protected:
   sched_pucch_res_builder_tester() :
     cell_cfg(config_helpers::make_default_scheduler_expert_config(),
-             test_helpers::make_default_sched_cell_configuration_request()),
+             sched_config_helper::make_default_sched_cell_configuration_request()),
     cell_cfg_dedicated(config_helpers::create_default_initial_ue_spcell_cell_config()),
     pucch_builder(GetParam() ? pucch_res_builder_test_helper(cell_cfg.ul_cfg_common.init_ul_bwp, std::nullopt)
                              : pucch_res_builder_test_helper())
@@ -98,7 +98,8 @@ TEST_P(sched_pucch_res_builder_tester, when_ues_are_added_their_cfg_have_differe
     // Each UE should have 2 PUCCH resource sets configured
     ASSERT_EQ(ue_pucch_cfg.pucch_res_set.size(), 2);
     ASSERT_EQ(ue_pucch_cfg.pucch_res_set[0].pucch_res_id_list.size(), pucch_params.nof_ue_pucch_f0_or_f1_res_harq);
-    ASSERT_EQ(ue_pucch_cfg.pucch_res_set[1].pucch_res_id_list.size(), pucch_params.nof_ue_pucch_f2_res_harq);
+    ASSERT_EQ(ue_pucch_cfg.pucch_res_set[1].pucch_res_id_list.size(),
+              pucch_params.nof_ue_pucch_f2_or_f3_or_f4_res_harq);
     // Make sure UE has all PUCCH resources with different cell_res_id.
     {
       std::set<unsigned> pucch_res_idxs;

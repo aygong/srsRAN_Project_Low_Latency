@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -30,22 +30,15 @@
 #include "lib/scheduler/uci_scheduling/uci_allocator_impl.h"
 #include "lib/scheduler/ue_scheduling/ue_cell_grid_allocator.h"
 #include "lib/scheduler/ue_scheduling/ue_fallback_scheduler.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "tests/unittests/scheduler/test_utils/dummy_test_components.h"
 #include "tests/unittests/scheduler/test_utils/scheduler_test_suite.h"
 #include "srsran/ran/duplex_mode.h"
+#include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
-#include <random>
 
 using namespace srsran;
-
-std::random_device rd;
-std::mt19937       g(rd());
-
-unsigned get_random_uint(unsigned min, unsigned max)
-{
-  return std::uniform_int_distribution<unsigned>{min, max}(g);
-}
 
 static cell_config_builder_params test_builder_params(duplex_mode duplx_mode)
 {
@@ -116,9 +109,13 @@ struct test_bench {
     builder_params{builder_params_},
     cell_cfg{*[&]() { return cfg_mng.add_cell(cell_req); }()},
     ue_alloc(expert_cfg, ue_db, srslog::fetch_basic_logger("SCHED", true)),
-    fallback_sched(expert_cfg, cell_cfg, pdcch_sch, pucch_alloc, ue_db),
+    fallback_sched(expert_cfg, cell_cfg, pdcch_sch, pucch_alloc, uci_alloc, ue_db),
     csi_rs_sched(cell_cfg)
   {
+    srslog::fetch_basic_logger("SCHED", true).set_level(srslog::basic_levels::debug);
+    srslog::fetch_basic_logger("TEST").set_level(srslog::basic_levels::info);
+    srslog::init();
+
     ue_alloc.add_cell(cell_cfg.cell_index, pdcch_sch, uci_alloc, res_grid);
   }
 
@@ -210,6 +207,8 @@ protected:
 
     bench->csi_rs_sched.run_slot(bench->res_grid[0]);
 
+    bench->ue_db.slot_indication(current_slot);
+
     bench->fallback_sched.run_slot(bench->res_grid);
 
     result_logger.on_scheduler_result(bench->res_grid[0].result);
@@ -232,11 +231,11 @@ protected:
   sched_cell_configuration_request_message
   create_custom_cell_config_request(unsigned k0, const std::optional<tdd_ul_dl_config_common>& tdd_cfg = {})
   {
-    if (duplx_mode == srsran::duplex_mode::TDD and tdd_cfg.has_value()) {
+    if (duplx_mode == duplex_mode::TDD and tdd_cfg.has_value()) {
       builder_params.tdd_ul_dl_cfg_common = *tdd_cfg;
     }
     sched_cell_configuration_request_message msg =
-        test_helpers::make_default_sched_cell_configuration_request(builder_params);
+        sched_config_helper::make_default_sched_cell_configuration_request(builder_params);
     msg.dl_cfg_common.init_dl_bwp.pdsch_common.pdsch_td_alloc_list[0].k0 = k0;
     return msg;
   }
@@ -300,10 +299,12 @@ protected:
   bool add_ue(rnti_t tc_rnti, du_ue_index_t ue_index, bool remove_ded_cfg = false)
   {
     // Add cell to UE cell grid allocator.
-    auto ue_create_req     = remove_ded_cfg ? test_helpers::create_empty_spcell_cfg_sched_ue_creation_request()
-                                            : test_helpers::create_default_sched_ue_creation_request(bench->builder_params);
-    ue_create_req.crnti    = tc_rnti;
-    ue_create_req.ue_index = ue_index;
+    auto ue_create_req               = remove_ded_cfg
+                                           ? sched_config_helper::create_empty_spcell_cfg_sched_ue_creation_request()
+                                           : sched_config_helper::create_default_sched_ue_creation_request(bench->builder_params);
+    ue_create_req.crnti              = tc_rnti;
+    ue_create_req.ue_index           = ue_index;
+    ue_create_req.starts_in_fallback = true;
     return bench->add_ue(ue_create_req);
   }
 
@@ -322,7 +323,7 @@ protected:
     }
 
     // Notify scheduler of DL buffer state.
-    bench->fallback_sched.handle_dl_buffer_state_indication_srb(ue_idx, is_srb0, sl, buffer_size);
+    bench->fallback_sched.handle_dl_buffer_state_indication(ue_idx);
   }
 
   void push_buffer_state_to_ul_ue(du_ue_index_t ue_idx, slot_point sl, unsigned buffer_size)
@@ -592,13 +593,13 @@ TEST_P(fallback_scheduler_tester, test_srb0_buffer_size_exceeding_max_msg4_mcs_i
 
 TEST_P(fallback_scheduler_tester, sanity_check_with_random_max_mcs_and_payload_size)
 {
-  const sch_mcs_index max_msg4_mcs = get_random_uint(0, 27);
+  const sch_mcs_index max_msg4_mcs = test_rgen::uniform_int<unsigned>(0, 27);
   setup_sched(create_expert_config(max_msg4_mcs), create_custom_cell_config_request(params.k0));
   // Add UE.
   const du_ue_index_t ue_idx = to_du_ue_index(0);
   add_ue(to_rnti(0x4601), ue_idx);
   // Random payload size.
-  const unsigned mac_srb0_sdu_size = get_random_uint(1, 458);
+  const unsigned mac_srb0_sdu_size = test_rgen::uniform_int<unsigned>(1, 458);
   push_buffer_state_to_dl_ue(to_du_ue_index(0), current_slot, mac_srb0_sdu_size, true);
 
   srslog::basic_logger& logger(srslog::fetch_basic_logger("TEST"));
@@ -1073,7 +1074,7 @@ protected:
       if (sl == slot_update_srb_traffic and nof_packet_to_tx > 0) {
         // Notify about SRB1 message in DL.
         pending_srb1_bytes = generate_srb1_buffer_size();
-        parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false);
+        parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false, false);
         latest_rlc_update_slot.emplace(sl);
         --nof_packet_to_tx;
         test_logger.debug("rnti={}, slot={}: pushing SRB1 traffic of {} bytes", test_ue.crnti, sl, pending_srb1_bytes);
@@ -1101,9 +1102,9 @@ protected:
           test_logger.debug("rnti={}, slot={}: RLC buffer state update for h_id={} with {} bytes",
                             test_ue.crnti,
                             sl,
-                            to_harq_id(h_dl->id()),
+                            fmt::underlying(to_harq_id(h_dl->id())),
                             pending_srb1_bytes);
-          parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false);
+          parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false, false);
           latest_rlc_update_slot.emplace(sl);
         }
       }
@@ -1118,7 +1119,7 @@ protected:
                           test_ue.crnti,
                           sl,
                           pending_srb1_bytes);
-        parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false);
+        parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false, false);
         latest_rlc_update_slot.emplace(sl);
       }
     }
@@ -1137,9 +1138,9 @@ protected:
           test_logger.debug("rnti={}, slot={}: RLC buffer state update for h_id={} with {} bytes",
                             test_ue.crnti,
                             sl,
-                            to_harq_id(h_dl->id()),
+                            fmt::underlying(to_harq_id(h_dl->id())),
                             pending_srb1_bytes);
-          parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false);
+          parent->push_buffer_state_to_dl_ue(test_ue.ue_index, sl, pending_srb1_bytes, false, false);
         }
 
         // Check if any HARQ process with pending transmissions is re-set by the scheduler.
@@ -1175,7 +1176,7 @@ protected:
         test_logger.debug("Slot={}, rnti={}: acking process h_id={} with {}",
                           sl,
                           test_ue.crnti,
-                          to_harq_id(dl_harq->id()),
+                          fmt::underlying(to_harq_id(dl_harq->id())),
                           ack ? "ACK" : "NACK");
       }
     }
@@ -1234,7 +1235,7 @@ TEST_P(fallback_scheduler_srb1_segmentation, test_scheduling_srb1_segmentation)
   for (auto& tester : ues_testers) {
     ASSERT_EQ(0, tester.missing_retx);
     ASSERT_FALSE(tester.test_ue.has_pending_dl_newtx_bytes())
-        << fmt::format("UE {} has still pending DL bytes", tester.test_ue.ue_index);
+        << fmt::format("UE {} has still pending DL bytes", fmt::underlying(tester.test_ue.ue_index));
   }
 }
 
@@ -1256,7 +1257,7 @@ protected:
   ul_fallback_scheduler_tester() : base_fallback_tester(GetParam().duplx_mode)
   {
     setup_sched(config_helpers::make_default_scheduler_expert_config(),
-                test_helpers::make_default_sched_cell_configuration_request(builder_params));
+                sched_config_helper::make_default_sched_cell_configuration_request(builder_params));
   }
 
   class ue_ul_tester
@@ -1276,7 +1277,7 @@ protected:
         parent->push_buffer_state_to_ul_ue(test_ue.ue_index, sl, srb_buffer);
         buffer_bytes            = srb_buffer;
         initied_with_ul_traffic = true;
-        test_logger.info("rnti={}, slot={}: generating initial BSR indication", test_ue.crnti, sl);
+        test_logger.info("rnti={}, slot={}: generating initial BSR indication {}", test_ue.crnti, sl, srb_buffer);
       }
 
       for (uint8_t h_id_idx = 0; h_id_idx != std::underlying_type_t<harq_id_t>(MAX_HARQ_ID); ++h_id_idx) {
@@ -1284,7 +1285,6 @@ protected:
 
         std::optional<ul_harq_process_handle> h_ul = test_ue.get_pcell().harqs.ul_harq(h_id);
         if (h_ul.has_value() and h_ul->is_waiting_ack() and h_ul->pusch_slot() == sl) {
-          test_ue.pending_ul_newtx_bytes();
           bool           ack             = ack_harq_process(sl, *h_ul);
           const unsigned delivered_bytes = ack ? h_ul->get_grant_params().tbs_bytes - 10U : 0U;
           buffer_bytes > delivered_bytes ? buffer_bytes -= delivered_bytes : buffer_bytes = 0U;
@@ -1305,7 +1305,7 @@ protected:
       test_logger.info("Slot={}, rnti={}: ACKing process h_id={} with {}",
                        sl,
                        test_ue.crnti,
-                       to_harq_id(h_ul.id()),
+                       fmt::underlying(to_harq_id(h_ul.id())),
                        ack ? "ACK" : "NACK");
       return ack;
     }
@@ -1347,8 +1347,9 @@ TEST_P(ul_fallback_scheduler_tester, all_ul_ue_are_served_and_buffer_gets_emptie
 
   for (auto& tester : ues_testers) {
     ASSERT_TRUE(tester.initied_with_ul_traffic)
-        << fmt::format("No UL traffic generated for UE {}", tester.test_ue.ue_index);
-    ASSERT_FALSE(tester.buffer_bytes > 0) << fmt::format("UE {} has still pending UL bytes", tester.test_ue.ue_index);
+        << fmt::format("No UL traffic generated for UE {}", fmt::underlying(tester.test_ue.ue_index));
+    ASSERT_FALSE(tester.buffer_bytes > 0)
+        << fmt::format("UE {} has still pending UL bytes", fmt::underlying(tester.test_ue.ue_index));
   }
 }
 
@@ -1364,7 +1365,7 @@ protected:
   ul_fallback_sched_tester_sr_indication() : base_fallback_tester(GetParam().duplx_mode)
   {
     setup_sched(config_helpers::make_default_scheduler_expert_config(),
-                test_helpers::make_default_sched_cell_configuration_request(builder_params));
+                sched_config_helper::make_default_sched_cell_configuration_request(builder_params));
     slot_generate_srb_traffic =
         slot_point{to_numerology_value(bench->cell_cfg.dl_cfg_common.init_dl_bwp.generic_params.scs),
                    test_rgen::uniform_int(20U, 40U)};
@@ -1410,7 +1411,7 @@ INSTANTIATE_TEST_SUITE_P(test_fdd_and_tdd,
 class fallback_sched_ue_w_out_pucch_cfg : public base_fallback_tester, public ::testing::Test
 {
 protected:
-  fallback_sched_ue_w_out_pucch_cfg() : base_fallback_tester(srsran::duplex_mode::TDD)
+  fallback_sched_ue_w_out_pucch_cfg() : base_fallback_tester(duplex_mode::TDD)
   {
     const unsigned      k0                 = 0;
     const sch_mcs_index max_msg4_mcs_index = 8;
@@ -1467,17 +1468,4 @@ TEST_F(fallback_sched_ue_w_out_pucch_cfg, when_srb0_is_retx_ed_only_pucch_common
   }
 
   ASSERT_TRUE(srb_transmitted);
-}
-
-int main(int argc, char** argv)
-{
-  srslog::fetch_basic_logger("SCHED", true).set_level(srslog::basic_levels::debug);
-  srslog::fetch_basic_logger("TEST").set_level(srslog::basic_levels::info);
-  srslog::init();
-
-  ::testing::InitGoogleTest(&argc, argv);
-
-  (void)(::testing::GTEST_FLAG(death_test_style) = "fast");
-
-  return RUN_ALL_TESTS();
 }

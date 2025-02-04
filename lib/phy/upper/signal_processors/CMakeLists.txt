@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -21,8 +21,9 @@
 set(SOURCES
         ptrs/ptrs_pdsch_generator_impl.cpp
         ptrs/ptrs_pdsch_generator_factory.cpp
-        pucch/dmrs_pucch_processor_format1_impl.cpp
-        pucch/dmrs_pucch_processor_format2_impl.cpp
+        pucch/dmrs_pucch_estimator_format1.cpp
+        pucch/dmrs_pucch_estimator_format2.cpp
+        pucch/dmrs_pucch_estimator_formats3_4.cpp
         srs/srs_estimator_factory.cpp
         srs/srs_estimator_generic_impl.cpp
         srs/srs_validator_generic_impl.cpp
@@ -32,6 +33,7 @@ set(SOURCES
         dmrs_pusch_estimator_impl.cpp
         nzp_csi_rs_generator_impl.cpp
         port_channel_estimator_average_impl.cpp
+        port_channel_estimator_helpers.cpp
         signal_processor_factories.cpp
         pss_processor_impl.cpp
         sss_processor_impl.cpp

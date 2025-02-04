@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 
 #include "../config/ue_configuration.h"
 #include "pdcch_resource_allocator.h"
-#include "srsran/scheduler/scheduler_dci.h"
+#include "srsran/scheduler/result/dci_info.h"
 
 namespace srsran {
 

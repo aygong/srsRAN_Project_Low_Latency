@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -220,7 +220,7 @@ void modulation_mapper_lut_impl::modulate(span<cf_t> symbols, const bit_buffer& 
                 "The number of bits {} is not consistent with the number of symbols {} for modulation scheme {}.",
                 input.size(),
                 symbols.size(),
-                scheme);
+                fmt::underlying(scheme));
 
   switch (scheme) {
     case modulation_scheme::PI_2_BPSK:
@@ -271,7 +271,7 @@ float modulation_mapper_lut_impl::modulate(span<ci8_t> symbols, const bit_buffer
                 "The number of bits {} is not consistent with the number of symbols {} for modulation scheme {}.",
                 input.size(),
                 symbols.size(),
-                scheme);
+                fmt::underlying(scheme));
 
   float scaling = 0.0;
 

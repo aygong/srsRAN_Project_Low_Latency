@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -34,5 +34,5 @@ set(SOURCES
 add_library(srsran_phy_to_fapi_translator STATIC ${SOURCES})
 target_link_libraries(srsran_phy_to_fapi_translator srslog)
 
-add_library(srsran_phy_fapi_adaptor STATIC phy_fapi_adaptor_impl.cpp phy_fapi_adaptor_factory_impl.cpp)
+add_library(srsran_phy_fapi_adaptor STATIC phy_fapi_sector_adaptor_impl.cpp phy_fapi_adaptor_impl.cpp phy_fapi_adaptor_factory_impl.cpp)
 target_link_libraries(srsran_phy_fapi_adaptor srsran_fapi_to_phy_translator srsran_phy_to_fapi_translator)

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "du_types.h"
 #include "srsran/adt/slotted_array.h"
+#include "srsran/ran/du_types.h"
 
 namespace srsran {
 

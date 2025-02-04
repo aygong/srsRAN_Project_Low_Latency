@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "ring_buffer.h"
-#include "srsran/adt/optional.h"
+#include "srsran/adt/ring_buffer.h"
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace srsran {

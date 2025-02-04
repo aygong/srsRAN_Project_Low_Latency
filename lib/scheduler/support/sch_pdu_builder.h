@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,10 +24,9 @@
 
 #include "../config/cell_configuration.h"
 #include "../config/ue_configuration.h"
-#include "../ue_scheduling/ue_channel_state_manager.h"
+#include "../ue_context/ue_channel_state_manager.h"
 #include "mcs_tbs_calculator.h"
-#include "srsran/scheduler/harq_id.h"
-#include "srsran/scheduler/scheduler_slot_handler.h"
+#include "srsran/scheduler/result/pusch_info.h"
 
 namespace srsran {
 

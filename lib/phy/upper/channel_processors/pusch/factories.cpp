@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -35,7 +35,6 @@
 #include "srsran/phy/upper/channel_modulation/channel_modulation_factories.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_processor_result_notifier.h"
 #include "srsran/phy/upper/sequence_generators/sequence_generator_factories.h"
-#include "srsran/support/format_utils.h"
 
 using namespace srsran;
 

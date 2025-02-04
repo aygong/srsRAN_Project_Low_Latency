@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,12 @@
 
 #pragma once
 
-#include "srsran/scheduler/scheduler_slot_handler.h"
+#include "srsran/ran/pci.h"
 #include "srsran/srslog/logger.h"
-#include "srsran/support/format_utils.h"
 
 namespace srsran {
+
+struct sched_result;
 
 class scheduler_result_logger
 {

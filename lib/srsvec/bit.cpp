@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #include "srsran/srsvec/bit.h"
 #include "srsran/srsvec/copy.h"
 #include "srsran/srsvec/zero.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_assert.h"
 
 #ifdef __x86_64__

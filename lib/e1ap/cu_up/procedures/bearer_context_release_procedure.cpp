@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -56,7 +56,7 @@ void bearer_context_release_procedure::operator()(coro_context<async_task<void>>
 
   // send response
   logger.debug("ue={} cu_up_ue_e1ap_id={} cu_cp_ue_e1ap_id={}: Sending BearerContextReleaseComplete",
-               bearer_context_release_cmd.ue_index,
+               fmt::underlying(bearer_context_release_cmd.ue_index),
                cmd->gnb_cu_up_ue_e1ap_id,
                cmd->gnb_cu_cp_ue_e1ap_id);
   pdu_notifier.on_new_message(e1ap_msg);

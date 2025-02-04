@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,17 +21,16 @@
  */
 
 #include "lib/scheduler/scheduler_impl.h"
-#include "lib/scheduler/ue_scheduling/ue_cell_grid_allocator.h"
 #include "lib/scheduler/ue_scheduling/ue_fallback_scheduler.h"
 #include "test_utils/dummy_test_components.h"
 #include "tests/test_doubles/scheduler/pucch_res_test_builder_helper.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "tests/unittests/scheduler/test_utils/scheduler_test_suite.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/duplex_mode.h"
 #include "srsran/ran/pdcch/search_space.h"
-#include "srsran/scheduler/scheduler_dci.h"
-#include "srsran/scheduler/scheduler_slot_handler.h"
+#include "srsran/scheduler/config/logical_channel_config_factory.h"
+#include "srsran/scheduler/result/dci_info.h"
 #include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 #include <unordered_map>
@@ -130,10 +129,10 @@ protected:
     test_logger.set_context(current_slot.sfn(), current_slot.slot_index());
     bench->sched_res = &bench->sch.slot_indication(current_slot, to_du_cell_index(0));
 
-    srs_du::pucch_builder_params pucch_basic_params{.nof_ue_pucch_f0_or_f1_res_harq = 8,
-                                                    .nof_ue_pucch_f2_res_harq       = 8,
-                                                    .nof_sr_resources               = 8,
-                                                    .nof_csi_resources              = 8};
+    srs_du::pucch_builder_params pucch_basic_params{.nof_ue_pucch_f0_or_f1_res_harq       = 8,
+                                                    .nof_ue_pucch_f2_or_f3_or_f4_res_harq = 8,
+                                                    .nof_sr_resources                     = 8,
+                                                    .nof_csi_resources                    = 8};
     auto&                        f1_params = pucch_basic_params.f0_or_f1_params.emplace<srs_du::pucch_f1_params>();
     f1_params.nof_cyc_shifts               = srs_du::nof_cyclic_shifts::twelve;
     f1_params.occ_supported                = true;
@@ -164,7 +163,8 @@ protected:
 
   sched_cell_configuration_request_message create_custom_cell_config_request(duplex_mode mode) const
   {
-    return test_helpers::make_default_sched_cell_configuration_request(create_custom_cell_cfg_builder_params(mode));
+    return sched_config_helper::make_default_sched_cell_configuration_request(
+        create_custom_cell_cfg_builder_params(mode));
   }
 
   unsigned pdsch_tbs_scheduled_bytes_per_lc(const sched_test_ue& u, lcid_t lcid)
@@ -240,7 +240,7 @@ protected:
               const cell_config_builder_params& params,
               bool                              is_fallback = false)
   {
-    auto ue_creation_req               = test_helpers::create_default_sched_ue_creation_request(params);
+    auto ue_creation_req               = sched_config_helper::create_default_sched_ue_creation_request(params);
     ue_creation_req.starts_in_fallback = is_fallback;
 
     ue_creation_req.ue_index = ue_index;
@@ -779,7 +779,7 @@ TEST_P(multiple_ue_sched_tester, when_scheduling_multiple_ue_in_small_bw_neither
   config_helpers::cell_config_builder_params_extended extended_params{builder_params};
   const bool                                          enable_csi_rs_pdsch_multiplexing = true;
   setup_sched(create_expert_config(10, enable_csi_rs_pdsch_multiplexing),
-              test_helpers::make_default_sched_cell_configuration_request(extended_params));
+              sched_config_helper::make_default_sched_cell_configuration_request(extended_params));
 
   // NOTE: The buffer size must be high enough for the scheduler to keep allocating resources to the UE. In order to
   // avoid failing of test we ignore the min_buffer_size_in_bytes and max_buffer_size_in_bytes set in params.
@@ -914,7 +914,7 @@ TEST_P(multiple_ue_sched_tester, dl_dci_format_1_1_test)
 
   // Pre-populate common UE creation request parameters.
   const auto& cell_cfg_params = create_custom_cell_cfg_builder_params(params.duplx_mode);
-  auto        ue_creation_req = test_helpers::create_default_sched_ue_creation_request(cell_cfg_params);
+  auto        ue_creation_req = sched_config_helper::create_default_sched_ue_creation_request(cell_cfg_params);
 
   auto it = std::find_if(ue_creation_req.cfg.lc_config_list->begin(),
                          ue_creation_req.cfg.lc_config_list->end(),
@@ -972,24 +972,29 @@ TEST_P(multiple_ue_sched_tester, dl_dci_format_1_1_test)
       const auto* pdcch_grant = find_ue_dl_pdcch(test_ue);
       if (pdcch_grant != nullptr) {
         const auto& ss_cfg = get_ss_cfg(test_ue, pdcch_grant->ctx.context.ss_id);
-        ASSERT_TRUE(ss_cfg.has_value()) << fmt::format(
-            "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+        ASSERT_TRUE(ss_cfg.has_value()) << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                                                       test_ue.crnti,
+                                                       fmt::underlying(pdcch_grant->ctx.context.ss_id));
         if (ss_cfg->is_common_search_space()) {
           // Checking for only TC-RNTI and C-RNTI F1_0.
           ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::c_rnti_f1_0 or
                       pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::tc_rnti_f1_0)
               << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
                              test_ue.crnti,
-                             pdcch_grant->ctx.context.ss_id);
+                             fmt::underlying(pdcch_grant->ctx.context.ss_id));
         } else {
           const auto dci_fmt =
               std::get<search_space_configuration::ue_specific_dci_format>(ss_cfg->get_monitored_dci_formats());
           if (dci_fmt == srsran::search_space_configuration::ue_specific_dci_format::f0_0_and_f1_0) {
-            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::c_rnti_f1_0) << fmt::format(
-                "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::c_rnti_f1_0)
+                << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                               test_ue.crnti,
+                               fmt::underlying(pdcch_grant->ctx.context.ss_id));
           } else {
-            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::c_rnti_f1_1) << fmt::format(
-                "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_dl_rnti_config_type::c_rnti_f1_1)
+                << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                               test_ue.crnti,
+                               fmt::underlying(pdcch_grant->ctx.context.ss_id));
           }
         }
       }
@@ -1046,7 +1051,7 @@ TEST_P(multiple_ue_sched_tester, ul_dci_format_0_1_test)
 
   // Pre-populate common UE creation request parameters.
   const auto& cell_cfg_params = create_custom_cell_cfg_builder_params(params.duplx_mode);
-  auto        ue_creation_req = test_helpers::create_default_sched_ue_creation_request(cell_cfg_params);
+  auto        ue_creation_req = sched_config_helper::create_default_sched_ue_creation_request(cell_cfg_params);
 
   auto it = std::find_if(ue_creation_req.cfg.lc_config_list->begin(),
                          ue_creation_req.cfg.lc_config_list->end(),
@@ -1099,24 +1104,29 @@ TEST_P(multiple_ue_sched_tester, ul_dci_format_0_1_test)
       const auto* pdcch_grant = find_ue_ul_pdcch(test_ue);
       if (pdcch_grant != nullptr) {
         const auto& ss_cfg = get_ss_cfg(test_ue, pdcch_grant->ctx.context.ss_id);
-        ASSERT_TRUE(ss_cfg.has_value()) << fmt::format(
-            "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+        ASSERT_TRUE(ss_cfg.has_value()) << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                                                       test_ue.crnti,
+                                                       fmt::underlying(pdcch_grant->ctx.context.ss_id));
         if (ss_cfg->is_common_search_space()) {
           // Checking for only TC-RNTI and C-RNTI F1_0.
           ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::c_rnti_f0_0 or
                       pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::tc_rnti_f0_0)
               << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
                              test_ue.crnti,
-                             pdcch_grant->ctx.context.ss_id);
+                             fmt::underlying(pdcch_grant->ctx.context.ss_id));
         } else {
           const auto dci_fmt =
               std::get<search_space_configuration::ue_specific_dci_format>(ss_cfg->get_monitored_dci_formats());
           if (dci_fmt == srsran::search_space_configuration::ue_specific_dci_format::f0_0_and_f1_0) {
-            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::c_rnti_f0_0) << fmt::format(
-                "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::c_rnti_f0_0)
+                << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                               test_ue.crnti,
+                               fmt::underlying(pdcch_grant->ctx.context.ss_id));
           } else {
-            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::c_rnti_f0_1) << fmt::format(
-                "Condition failed for UE with c-rnti={} and SS id={}", test_ue.crnti, pdcch_grant->ctx.context.ss_id);
+            ASSERT_TRUE(pdcch_grant->dci.type == srsran::dci_ul_rnti_config_type::c_rnti_f0_1)
+                << fmt::format("Condition failed for UE with c-rnti={} and SS id={}",
+                               test_ue.crnti,
+                               fmt::underlying(pdcch_grant->ctx.context.ss_id));
           }
         }
       }
@@ -1284,8 +1294,8 @@ TEST_F(single_ue_sched_tester, test_ue_scheduling_with_empty_spcell_cfg)
 {
   setup_sched(create_expert_config(10), create_custom_cell_config_request(srsran::duplex_mode::TDD));
   // Add UE.
-  const auto& cell_cfg_params        = create_custom_cell_cfg_builder_params(srsran::duplex_mode::TDD);
-  auto        ue_creation_req        = test_helpers::create_empty_spcell_cfg_sched_ue_creation_request(cell_cfg_params);
+  const auto& cell_cfg_params = create_custom_cell_cfg_builder_params(srsran::duplex_mode::TDD);
+  auto        ue_creation_req = sched_config_helper::create_empty_spcell_cfg_sched_ue_creation_request(cell_cfg_params);
   ue_creation_req.starts_in_fallback = true;
 
   ue_creation_req.ue_index = to_du_ue_index(0);

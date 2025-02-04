@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 #include "srsran/fapi/message_builders.h"
 #include "srsran/fapi/message_validators.h"
 #include "srsran/srsvec/bit.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 
 using namespace srsran;
 using namespace fapi_adaptor;
@@ -546,7 +546,7 @@ void phy_to_fapi_results_event_translator::on_new_pucch_results(const ul_pucch_r
       add_format_2_pucch_pdu(builder, result);
       break;
     default:
-      srsran_assert(0, "Unexpected PUCCH format {}", context.format);
+      srsran_assert(0, "Unexpected PUCCH format {}", fmt::underlying(context.format));
   }
 
   error_type<fapi::validator_report> validation_result = validate_uci_indication(msg);

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -420,7 +420,7 @@ public:
 
   void handle_inter_cu_ho_rrc_recfg_complete(const ue_index_t           ue_index,
                                              const nr_cell_global_id_t& cgi,
-                                             const unsigned             tac) override
+                                             const tac_t                tac) override
   {
     logger.info("Received a RRC Reconfiguration Complete for Inter-CU Handover");
   }
@@ -470,7 +470,7 @@ public:
     logger.info("Received a new UE context modification request");
 
     // store request so it can be verified in the test code
-    make_partial_copy(ue_context_modifcation_request, request);
+    make_partial_copy(ue_context_modification_request, request);
 
     return launch_async([res = f1ap_ue_context_modification_response{},
                          this](coro_context<async_task<f1ap_ue_context_modification_response>>& ctx) mutable {
@@ -507,7 +507,7 @@ public:
 
   bool handle_ue_id_update(ue_index_t ue_index, ue_index_t old_ue_index) override { return true; }
 
-  const f1ap_ue_context_modification_request& get_ctxt_mod_request() { return ue_context_modifcation_request; }
+  const f1ap_ue_context_modification_request& get_ctxt_mod_request() { return ue_context_modification_request; }
 
   f1ap_ue_context_release_command last_release_command;
 
@@ -524,7 +524,7 @@ private:
   bool                  ue_context_setup_outcome = false;
   ue_context_outcome_t  ue_context_modification_outcome;
 
-  f1ap_ue_context_modification_request ue_context_modifcation_request;
+  f1ap_ue_context_modification_request ue_context_modification_request;
 };
 
 struct dummy_cu_up_processor_cu_up_management_notifier : public cu_up_processor_cu_up_management_notifier {

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,10 +22,9 @@
 
 #pragma once
 
-#include "ssb_configuration.h"
-#include "srsran/adt/optional.h"
 #include "srsran/ran/csi_rs/csi_rs_id.h"
 #include "srsran/ran/du_types.h"
+#include "srsran/ran/ssb_configuration.h"
 #include "srsran/scheduler/config/bwp_configuration.h"
 #include <cstdint>
 

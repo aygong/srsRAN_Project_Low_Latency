@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -31,6 +31,7 @@
 #include "srsran/pcap/dlt_pcap.h"
 #include "srsran/pcap/rlc_pcap.h"
 #include "srsran/scheduler/mac_scheduler.h"
+#include "srsran/scheduler/result/sched_result.h"
 #include "srsran/support/test_utils.h"
 #include "srsran/support/timers.h"
 

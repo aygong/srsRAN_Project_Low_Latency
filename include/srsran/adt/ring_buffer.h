@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,7 @@
 #pragma once
 
 #include "srsran/adt/detail/type_storage.h"
+#include "srsran/adt/detail/type_traits.h"
 #include "srsran/adt/expected.h"
 #include "srsran/adt/noop_functor.h"
 #include "srsran/adt/span.h"

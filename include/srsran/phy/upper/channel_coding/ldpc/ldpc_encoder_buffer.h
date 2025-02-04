@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,7 +29,7 @@ namespace srsran {
 
 /// \brief LDPC encoder output buffer interface.
 ///
-/// This interface allows the LDPC encoder to provide the encoded bits to the rate matcher without using anintermediate
+/// This interface allows the LDPC encoder to provide the encoded bits to the rate matcher without using an intermediate
 /// buffer.
 class ldpc_encoder_buffer
 {

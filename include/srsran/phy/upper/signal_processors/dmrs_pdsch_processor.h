@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -30,7 +30,7 @@
 
 namespace srsran {
 
-class resource_grid_mapper;
+class resource_grid_writer;
 
 /// Describes a DMRS for PDSCH processor interface.
 class dmrs_pdsch_processor
@@ -62,9 +62,9 @@ public:
   virtual ~dmrs_pdsch_processor() = default;
 
   /// \brief Generates and maps DMRS for PDSCH.
-  /// \param [out] grid  Destination resource grid.
+  /// \param [out] grid  Resource grid writer interface.
   /// \param [in] config PT-RS configuration.
-  virtual void map(resource_grid_mapper& mapper, const config_t& config) = 0;
+  virtual void map(resource_grid_writer& grid, const config_t& config) = 0;
 };
 
 } // namespace srsran

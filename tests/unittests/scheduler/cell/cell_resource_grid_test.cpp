@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,8 @@
  */
 
 #include "lib/scheduler/cell/resource_grid.h"
-#include "tests/unittests/scheduler/test_utils/config_generators.h"
+#include "tests/test_doubles/scheduler/scheduler_config_helper.h"
+#include "srsran/scheduler/config/scheduler_expert_config_factory.h"
 #include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
@@ -50,7 +51,7 @@ TEST(carrier_subslot_resource_grid_test, test_all)
   // Wideband Carrier, 15kHz case.
   {
     carrier_subslot_resource_grid carrier_grid(carrier_cfgs[0]);
-    TESTASSERT_EQ(subcarrier_spacing::kHz15, carrier_grid.scs());
+    TESTASSERT_EQ(fmt::underlying(subcarrier_spacing::kHz15), fmt::underlying(carrier_grid.scs()));
     TESTASSERT_EQ(52, carrier_grid.nof_rbs());
     TESTASSERT_EQ(0, carrier_grid.offset());
     crb_interval lims{0, 52};
@@ -84,7 +85,7 @@ TEST(carrier_subslot_resource_grid_test, test_all)
     carrier_cfg.offset_to_carrier    = 10;
     carrier_cfg.carrier_bandwidth    = 20;
     carrier_subslot_resource_grid carrier_grid(carrier_cfg);
-    TESTASSERT_EQ(subcarrier_spacing::kHz15, carrier_grid.scs());
+    TESTASSERT_EQ(fmt::underlying(subcarrier_spacing::kHz15), fmt::underlying(carrier_grid.scs()));
     TESTASSERT_EQ(20, carrier_grid.nof_rbs());
     TESTASSERT_EQ(10, carrier_grid.offset());
     crb_interval lims{10, 30};
@@ -171,7 +172,7 @@ TEST(cell_resource_grid_test, test_all)
 TEST(pusch_resource_allocation_test, test_all)
 {
   scheduler_expert_config sched_cfg = config_helpers::make_default_scheduler_expert_config();
-  cell_configuration      cell_cfg{sched_cfg, test_helpers::make_default_sched_cell_configuration_request()};
+  cell_configuration      cell_cfg{sched_cfg, sched_config_helper::make_default_sched_cell_configuration_request()};
   cell_resource_allocator res_grid_alloc{cell_cfg};
   bwp_configuration       bwp_cfg{};
   bwp_cfg.crbs = {0, 52};

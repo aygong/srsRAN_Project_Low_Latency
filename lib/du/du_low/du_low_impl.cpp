@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -45,8 +45,4 @@ void du_low_impl::stop()
   for (auto& cell : upper) {
     cell->stop();
   }
-}
-span<upper_phy*> du_low_impl::get_all_upper_phys()
-{
-  return upper_ptrs;
 }

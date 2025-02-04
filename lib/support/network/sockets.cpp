@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -74,7 +74,7 @@ bool srsran::bind_to_interface(const unique_fd& fd, const std::string& interface
   }
 
   ifreq ifr{};
-  std::strncpy(ifr.ifr_ifrn.ifrn_name, interface.c_str(), IFNAMSIZ);
+  std::strncpy(ifr.ifr_ifrn.ifrn_name, interface.c_str(), IFNAMSIZ - 1);
   ifr.ifr_ifrn.ifrn_name[IFNAMSIZ - 1] = 0; // ensure null termination in case input exceeds maximum length
 
   if (setsockopt(fd.value(), SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) < 0) {
@@ -106,8 +106,19 @@ bool srsran::sockaddr_to_ip_str(const sockaddr* addr, std::string& ip_address, s
   }
 
   ip_address = addr_str;
-  logger.debug("Read bind port of UDP network gateway: {}", ip_address);
   return true;
+}
+
+uint16_t srsran::sockaddr_to_port(const sockaddr* addr, srslog::basic_logger& logger)
+{
+  if (addr->sa_family == AF_INET) {
+    return ntohs(((sockaddr_in*)addr)->sin_port);
+  }
+  if (addr->sa_family == AF_INET6) {
+    return ntohs(((sockaddr_in6*)addr)->sin6_port);
+  }
+  logger.error("Unhandled address family.");
+  return 0;
 }
 
 bool srsran::set_receive_timeout(const unique_fd& fd, std::chrono::seconds rx_timeout, srslog::basic_logger& logger)

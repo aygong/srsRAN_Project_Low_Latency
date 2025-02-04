@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,9 @@
 
 #pragma once
 
+#include "srsran/adt/byte_buffer.h"
 #include "srsran/ran/cu_types.h"
+
 namespace srsran {
 
 namespace srs_cu_cp {
@@ -61,11 +63,15 @@ bool is_valid_handover_required(const srs_cu_cp::ngap_message& msg);
 
 bool is_valid_handover_cancel(const srs_cu_cp::ngap_message& msg);
 
+bool is_valid_ul_ue_associated_nrppa_transport(const srs_cu_cp::ngap_message& msg);
+
 // Check if the NGAP PDU contains the expected PDU session setup response.
 bool is_expected_pdu_session_resource_setup_response(
     const srs_cu_cp::ngap_message&       ngap_pdu,
     const std::vector<pdu_session_id_t>& expected_pdu_sessions_to_setup,
     const std::vector<pdu_session_id_t>& expected_pdu_sessions_failed_to_setup);
+
+byte_buffer get_rrc_container(const srs_cu_cp::ngap_message& msg);
 
 } // namespace test_helpers
 } // namespace srsran

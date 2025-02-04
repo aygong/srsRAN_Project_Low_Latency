@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,6 @@
 #pragma once
 
 #include "srsran/phy/upper/channel_coding/polar/polar_encoder.h"
-#include "srsran/srsvec/aligned_vec.h"
 
 namespace srsran {
 

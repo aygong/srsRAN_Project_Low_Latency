@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,8 +20,8 @@
  *
  */
 
-#include "lib/scheduler/ue_scheduling/dl_logical_channel_manager.h"
-#include "lib/scheduler/ue_scheduling/ul_logical_channel_manager.h"
+#include "lib/scheduler/ue_context/dl_logical_channel_manager.h"
+#include "lib/scheduler/ue_context/ul_logical_channel_manager.h"
 #include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
@@ -66,7 +66,7 @@ TEST(dl_logical_channel_test, when_buffer_state_is_zero_no_tx_data_is_pending)
   lch_mng.handle_dl_buffer_status_indication(lcid, 0);
 
   ASSERT_EQ(lch_mng.pending_bytes(lcid), 0);
-  ASSERT_EQ(lch_mng.pending_bytes(), 0);
+  ASSERT_EQ(lch_mng.total_pending_bytes(), 0);
   ASSERT_FALSE(lch_mng.has_pending_bytes());
   ASSERT_FALSE(lch_mng.has_pending_ces());
 }
@@ -82,7 +82,7 @@ TEST(dl_logical_channel_test, buffer_state_indication_has_no_effect_in_inactive_
   if (lcid == LCID_SRB0) {
     ASSERT_EQ(lch_mng.pending_bytes(lcid), get_mac_sdu_required_bytes(buf_st));
   } else {
-    ASSERT_EQ(lch_mng.pending_bytes(), 0);
+    ASSERT_EQ(lch_mng.total_pending_bytes(), 0);
     ASSERT_EQ(lch_mng.pending_bytes(lcid), 0);
   }
 
@@ -108,7 +108,7 @@ TEST(dl_logical_channel_test, buffer_status_indication_updates_tx_pending_bytes)
     ASSERT_EQ(lch_mng.pending_bytes(lcid), get_mac_sdu_required_bytes(buf_st));
     ASSERT_EQ(lch_mng.has_pending_bytes(lcid), buf_st > 0);
   } else {
-    ASSERT_EQ(lch_mng.pending_bytes(), get_mac_sdu_required_bytes(buf_st));
+    ASSERT_EQ(lch_mng.total_pending_bytes(), get_mac_sdu_required_bytes(buf_st));
     ASSERT_EQ(lch_mng.has_pending_bytes(), buf_st > 0);
   }
   ASSERT_EQ(lch_mng.pending_bytes(lcid), get_mac_sdu_required_bytes(buf_st));
@@ -127,8 +127,7 @@ TEST(dl_logical_channel_test, total_pending_bytes_equal_sum_of_logical_channel_p
     lch_mng.handle_dl_buffer_status_indication(lcid, dl_bs);
   }
 
-  ASSERT_EQ(lch_mng.pending_bytes() + lch_mng.pending_bytes(LCID_SRB0),
-            std::accumulate(buf_st_inds.begin(), buf_st_inds.end(), 0));
+  ASSERT_EQ(lch_mng.total_pending_bytes(), std::accumulate(buf_st_inds.begin(), buf_st_inds.end(), 0));
   ASSERT_FALSE(lch_mng.has_pending_ces());
   for (unsigned i = 0; i != lcids.size(); ++i) {
     ASSERT_EQ(lch_mng.pending_bytes(lcids[i]), buf_st_inds[i]);
@@ -143,7 +142,7 @@ TEST(dl_logical_channel_test, mac_ce_indication_updates_tx_pending_bytes)
 
   ASSERT_TRUE(lch_mng.has_pending_bytes());
   ASSERT_TRUE(lch_mng.has_pending_ces());
-  ASSERT_EQ(lch_mng.pending_bytes(),
+  ASSERT_EQ(lch_mng.total_pending_bytes(),
             lcid_dl_sch_t{lcid_dl_sch_t::TA_CMD}.sizeof_ce() + FIXED_SIZED_MAC_CE_SUBHEADER_SIZE);
 }
 
@@ -210,9 +209,9 @@ TEST(dl_logical_channel_test, mac_sdu_is_scheduled_if_tb_has_space)
 
   unsigned rem_bytes = tb_size, rem_sdu_size = sdu_size;
   do {
-    unsigned       pending_bytes = lch_mng.pending_bytes();
+    unsigned       pending_bytes = lch_mng.total_pending_bytes();
     dl_msg_lc_info subpdu;
-    unsigned       allocated_bytes = lch_mng.allocate_mac_sdu(subpdu, rem_bytes);
+    unsigned       allocated_bytes = lch_mng.allocate_mac_sdu(subpdu, rem_bytes, lcid);
     if (not subpdu.lcid.is_valid()) {
       // There was not enough space in the TB to deplete all the pending tx bytes.
       ASSERT_LT(tb_size, get_mac_sdu_required_bytes(sdu_size));
@@ -227,8 +226,17 @@ TEST(dl_logical_channel_test, mac_sdu_is_scheduled_if_tb_has_space)
       ASSERT_FALSE(lch_mng.has_pending_bytes()) << "subPDU is large enough to deplete all the pending tx bytes";
     } else {
       rem_sdu_size -= subpdu.sched_bytes;
-      ASSERT_EQ(get_mac_sdu_required_bytes(rem_sdu_size), lch_mng.pending_bytes())
-          << "incorrect calculation of remaining pending tx bytes";
+      // Note: In the case the logical channel was not totally flushed, the manager adds some extra bytes to account for
+      // RLC overhead.
+      const unsigned RLC_SEGMENTATION_OVERHEAD = 4;
+      unsigned       req_bytes                 = get_mac_sdu_required_bytes(rem_sdu_size);
+      unsigned       lc_pending_bytes          = lch_mng.total_pending_bytes() - RLC_SEGMENTATION_OVERHEAD;
+      if (req_bytes >= 254 and req_bytes <= 258) {
+        // Note: account for ambiguity in transition between MAC subheader sizes.
+        req_bytes++;
+      }
+      ASSERT_EQ(req_bytes, lc_pending_bytes)
+          << fmt::format("incorrect calculation of remaining pending tx bytes for SDU of size={}", subpdu.sched_bytes);
     }
 
     rem_bytes -= allocated_bytes;
@@ -261,7 +269,7 @@ TEST(dl_logical_channel_test, pending_ue_con_res_id_ce_bytes_does_not_include_ot
   const unsigned dummy_ce_payload = 0;
   lch_mng.handle_mac_ce_indication({.ce_lcid = ce_lcid, .ce_payload = dummy_ce_payload});
 
-  ASSERT_EQ(lch_mng.pending_ue_con_res_id_ce_bytes(), 0);
+  ASSERT_EQ(lch_mng.pending_con_res_ce_bytes(), 0);
 }
 
 TEST(ul_logical_channel_test, when_logical_channel_groups_are_inactive_then_no_ul_bytes_are_pending)
@@ -311,12 +319,12 @@ TEST(dl_logical_channel_test, assign_leftover_bytes_to_sdu_if_leftover_bytes_is_
 TEST(dl_logical_channel_test, ta_cmd_mac_ce_gets_updated_if_already_in_pending_ces_queue)
 {
   dl_logical_channel_manager lch_mng;
-  const auto                 first_ta_cmd_ce_payload = ta_cmd_ce_payload{.tag_id = 0, .ta_cmd = 29};
+  const auto first_ta_cmd_ce_payload = ta_cmd_ce_payload{.tag_id = time_alignment_group::id_t{0}, .ta_cmd = 29};
   lch_mng.handle_mac_ce_indication({.ce_lcid = lcid_dl_sch_t::TA_CMD, .ce_payload = first_ta_cmd_ce_payload});
   ASSERT_TRUE(lch_mng.has_pending_bytes());
   ASSERT_TRUE(lch_mng.has_pending_ces());
 
-  const auto second_ta_cmd_ce_payload = ta_cmd_ce_payload{.tag_id = 0, .ta_cmd = 33};
+  const auto second_ta_cmd_ce_payload = ta_cmd_ce_payload{.tag_id = time_alignment_group::id_t{0}, .ta_cmd = 33};
   lch_mng.handle_mac_ce_indication({.ce_lcid = lcid_dl_sch_t::TA_CMD, .ce_payload = second_ta_cmd_ce_payload});
   ASSERT_TRUE(lch_mng.has_pending_bytes());
   ASSERT_TRUE(lch_mng.has_pending_ces());

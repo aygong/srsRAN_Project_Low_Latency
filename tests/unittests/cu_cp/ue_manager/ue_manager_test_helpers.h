@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,6 @@
 #include "tests/unittests/ngap/test_helpers.h"
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/support/executors/manual_task_worker.h"
-
 #include <gtest/gtest.h>
 #include <memory>
 

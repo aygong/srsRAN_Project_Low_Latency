@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,9 +23,9 @@
 #pragma once
 
 #include "srsran/adt/expected.h"
-#include "srsran/adt/optional.h"
 #include "srsran/srslog/logger.h"
 #include "srsran/support/io/unique_fd.h"
+#include "fmt/std.h"
 #include <chrono>
 #include <cstdint>
 #include <sys/socket.h>
@@ -56,19 +56,23 @@ public:
 
   sctp_socket();
   sctp_socket(sctp_socket&& other) noexcept = default;
-  ~sctp_socket();
   sctp_socket& operator=(sctp_socket&& other) noexcept;
 
   bool close();
 
-  SRSRAN_NODISCARD bool is_open() const { return sock_fd.is_open(); }
-  const unique_fd&      fd() const { return sock_fd; }
+  [[nodiscard]] bool is_open() const { return sock_fd.is_open(); }
+  const unique_fd&   fd() const { return sock_fd; }
+  void               release()
+  {
+    int fd  = sock_fd.release();
+    sock_fd = unique_fd(fd, false);
+  }
 
-  SRSRAN_NODISCARD bool bind(struct sockaddr& ai_addr, const socklen_t& ai_addrlen, const std::string& bind_interface);
-  SRSRAN_NODISCARD bool connect(struct sockaddr& ai_addr, const socklen_t& ai_addrlen);
+  [[nodiscard]] bool bind(struct sockaddr& ai_addr, const socklen_t& ai_addrlen, const std::string& bind_interface);
+  [[nodiscard]] bool connect(struct sockaddr& ai_addr, const socklen_t& ai_addrlen);
   /// \brief Start listening on socket.
-  SRSRAN_NODISCARD bool listen();
-  SRSRAN_NODISCARD bool set_non_blocking();
+  [[nodiscard]] bool listen();
+  [[nodiscard]] bool set_non_blocking();
 
   /// \brief Return the port on which the socket is listening.
   ///
@@ -98,7 +102,7 @@ struct formatter<srsran::sctp_socket_params> {
   }
 
   template <typename FormatContext>
-  auto format(const srsran::sctp_socket_params& cfg, FormatContext& ctx)
+  auto format(const srsran::sctp_socket_params& cfg, FormatContext& ctx) const
   {
     return format_to(ctx.out(),
                      "if_name={} ai_family={} ai_socktype={} reuse_addr={} non_blockin_mode={} rx_timeout={} "

@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -21,10 +21,6 @@
 add_executable(srsvec_add_test srsvec_add_test.cpp)
 target_link_libraries(srsvec_add_test srsvec srslog)
 add_test(srsvec_add_test srsvec_add_test)
-
-add_executable(srsvec_aligned_test srsvec_aligned_test.cpp)
-target_link_libraries(srsvec_aligned_test srsvec srslog)
-add_test(srsvec_aligned_test srsvec_aligned_test)
 
 add_executable(srsvec_bit_test srsvec_bit_test.cpp)
 target_link_libraries(srsvec_bit_test srsvec srslog gtest gtest_main)
@@ -55,7 +51,7 @@ target_link_libraries(srsvec_modulus_square_test srsvec srslog)
 add_test(srsvec_modulus_square_test srsvec_modulus_square_test)
 
 add_executable(srsvec_prod_test srsvec_prod_test.cpp)
-target_link_libraries(srsvec_prod_test srsvec srslog)
+target_link_libraries(srsvec_prod_test srsvec srslog gtest gtest_main)
 add_test(srsvec_prod_test srsvec_prod_test)
 
 add_executable(srsvec_sc_prod_test srsvec_sc_prod_test.cpp)

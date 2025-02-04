@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "scheduler_expert_config.h"
 #include "srsran/ran/rrm.h"
 #include "srsran/ran/s_nssai.h"
+#include "srsran/scheduler/config/scheduler_expert_config.h"
 
 namespace srsran {
 

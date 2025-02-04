@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "lib/cu_up/ngu_session_manager.h"
 #include "srsran/asn1/e1ap/e1ap_pdu_contents.h"
 #include "srsran/cu_up/cu_up_executor_mapper.h"
 #include "srsran/e1ap/common/e1ap_common.h"
@@ -29,12 +30,14 @@
 #include "srsran/e1ap/cu_up/e1ap_cu_up.h"
 #include "srsran/f1u/cu_up/f1u_gateway.h"
 #include "srsran/gtpu/gtpu_demux.h"
+#include "srsran/gtpu/gtpu_gateway.h"
 #include "srsran/gtpu/gtpu_teid_pool.h"
 #include "srsran/gtpu/gtpu_tunnel_common_tx.h"
 #include <chrono>
 #include <condition_variable>
 #include <list>
 #include <mutex>
+#include <utility>
 
 constexpr auto default_wait_timeout = std::chrono::seconds(3);
 
@@ -112,15 +115,15 @@ public:
   dummy_gtpu_teid_pool()           = default;
   ~dummy_gtpu_teid_pool() override = default;
 
-  SRSRAN_NODISCARD expected<gtpu_teid_t> request_teid() override
+  [[nodiscard]] expected<gtpu_teid_t> request_teid() override
   {
     expected<gtpu_teid_t> teid = gtpu_teid_t{next_teid++};
     return teid;
   }
 
-  SRSRAN_NODISCARD bool release_teid(gtpu_teid_t teid) override { return true; }
+  [[nodiscard]] bool release_teid(gtpu_teid_t teid) override { return true; }
 
-  bool full() const override { return true; };
+  [[nodiscard]] bool full() const override { return true; };
 
   uint32_t get_max_nof_teids() override { return UINT32_MAX; }
 
@@ -220,6 +223,8 @@ public:
 
   void on_new_pdu(nru_dl_message sdu) final { inner.on_new_pdu(std::move(sdu)); }
 
+  expected<std::string> get_bind_address() const override { return "127.0.0.2"; }
+
 private:
   bool                                stopped = false;
   dummy_inner_f1u_bearer&             inner;
@@ -231,6 +236,7 @@ class dummy_f1u_gateway final : public f1u_cu_up_gateway
 {
 private:
   dummy_inner_f1u_bearer& bearer;
+  std::string             bind_ip_addr = "127.0.0.1";
 
 public:
   explicit dummy_f1u_gateway(dummy_inner_f1u_bearer& bearer_) : bearer(bearer_) {}
@@ -239,12 +245,13 @@ public:
   std::unique_ptr<f1u_cu_up_gateway_bearer> create_cu_bearer(uint32_t                              ue_index,
                                                              drb_id_t                              drb_id,
                                                              const srs_cu_up::f1u_config&          config,
-                                                             const up_transport_layer_info&        ul_up_tnl_info,
+                                                             const gtpu_teid_t&                    ul_teid,
                                                              f1u_cu_up_gateway_bearer_rx_notifier& rx_notifier,
                                                              task_executor&                        ul_exec) override
   {
-    created_ul_teid_list.push_back(ul_up_tnl_info.gtp_teid);
+    created_ul_teid_list.push_back(ul_teid);
     bearer.connect_f1u_rx_sdu_notifier(rx_notifier);
+    up_transport_layer_info ul_up_tnl_info{transport_layer_address::create_from_string("127.0.0.2"), ul_teid};
     return std::make_unique<dummy_f1u_gateway_bearer>(bearer, *this, ul_up_tnl_info);
   }
 
@@ -259,11 +266,39 @@ public:
     removed_ul_teid_list.push_back(ul_up_tnl_info.gtp_teid);
   }
 
-  expected<std::string> get_cu_bind_address() const override { return "127.0.0.1"; }
-
   std::list<gtpu_teid_t> created_ul_teid_list  = {};
   std::list<gtpu_teid_t> attached_ul_teid_list = {};
   std::list<gtpu_teid_t> removed_ul_teid_list  = {};
+};
+
+class dummy_gtpu_gateway final : public gtpu_tnl_pdu_session
+{
+public:
+  void set_bind_address(const std::string& ip_address) { ip_addr = ip_address; }
+
+private:
+  bool get_bind_address(std::string& ip_address) const override
+  {
+    ip_address = ip_addr;
+    return true;
+  }
+
+  std::optional<uint16_t> get_bind_port() const override { return 2152; }
+
+  void handle_pdu(byte_buffer pdu, const sockaddr_storage& dest_addr) override {}
+
+  void on_new_pdu(byte_buffer pdu, const sockaddr_storage& src_addr) override {}
+
+  std::string ip_addr = "127.0.0.2";
+};
+
+class dummy_ngu_session_manager final : public srs_cu_up::ngu_session_manager
+{
+public:
+  gtpu_tnl_pdu_session& get_next_ngu_gateway() override { return ngu_gw; };
+
+private:
+  dummy_gtpu_gateway ngu_gw;
 };
 
 class dummy_e1ap final : public srs_cu_up::e1ap_control_message_handler

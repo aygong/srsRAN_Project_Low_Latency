@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,6 +21,7 @@
  */
 
 #pragma once
+
 #include "../../resource_grid_request_pool.h"
 #include "srsran/adt/circular_array.h"
 #include "srsran/gateways/baseband/buffer/baseband_gateway_buffer_dynamic.h"

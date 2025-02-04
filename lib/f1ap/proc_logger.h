@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,8 @@
 #pragma once
 
 #include "srsran/f1ap/f1ap_ue_id_types.h"
-#include "srsran/support/format_utils.h"
+#include "fmt/format.h"
+#include <utility>
 
 namespace srsran {
 
@@ -61,15 +62,15 @@ struct formatter<srsran::f1ap_common_log_prefix> {
   }
 
   template <typename FormatContext>
-  auto format(const srsran::f1ap_common_log_prefix& prefix, FormatContext& ctx)
+  auto format(const srsran::f1ap_common_log_prefix& prefix, FormatContext& ctx) const
   {
     bool first_id = true;
     auto get_sep  = [&first_id]() { return std::exchange(first_id, false) ? "" : " "; };
     if (prefix.du_ue_id != srsran::gnb_du_ue_f1ap_id_t::invalid) {
-      format_to(ctx.out(), "{}du_ue={}", get_sep(), prefix.du_ue_id);
+      format_to(ctx.out(), "{}du_ue={}", get_sep(), fmt::underlying(prefix.du_ue_id));
     }
     if (prefix.cu_ue_id != srsran::gnb_cu_ue_f1ap_id_t::invalid) {
-      format_to(ctx.out(), "{}cu_ue={}", get_sep(), prefix.cu_ue_id);
+      format_to(ctx.out(), "{}cu_ue={}", get_sep(), fmt::underlying(prefix.cu_ue_id));
     }
     if (prefix.proc_name != nullptr) {
       format_to(ctx.out(), "{}proc=\"{}\"", get_sep(), prefix.proc_name);

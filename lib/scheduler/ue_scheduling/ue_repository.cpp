@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -26,7 +26,7 @@
 
 using namespace srsran;
 
-ue_repository::ue_repository() : logger(srslog::fetch_basic_logger("SCHED"))
+ue_repository::ue_repository() : logger(srslog::fetch_basic_logger("SCHED")), ues_to_destroy(MAX_NOF_DU_UES)
 {
   rnti_to_ue_index_lookup.reserve(MAX_NOF_DU_UES);
 }
@@ -39,12 +39,12 @@ static bool is_ue_ready_for_removal(ue& u)
   unsigned nof_ue_cells = u.nof_cells();
   for (unsigned cell_idx = 0; cell_idx != nof_ue_cells; ++cell_idx) {
     const ue_cell& c = u.get_cell((ue_cell_index_t)cell_idx);
-    for (unsigned i = 0; i != c.harqs.nof_dl_harqs(); ++i) {
+    for (unsigned i = 0, e = c.harqs.nof_dl_harqs(); i != e; ++i) {
       if (c.harqs.dl_harq(to_harq_id(i)).has_value()) {
         return false;
       }
     }
-    for (unsigned i = 0; i != c.harqs.nof_ul_harqs(); ++i) {
+    for (unsigned i = 0, e = c.harqs.nof_ul_harqs(); i != e; ++i) {
       if (c.harqs.ul_harq(to_harq_id(i)).has_value()) {
         return false;
       }
@@ -81,7 +81,7 @@ void ue_repository::slot_indication(slot_point sl_tx)
 
     const du_ue_index_t ue_idx = rem_ev.ue_index();
     if (not ues.contains(ue_idx)) {
-      logger.error("ue={}: Unexpected UE removal from UE repository", ue_idx);
+      logger.error("ue={}: Unexpected UE removal from UE repository", fmt::underlying(ue_idx));
       rem_ev.reset();
       continue;
     }
@@ -98,16 +98,22 @@ void ue_repository::slot_indication(slot_point sl_tx)
     if (it != rnti_to_ue_index_lookup.end()) {
       rnti_to_ue_index_lookup.erase(it);
     } else {
-      logger.error("ue={} rnti={}: UE with provided c-rnti not found in RNTI-to-UE-index lookup table.", ue_idx, crnti);
+      logger.error("ue={} rnti={}: UE with provided c-rnti not found in RNTI-to-UE-index lookup table.",
+                   fmt::underlying(ue_idx),
+                   crnti);
     }
 
-    // Remove UE from the repository.
-    ues.erase(ue_idx);
+    // Take the UE from the repository and schedule its destruction outside the critical section.
+    auto ue_ptr = ues.take(ue_idx);
+    ue_ptr->release_resources();
+    if (not ues_to_destroy.try_push(std::move(ue_ptr))) {
+      logger.warning("Failed to offload UE destruction. Performance may be affected");
+    }
 
     // Marks UE config removal as complete.
     rem_ev.reset();
 
-    logger.debug("ue={} rnti={}: UE has been successfully removed.", ue_idx, crnti);
+    logger.debug("ue={} rnti={}: UE has been successfully removed.", fmt::underlying(ue_idx), crnti);
   }
 
   // In case the elements at the front of the ring has been marked for removal, pop them from the queue.
@@ -160,4 +166,10 @@ const ue* ue_repository::find_by_rnti(rnti_t rnti) const
 {
   auto it = search_rnti(rnti_to_ue_index_lookup, rnti);
   return it != rnti_to_ue_index_lookup.end() ? ues[it->second].get() : nullptr;
+}
+
+void ue_repository::destroy_pending_ues()
+{
+  while (ues_to_destroy.try_pop()) {
+  }
 }

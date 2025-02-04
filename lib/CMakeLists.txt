@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -17,6 +17,9 @@
 # the LICENSE file in the top-level directory of this distribution
 # and at http://www.gnu.org/licenses/.
 #
+
+# Do not build by default.
+set_directory_properties(PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 add_subdirectory(asn1)
 add_subdirectory(cu_cp)
@@ -36,25 +39,18 @@ endif (DPDK_FOUND)
 add_subdirectory(instrumentation)
 add_subdirectory(mac)
 add_subdirectory(ngap)
+add_subdirectory(nrppa)
 add_subdirectory(nru)
-if (DU_SPLIT_7_2 OR DU_SPLIT_DYNAMIC)
-    add_subdirectory(ofh)
-endif ()
+add_subdirectory(ofh)
 add_subdirectory(pcap)
 add_subdirectory(pdcp)
-if (NOT DU_SPLIT_6)
-    add_subdirectory(phy)
-endif ()
+add_subdirectory(phy)
 add_subdirectory(psup)
-if (DU_SPLIT_DYNAMIC OR DU_SPLIT_8)
-    add_subdirectory(radio)
-endif ()
+add_subdirectory(radio)
 add_subdirectory(ran)
 add_subdirectory(rlc)
 add_subdirectory(rrc)
-if (NOT DU_SPLIT_6)
-    add_subdirectory(ru)
-endif ()
+add_subdirectory(ru)
 add_subdirectory(scheduler)
 add_subdirectory(sdap)
 add_subdirectory(security)

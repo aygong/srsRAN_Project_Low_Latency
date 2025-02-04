@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -58,7 +58,7 @@ ue_index_t ue_manager::add_ue(du_index_t                     du_index,
   }
 
   if (du_id.has_value() && du_id.value() == gnb_du_id_t::invalid) {
-    logger.warning("CU-CP UE creation Failed. Cause: Invalid gNB-DU ID={}", du_id.value());
+    logger.warning("CU-CP UE creation Failed. Cause: Invalid gNB-DU ID={}", fmt::underlying(du_id.value()));
     return ue_index_t::invalid;
   }
 
@@ -113,7 +113,7 @@ ue_index_t ue_manager::add_ue(du_index_t                     du_index,
               new_ue_index,
               du_index,
               plmn,
-              du_id.has_value() ? fmt::format(" gnb_du_id={}", du_id.value()) : "",
+              du_id.has_value() ? fmt::format(" gnb_du_id={}", fmt::underlying(du_id.value())) : "",
               pci.has_value() ? fmt::format(" pci={}", pci.value()) : "",
               rnti.has_value() ? fmt::format(" rnti={}", rnti.value()) : "",
               pcell_index.has_value() ? fmt::format(" pcell_index={}", pcell_index.value()) : "");
@@ -210,8 +210,12 @@ cu_cp_ue* ue_manager::set_ue_du_context(ue_index_t      ue_index,
   // Add PCI and RNTI to lookup.
   pci_rnti_to_ue_index.emplace(std::make_tuple(pci, rnti), ue_index);
 
-  logger.debug(
-      "ue={}: Updated UE with gnb_du_id={} pci={} rnti={} pcell_index={}", ue_index, du_id, pci, rnti, pcell_index);
+  logger.debug("ue={}: Updated UE with gnb_du_id={} pci={} rnti={} pcell_index={}",
+               fmt::underlying(ue_index),
+               fmt::underlying(du_id),
+               pci,
+               rnti,
+               fmt::underlying(pcell_index));
 
   return &ue;
 }
@@ -249,6 +253,12 @@ std::vector<metrics_report::ue_info> ue_manager::handle_ue_metrics_report_reques
     ue_report.rnti  = ue.second.get_c_rnti();
     ue_report.du_id = ue.second.get_du_id();
     ue_report.pci   = ue.second.get_pci();
+
+    if (ue.second.get_rrc_ue() == nullptr) {
+      ue_report.rrc_connection_state = rrc_state::idle;
+    } else {
+      ue_report.rrc_connection_state = ue.second.get_rrc_ue()->get_rrc_ue_control_message_handler().get_rrc_state();
+    }
   }
 
   return report;

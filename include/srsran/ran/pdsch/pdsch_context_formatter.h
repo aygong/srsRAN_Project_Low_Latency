@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,8 +21,9 @@
  */
 
 #pragma once
+
 #include "srsran/ran/pdsch/pdsch_context.h"
-#include "srsran/support/format_utils.h"
+#include "srsran/support/format/delimited_formatter.h"
 
 namespace fmt {
 
@@ -31,15 +32,15 @@ template <>
 struct formatter<srsran::pdsch_context> {
 public:
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::pdsch_context& context, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::pdsch_context& context, FormatContext& ctx) const
   {
-    helper.format_always(ctx, "h_id={}", context.h_id);
+    helper.format_always(ctx, "h_id={}", fmt::underlying(context.h_id));
     helper.format_always(ctx, "k1={}", context.k1);
     return ctx.out();
   }

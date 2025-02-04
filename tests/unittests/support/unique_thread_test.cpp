@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #include "srsran/support/executors/unique_thread.h"
 #include "srsran/support/test_utils.h"
-#include "fmt/ostream.h"
+#include "fmt/std.h"
 #include <mutex>
 #include <unistd.h>
 

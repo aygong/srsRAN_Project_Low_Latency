@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,13 +25,14 @@
 #include "srsran/phy/support/resource_grid_writer.h"
 #include "srsran/phy/support/support_factories.h"
 #include "srsran/phy/upper/channel_processors/pusch/factories.h"
+#include "srsran/phy/upper/channel_processors/pusch/pusch_processor_phy_capabilities.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_processor_result_notifier.h"
 #include "srsran/ran/sch/tbs_calculator.h"
 #include "srsran/support/benchmark_utils.h"
 #include "srsran/support/complex_normal_random.h"
 #include "srsran/support/executors/task_worker_pool.h"
 #include "srsran/support/executors/unique_thread.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_test.h"
 #ifdef HWACC_PUSCH_ENABLED
 #include "srsran/hal/dpdk/bbdev/bbdev_acc.h"
@@ -65,7 +66,7 @@ public:
   void wait_for_completion()
   {
     while (!completed.load()) {
-      std::this_thread::sleep_for(std::chrono::microseconds(10));
+      std::this_thread::sleep_for(std::chrono::microseconds(1));
     }
   }
 
@@ -126,7 +127,7 @@ static dmrs_type                          dmrs                        = dmrs_typ
 static unsigned                           nof_cdm_groups_without_data = 2;
 static bounded_bitset<MAX_NSYMB_PER_SLOT> dmrs_symbol_mask =
     {false, false, true, false, false, false, false, false, false, false, false, false, false, false};
-static unsigned                                                                          nof_pusch_decoder_threads = 8;
+static unsigned                                                                          nof_pusch_decoder_threads = 0;
 static std::unique_ptr<task_worker_pool<concurrent_queue_policy::locking_mpmc>>          worker_pool = nullptr;
 static std::unique_ptr<task_worker_pool_executor<concurrent_queue_policy::locking_mpmc>> executor    = nullptr;
 
@@ -191,7 +192,7 @@ static const std::vector<test_profile> profile_set = {
      {{modulation_scheme::QAM256, 948.0F}},
      {0},
      4,
-     {1, 2}},
+     {1, 2, 3, 4}},
 
     {"scs30_100MHz_256qam_rvall_1port_1layer",
      "Decodes PUSCH with 30 kHz SCS, 100 MHz of bandwidth, 256-QAM modulation, maximum code rate, RV 0-3, 1 port, "
@@ -237,7 +238,7 @@ static void usage(const char* prog)
              dedicated_queue ? "dedicated_queue" : "shared_queue");
   fmt::print("\t-x       Use the host's memory for the soft-buffer [Default {}]\n", !ext_softbuffer);
   fmt::print("\t-y       Force logging output written to a file [Default {}]\n", std_out_sink ? "std_out" : "file");
-  fmt::print("\t-z       Set logging level for the HAL [Default {}]\n", hal_log_level);
+  fmt::print("\t-z       Set logging level for the HAL [Default {}]\n", fmt::underlying(hal_log_level));
   fmt::print("\teal_args EAL arguments\n");
 #endif // HWACC_PUSCH_ENABLED
 
@@ -362,10 +363,15 @@ static std::vector<test_case_type> generate_test_cases(const test_profile& profi
 {
   std::vector<test_case_type> test_case_set;
 
+  unsigned max_nof_layers = get_pusch_processor_phy_capabilities().max_nof_layers;
+
   for (sch_mcs_description mcs : profile.mcs_set) {
     for (unsigned nof_prb : profile.nof_prb_set) {
       for (unsigned rv : profile.rv_set) {
         for (unsigned nof_layers : profile.nof_layers_set) {
+          if (nof_layers > max_nof_layers) {
+            continue;
+          }
           // Determine the Transport Block Size.
           tbs_calculator_configuration tbs_config = {};
           tbs_config.mcs_descr                    = mcs;
@@ -443,13 +449,6 @@ create_sw_pusch_decoder_factory(std::shared_ptr<crc_calculator_factory> crc_calc
 static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelerator_pusch_dec_factory()
 {
 #ifdef HWACC_PUSCH_ENABLED
-  // Create a bbdev accelerator factory.
-  static std::unique_ptr<dpdk::bbdev_acc_factory> bbdev_acc_factory = nullptr;
-  if (!bbdev_acc_factory) {
-    bbdev_acc_factory = srsran::dpdk::create_bbdev_acc_factory("srs");
-    TESTASSERT(bbdev_acc_factory, "Failed to create the bbdev accelerator factory.");
-  }
-
   TESTASSERT(nof_threads + nof_pusch_decoder_threads + 1 <= dpdk::MAX_NOF_BBDEV_VF_INSTANCES,
              "Insufficient hardware-accelerated LDPC decoder VFs: requested {} but only {} are available.",
              nof_threads + nof_pusch_decoder_threads + 1,
@@ -464,7 +463,7 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
   bbdev_config.nof_ldpc_dec_lcores                   = nof_threads + nof_pusch_decoder_threads + 1;
   bbdev_config.nof_fft_lcores                        = 0;
   bbdev_config.nof_mbuf                              = static_cast<unsigned>(pow2(log2_ceil(MAX_NOF_SEGMENTS)));
-  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = bbdev_acc_factory->create(bbdev_config, logger);
+  std::shared_ptr<dpdk::bbdev_acc> bbdev_accelerator = create_bbdev_acc(bbdev_config, logger);
   TESTASSERT(bbdev_accelerator);
 
   // Interfacing to a shared external HARQ buffer context repository.
@@ -483,7 +482,7 @@ static std::shared_ptr<hal::hw_accelerator_pusch_dec_factory> create_hw_accelera
   hw_decoder_config.dedicated_queue     = dedicated_queue;
 
   // ACC100 hardware-accelerator implementation.
-  return srsran::hal::create_bbdev_pusch_dec_acc_factory(hw_decoder_config, "srs");
+  return srsran::hal::create_bbdev_pusch_dec_acc_factory(hw_decoder_config);
 #else  // HWACC_PUSCH_ENABLED
   return nullptr;
 #endif // HWACC_PUSCH_ENABLED
@@ -518,14 +517,8 @@ create_pusch_decoder_factory(std::shared_ptr<crc_calculator_factory> crc_calcula
   return create_sw_pusch_decoder_factory(crc_calculator_factory);
 }
 
-static pusch_processor_factory& get_pusch_processor_factory()
+static std::shared_ptr<pusch_processor_factory> create_pusch_processor_factory()
 {
-  static std::shared_ptr<pusch_processor_factory> pusch_proc_factory = nullptr;
-
-  if (pusch_proc_factory) {
-    return *pusch_proc_factory;
-  }
-
   // Create pseudo-random sequence generator.
   std::shared_ptr<pseudo_random_generator_factory> prg_factory = create_pseudo_random_generator_sw_factory();
   TESTASSERT(prg_factory);
@@ -618,7 +611,8 @@ static pusch_processor_factory& get_pusch_processor_factory()
   pusch_proc_factory_config.dec_nof_iterations         = 2;
   pusch_proc_factory_config.dec_enable_early_stop      = true;
   pusch_proc_factory_config.max_nof_concurrent_threads = nof_threads;
-  pusch_proc_factory                                   = create_pusch_processor_factory_sw(pusch_proc_factory_config);
+  std::shared_ptr<pusch_processor_factory> pusch_proc_factory =
+      create_pusch_processor_factory_sw(pusch_proc_factory_config);
   TESTASSERT(pusch_proc_factory);
 
   pusch_proc_factory_config.decoder_factory =
@@ -638,20 +632,20 @@ static pusch_processor_factory& get_pusch_processor_factory()
   pusch_proc_factory = create_pusch_processor_pool(pusch_proc_pool_config);
   TESTASSERT(pusch_proc_factory);
 
-  return *pusch_proc_factory;
+  return pusch_proc_factory;
 }
 
 // Instantiates the PUSCH processor and validator.
 static std::tuple<std::unique_ptr<pusch_processor>, std::unique_ptr<pusch_pdu_validator>> create_processor()
 {
-  pusch_processor_factory& pusch_proc_factory = get_pusch_processor_factory();
+  std::shared_ptr<pusch_processor_factory> pusch_proc_factory = create_pusch_processor_factory();
 
   // Create PUSCH processor.
-  std::unique_ptr<pusch_processor> processor = pusch_proc_factory.create();
+  std::unique_ptr<pusch_processor> processor = pusch_proc_factory->create();
   TESTASSERT(processor);
 
   // Create PUSCH processor validator.
-  std::unique_ptr<pusch_pdu_validator> validator = pusch_proc_factory.create_validator();
+  std::unique_ptr<pusch_pdu_validator> validator = pusch_proc_factory->create_validator();
   TESTASSERT(validator);
 
   return std::make_tuple(std::move(processor), std::move(validator));
@@ -688,7 +682,7 @@ static void thread_process(pusch_processor&              proc,
       // Wait for pending to non-negative.
       while (pending_count.load() <= 0) {
         // Sleep.
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
+        std::this_thread::sleep_for(std::chrono::microseconds(1));
 
         // Quit if signaled.
         if (thread_quit) {
@@ -717,9 +711,7 @@ static void thread_process(pusch_processor&              proc,
 // Creates a resource grid.
 static std::unique_ptr<resource_grid> create_resource_grid(unsigned nof_ports, unsigned nof_symbols, unsigned nof_subc)
 {
-  std::shared_ptr<channel_precoder_factory> precoding_factory = create_channel_precoder_factory("generic");
-  TESTASSERT(precoding_factory != nullptr, "Invalid channel precoder factory.");
-  std::shared_ptr<resource_grid_factory> rg_factory = create_resource_grid_factory(precoding_factory);
+  std::shared_ptr<resource_grid_factory> rg_factory = create_resource_grid_factory();
   TESTASSERT(rg_factory != nullptr, "Invalid resource grid factory.");
 
   return rg_factory->create(nof_ports, nof_symbols, nof_subc);
@@ -843,7 +835,7 @@ int main(int argc, char** argv)
 
     // Wait for finish thread init.
     while (pending_count.load() != -static_cast<int>(nof_threads)) {
-      std::this_thread::sleep_for(std::chrono::microseconds(10));
+      std::this_thread::sleep_for(std::chrono::microseconds(1));
     }
 
     // Calculate the peak throughput, considering that the number of bits is for a slot.
@@ -852,7 +844,7 @@ int main(int argc, char** argv)
 
     // Measurement description.
     fmt::memory_buffer meas_description;
-    fmt::format_to(meas_description,
+    fmt::format_to(std::back_inserter(meas_description),
                    "PUSCH RB={:<3} Mod={:<6} R={:<5.3f} rv={} n_layers={} - {:>5.1f} Mbps",
                    config.freq_alloc.get_nof_rb(),
                    to_string(config.mcs_descr.modulation),
@@ -901,6 +893,8 @@ int main(int argc, char** argv)
   if (worker_pool) {
     worker_pool->stop();
   }
+  processor.reset();
+  validator.reset();
 
   return 0;
 }

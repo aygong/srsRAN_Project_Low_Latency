@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -28,11 +28,6 @@ endif ()
 if (NOT ENABLE_EXPORT)
     message(SEND_ERROR "Enable export is required. Append -DENABLE_EXPORT=TRUE to the cmake arguments.")
 endif ()
-
-if (NOT DU_SPLIT_DYNAMIC OR DU_SPLIT_8)
-    message(SEND_ERROR "Dynamic split or split 8 is required. Append -DDU_SPLIT_TYPE=DYNAMIC or -DDU_SPLIT_TYPE=SPLIT_8 to the cmake arguments.")
-endif ()
-
 
 # Add shared library.
 add_library(trx_srsran SHARED trx_srsran.cpp)

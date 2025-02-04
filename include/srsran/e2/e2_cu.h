@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,13 +22,18 @@
 
 #pragma once
 
-#include "e2.h"
+#include "srsran/cu_cp/cu_cp_types.h"
+#include "srsran/e2/e2.h"
+#include "srsran/pdcp/pdcp_metrics.h"
+
 namespace srsran {
 
-class e2_cu_metrics_notifier
+class e2_cu_metrics_notifier : public pdcp_metrics_notifier
 {
 public:
   virtual ~e2_cu_metrics_notifier() = default;
+
+  using pdcp_metrics_notifier::report_metrics;
 };
 
 class e2_cu_metrics_interface

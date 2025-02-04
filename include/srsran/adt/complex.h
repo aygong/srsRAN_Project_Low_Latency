@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -128,7 +128,7 @@ struct formatter_template {
   }
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     static const fmt::string_view PREAMBLE_FORMAT = "{:";
 
@@ -157,7 +157,7 @@ struct formatter_template {
   }
 
   template <typename FormatContext>
-  auto format(ComplexType value, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(ComplexType value, FormatContext& ctx) const
   {
     const string_view format_str = string_view(format_buffer.data(), format_buffer.size());
     return format_to(ctx.out(), format_str, value.real(), value.imag());
@@ -180,13 +180,13 @@ struct formatter<srsran::cbf16_t> {
   formatter_template<srsran::cf_t> cf_formatter;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return cf_formatter.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(srsran::cbf16_t value, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::cbf16_t value, FormatContext& ctx) const
   {
     return cf_formatter.format(srsran::to_cf(value), ctx);
   }

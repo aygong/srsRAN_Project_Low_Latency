@@ -16,7 +16,6 @@ variables:
     options:
       - "ubuntu-24.10"
       - "ubuntu-24.04"
-      - "ubuntu-23.10"
       - "ubuntu-22.04"
       - "debian-12"
       - "debian-11"
@@ -45,17 +44,55 @@ variables:
 .build_and_unit_template:
   image: ${CR_REGISTRY_URI}/srsgnb/builder-${OS}:${DOCKER_BUILDER_VERSION}
   variables:
+    CMAKE_BUILD_TYPE: "" # Empty for cmake default
+    ASSERT_LEVEL: "" # Empty for cmake default
+    ENABLE_EXPORT: "" # Empty for cmake default
+    ENABLE_FFTW: "" # Empty for cmake default
+    ENABLE_MKL: "False" # Empty for cmake default
+    ENABLE_ARMPL: "False" # Empty for cmake default
+    ENABLE_UHD: "" # Empty for cmake default
+    ENABLE_DPDK: "" # Empty for cmake default
+    ENABLE_ZEROMQ: "" # Empty for cmake default
+    ENABLE_ASAN: "" # Empty for cmake default
+    ENABLE_TSAN: "" # Empty for cmake default
+    ENABLE_GCOV: "" # Empty for cmake default
+    ENABLE_WERROR: "" # Empty for cmake default
+    FORCE_DEBUG_INFO: "" # Empty for cmake default
+    MARCH: "" # Empty for cmake default
+    MTUNE: "" # Empty for cmake default
+    # CACHE
+    CCACHE_MAXSIZE: 3G
     # TEST
     TEST_EXECUTION_TIMEOUT: 0
     # CI
-    KUBERNETES_CPU_REQUEST: 6
-    KUBERNETES_CPU_LIMIT: 6
-    KUBERNETES_MEMORY_REQUEST: 12Gi
-    KUBERNETES_MEMORY_LIMIT: 12Gi
+    TRANSFER_METER_FREQUENCY: 5s
+    ARTIFACT_COMPRESSION_LEVEL: slowest
+    CACHE_COMPRESSION_LEVEL: slowest
+    CACHE_REQUEST_TIMEOUT: 5 # minutes - 10 by default
+    # K8
+    KUBERNETES_CPU_REQUEST: ${SRS_CPU_LIMIT}
+    KUBERNETES_CPU_LIMIT: ${SRS_CPU_LIMIT}
+    KUBERNETES_MEMORY_REQUEST: ${SRS_MEMORY_LIMIT}
+    KUBERNETES_MEMORY_LIMIT: ${SRS_MEMORY_LIMIT}
+    KUBERNETES_EPHEMERAL_STORAGE_REQUEST: "40G"
+    KUBERNETES_EPHEMERAL_STORAGE_LIMIT: "40G"
   tags:
     - ${INFRASTRUCTURE_TAG}
   before_script:
     - |
+      for var in \
+        CMAKE_BUILD_TYPE ASSERT_LEVEL ENABLE_EXPORT \
+        ENABLE_FFTW ENABLE_MKL ENABLE_ARMPL \
+        ENABLE_UHD ENABLE_DPDK ENABLE_ZEROMQ \
+        ENABLE_ASAN ENABLE_TSAN ENABLE_GCOV \
+        ENABLE_WERROR FORCE_DEBUG_INFO \
+        MARCH MTUNE \
+      ; do
+        if [ -n "${!var}" ]; then
+          BUILD_ARGS="-D${var}=${!var} ${BUILD_ARGS}"
+        fi
+      done
+
       BUILD_CMD="${BUILD_ARGS}"
       if [ -n "${DPDK_VERSION}" ]; then
         BUILD_CMD="-d ${DPDK_VERSION} ${BUILD_CMD}"
@@ -64,6 +101,11 @@ variables:
       if [ -n "${UHD_VERSION}" ]; then
         BUILD_CMD="-u ${UHD_VERSION} ${BUILD_CMD}"
         export LD_LIBRARY_PATH=/opt/uhd/${UHD_VERSION}/lib:${LD_LIBRARY_PATH}
+      fi
+      if [ -n "${ENABLE_ARMPL}" ]; then
+        if ARMPL_DIR=$(ls -d /opt/arm/armpl_* 2>/dev/null); then
+            export LD_LIBRARY_PATH=${ARMPL_DIR}/lib:${LD_LIBRARY_PATH}
+        fi
       fi
       if [ -n "${COMPILER}" ]; then
         BUILD_CMD="-c ${COMPILER} ${BUILD_CMD}"
@@ -77,25 +119,9 @@ variables:
         { set +x; } 2>/dev/null
       }
     - |
-      build_plugin() {
-        target="$1"
-        shift      
-        set -x
-        builder.sh -m "-j${KUBERNETES_CPU_REQUEST} ${target}" ${BUILD_CMD} "$@" ${CI_PROJECT_DIR}
-        { set +x; } 2>/dev/null
-      }
-    - |
       launch_tests_srsran() {
         cd ${SRSRANDIR}/build
-        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-        set -x
-        ctest -j${KUBERNETES_CPU_REQUEST} --schedule-random --output-on-failure --output-junit xunit.xml "$@"
-        { set +x; } 2>/dev/null
-      }
-    - |
-      launch_tests_plugin() {
-        cd ${CI_PROJECT_DIR}/build
-        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
         set -x
         ctest -j${KUBERNETES_CPU_REQUEST} --schedule-random --output-on-failure --output-junit xunit.xml "$@"
         { set +x; } 2>/dev/null

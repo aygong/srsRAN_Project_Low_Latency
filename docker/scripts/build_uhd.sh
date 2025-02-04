@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -44,8 +44,9 @@ main() {
         -DENABLE_EXAMPLES=Off \
         -DENABLE_TESTS=Off \
         -DCMAKE_CXX_FLAGS="-march=${arch}" ..
-    make -j"${ncores}"
-    make -j"${ncores}" install
+    cmake --build . -- -j"${ncores}"
+    cmake --install .
+
 }
 
 main "$@"

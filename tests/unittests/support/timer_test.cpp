@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,6 +24,7 @@
 #include "srsran/support/executors/task_worker.h"
 #include "srsran/support/test_utils.h"
 #include "srsran/support/timers.h"
+#include "fmt/std.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;

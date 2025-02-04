@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -19,6 +19,7 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #include "demodulation_mapper_qam256.h"
 #include "demodulation_mapper_intervals.h"
 #include "srsran/phy/upper/log_likelihood_ratio.h"

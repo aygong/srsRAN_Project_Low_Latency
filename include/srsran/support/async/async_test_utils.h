@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "async_no_op_task.h"
-#include "async_task.h"
-#include "eager_async_task.h"
-#include "manual_event.h"
-#include "srsran/adt/optional.h"
+#include "srsran/support/async/async_no_op_task.h"
+#include "srsran/support/async/async_task.h"
+#include "srsran/support/async/eager_async_task.h"
+#include "srsran/support/async/manual_event.h"
+#include <optional>
 
 namespace srsran {
 

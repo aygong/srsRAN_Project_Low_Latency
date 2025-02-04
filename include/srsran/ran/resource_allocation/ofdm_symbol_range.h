@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "sliv.h"
 #include "srsran/adt/interval.h"
 #include "srsran/ran/frame_types.h"
+#include "srsran/ran/resource_allocation/sliv.h"
 
 namespace srsran {
 
@@ -59,7 +59,7 @@ namespace fmt {
 template <>
 struct formatter<srsran::ofdm_symbol_range> : public formatter<srsran::interval<uint8_t>> {
   template <typename FormatContext>
-  auto format(const srsran::ofdm_symbol_range& symbols, FormatContext& ctx)
+  auto format(const srsran::ofdm_symbol_range& symbols, FormatContext& ctx) const
   {
     return formatter<srsran::interval<uint8_t>>::format(symbols, ctx);
   }

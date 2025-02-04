@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -224,6 +224,9 @@ std::optional<uci_allocation> uci_allocator_impl::alloc_uci_harq_ue(cell_resourc
 
     // Check whether UCI slot is UL enabled.
     if (not cell_cfg.is_fully_ul_enabled(uci_slot)) {
+      continue;
+    }
+    if (not ue_cell_cfg.is_ul_enabled(uci_slot)) {
       continue;
     }
 

@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -19,5 +19,11 @@
 #
 
 add_executable(scheduler_policy_test scheduler_policy_test.cpp)
-target_link_libraries(scheduler_policy_test srsran_sched scheduler_test_suite srslog gtest gtest_main)
+target_link_libraries(scheduler_policy_test
+        srsran_sched
+        scheduler_test_suite
+        sched_test_doubles
+        srslog
+        gtest
+        gtest_main)
 gtest_discover_tests(scheduler_policy_test)

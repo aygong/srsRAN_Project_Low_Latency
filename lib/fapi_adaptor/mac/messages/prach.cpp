@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,7 @@
  */
 
 #include "srsran/fapi_adaptor/mac/messages/prach.h"
-#include "srsran/mac/mac_cell_result.h"
+#include "srsran/scheduler/result/prach_info.h"
 
 using namespace srsran;
 using namespace fapi_adaptor;

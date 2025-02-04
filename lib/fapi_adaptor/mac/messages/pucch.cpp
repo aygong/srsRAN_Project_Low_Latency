@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #include "srsran/fapi_adaptor/mac/messages/pucch.h"
 #include "srsran/mac/mac_cell_result.h"
-#include "srsran/scheduler/scheduler_pucch_format.h"
+#include "srsran/scheduler/result/pucch_info.h"
 
 using namespace srsran;
 using namespace fapi_adaptor;
@@ -114,13 +114,96 @@ static void fill_format2_parameters(fapi::ul_pucch_pdu_builder& builder, const p
 
   // Scrambling.
   builder.set_scrambling_parameters(f2.n_id_scambling);
-  builder.set_format2_parameters(f2.n_id_0_scrambling);
+  builder.set_dmrs_scrambling(f2.n_id_0_scrambling);
 
   // Max coding rate.
   builder.set_maintenance_v3_basic_parameters({static_cast<unsigned>(f2.max_code_rate)}, {});
 
   // Bit lengths.
   builder.set_bit_length_parameters(convert_sr_bits_to_unsigned(f2.sr_bits), f2.harq_ack_nof_bits, f2.csi_part1_bits);
+}
+
+/// Fills the Format 3 parameters.
+static void fill_format3_parameters(fapi::ul_pucch_pdu_builder& builder, const pucch_info& mac_pdu)
+{
+  const pucch_format_3& f3 = mac_pdu.format_3;
+
+  // Hopping parameters.
+  const prb_interval& hop_prbs            = mac_pdu.resources.second_hop_prbs;
+  const bool          intra_slot_freq_hop = hop_prbs.empty() ? false : true;
+  // Both FAPI parameters initialCyclicShift (ref. TS 38.211 6.3.2.2.2) and m0PucchDmrsCyclicShift (ref.
+  // TS 38.211 6.4.1.3.3.1) map to the same value, which is always 0 for PUCCH Format 3.
+  constexpr unsigned m0_format3 = 0;
+
+  // Parameter initial_cyclic_shift is not applicable to PUCCH Format 3.
+  builder.set_hopping_information_parameters(
+      intra_slot_freq_hop, hop_prbs.start(), f3.group_hopping, f3.n_id_hopping, m0_format3);
+
+  // Common parameters.
+  builder.set_common_parameters(mac_pdu.format, f3.slot_repetition, f3.pi_2_bpsk);
+
+  // Scrambling.
+  builder.set_scrambling_parameters(f3.n_id_scrambling);
+
+  // DM-RS.
+  builder.set_dmrs_parameters(f3.additional_dmrs, f3.n_id_0_scrambling, m0_format3);
+
+  // Max coding rate.
+  builder.set_maintenance_v3_basic_parameters({static_cast<unsigned>(f3.max_code_rate)}, {});
+
+  // Bit lengths.
+  builder.set_bit_length_parameters(convert_sr_bits_to_unsigned(f3.sr_bits), f3.harq_ack_nof_bits, f3.csi_part1_bits);
+}
+
+/// Gets the cyclic shift index (m0) for PUCCH Format 4, as per TS 38.211 Table 6.4.1.3.3.1-1.
+static unsigned get_pucch_format4_m0(unsigned occ_index)
+{
+  switch (occ_index) {
+    case 0:
+      return 0;
+    case 1:
+      return 6;
+    case 2:
+      return 3;
+    case 3:
+      return 9;
+    default:
+      return 0;
+  }
+}
+
+/// Fills the Format 4 parameters.
+static void fill_format4_parameters(fapi::ul_pucch_pdu_builder& builder, const pucch_info& mac_pdu)
+{
+  const pucch_format_4& f4 = mac_pdu.format_4;
+
+  // Hopping parameters.
+  const prb_interval& hop_prbs            = mac_pdu.resources.second_hop_prbs;
+  const bool          intra_slot_freq_hop = hop_prbs.empty() ? false : true;
+  // Both FAPI parameters initialCyclicShift (ref. TS 38.211 6.3.2.2.2) and m0PucchDmrsCyclicShift
+  // (ref. TS 38.211 6.4.1.3.3.1) map to the same value.
+  const unsigned m0_format4 = get_pucch_format4_m0(mac_pdu.format_4.orthog_seq_idx);
+
+  builder.set_hopping_information_parameters(
+      intra_slot_freq_hop, hop_prbs.start(), f4.group_hopping, f4.n_id_hopping, m0_format4);
+
+  // Common parameters.
+  builder.set_common_parameters(mac_pdu.format, f4.slot_repetition, f4.pi_2_bpsk);
+
+  // Scrambling.
+  builder.set_scrambling_parameters(f4.n_id_scrambling);
+
+  // DM-RS.
+  builder.set_dmrs_parameters(f4.additional_dmrs, f4.n_id_0_scrambling, m0_format4);
+
+  // Specific format 4 parameters.
+  builder.set_format4_parameters(f4.orthog_seq_idx, static_cast<uint8_t>(f4.n_sf_pucch_f4));
+
+  // Max coding rate.
+  builder.set_maintenance_v3_basic_parameters({static_cast<unsigned>(f4.max_code_rate)}, {});
+
+  // Bit lengths.
+  builder.set_bit_length_parameters(convert_sr_bits_to_unsigned(f4.sr_bits), f4.harq_ack_nof_bits, f4.csi_part1_bits);
 }
 
 static void fill_custom_parameters(fapi::ul_pucch_pdu_builder& builder, const pucch_info& mac_pdu)
@@ -134,8 +217,14 @@ static void fill_custom_parameters(fapi::ul_pucch_pdu_builder& builder, const pu
     case pucch_format::FORMAT_2:
       fill_format2_parameters(builder, mac_pdu);
       break;
+    case pucch_format::FORMAT_3:
+      fill_format3_parameters(builder, mac_pdu);
+      break;
+    case pucch_format::FORMAT_4:
+      fill_format4_parameters(builder, mac_pdu);
+      break;
     default:
-      srsran_assert(0, "Invalid PUCCH format={}", mac_pdu.format);
+      srsran_assert(0, "Invalid PUCCH format={}", fmt::underlying(mac_pdu.format));
   }
 }
 

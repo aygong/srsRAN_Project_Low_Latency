@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -76,13 +76,18 @@ public:
   virtual ~f1c_rx_pdu_handler() = default;
 
   /// Handle Rx PDU that is pushed to the F1AP from the F1-C.
-  virtual void handle_pdu(byte_buffer pdu) = 0;
+  virtual void handle_pdu(byte_buffer pdu, bool rrc_delivery_status_request = false) = 0;
 
-  /// Handle Rx PDU that is pushed to the F1AP from the F1-C and await its delivery (ACK) in the lower layers.
-  virtual async_task<bool> handle_pdu_and_await_delivery(byte_buffer pdu, std::chrono::milliseconds time_to_wait) = 0;
+  /// \brief Handle Rx PDU that is pushed to the F1AP from the F1-C and await its delivery (ACK) in the lower layers.
+  /// \return Asynchronous task that returns true when delivery is successful and false, otherwise.
+  virtual async_task<bool> handle_pdu_and_await_delivery(byte_buffer               pdu,
+                                                         bool                      report_rrc_delivery_status,
+                                                         std::chrono::milliseconds time_to_wait) = 0;
 
   /// Handle Rx PDU that is pushed to the F1AP from the F1-C and await its transmission by the lower layers.
+  /// \return Asynchronous task that returns true when transmission is successful and false, otherwise.
   virtual async_task<bool> handle_pdu_and_await_transmission(byte_buffer               pdu,
+                                                             bool                      report_rrc_delivery_status,
                                                              std::chrono::milliseconds time_to_wait) = 0;
 };
 

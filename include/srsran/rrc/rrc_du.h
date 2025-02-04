@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "rrc_cell_context.h"
-#include "rrc_ue.h"
 #include "srsran/cu_cp/cell_meas_manager_config.h"
+#include "srsran/rrc/rrc_cell_context.h"
+#include "srsran/rrc/rrc_ue.h"
 
 namespace srsran {
 namespace srs_cu_cp {

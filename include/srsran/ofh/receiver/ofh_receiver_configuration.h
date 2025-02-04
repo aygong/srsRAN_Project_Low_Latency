@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -36,6 +36,8 @@ namespace ofh {
 
 /// Open Fronthaul receiver configuration.
 struct receiver_config {
+  /// Radio sector identifier.
+  unsigned sector;
   /// Subcarrier spacing.
   subcarrier_spacing scs;
   /// Cyclic prefix.

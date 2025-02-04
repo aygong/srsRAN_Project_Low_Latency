@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -47,7 +47,7 @@ async_task<bool> mac_ul_processor::add_ue(const mac_ue_create_request& request)
       cfg.timers,
       [this, request]() { return ue_manager.add_ue(request); },
       [this, ue_idx = request.ue_index]() {
-        logger.warning("ue={}: Postponed UE creation. Cause: Task queue is full", ue_idx);
+        logger.warning("ue={}: Postponed UE creation. Cause: Task queue is full", fmt::underlying(ue_idx));
       });
 }
 
@@ -60,7 +60,8 @@ async_task<bool> mac_ul_processor::addmod_bearers(du_ue_index_t                 
       cfg.timers,
       [this, ue_index, ul_logical_channels]() { return ue_manager.addmod_bearers(ue_index, ul_logical_channels); },
       [this, ue_index]() {
-        logger.warning("ue={}: Postponed UE bearer add/mod operation. Cause: Task queue is full", ue_index);
+        logger.warning("ue={}: Postponed UE bearer add/mod operation. Cause: Task queue is full",
+                       fmt::underlying(ue_index));
       });
 }
 
@@ -73,19 +74,22 @@ async_task<bool> mac_ul_processor::remove_bearers(du_ue_index_t ue_index, span<c
       cfg.timers,
       [this, ue_index, lcids = std::move(lcids)]() { return ue_manager.remove_bearers(ue_index, lcids); },
       [this, ue_index]() {
-        logger.warning("ue={}: Postponed UE bearer removal. Cause: Task queue is full", ue_index);
+        logger.warning("ue={}: Postponed UE bearer removal. Cause: Task queue is full", fmt::underlying(ue_index));
       });
 }
 
 async_task<void> mac_ul_processor::remove_ue(const mac_ue_delete_request& msg)
 {
-  return execute_and_continue_on_blocking(
-      cfg.ue_exec_mapper.ctrl_executor(msg.ue_index),
+  // Note: We use "mac_ul_pdu_executor" to ensure that the removal of the UE from the MAC UL happens after all the
+  // pending UL PDUs for that same UE have been processed. Otherwise, we would see "Discarding subPDU... UE does not
+  // exist" in the logs.
+  return defer_and_continue_on_blocking(
+      cfg.ue_exec_mapper.mac_ul_pdu_executor(msg.ue_index),
       cfg.ctrl_exec,
       cfg.timers,
       [this, ue_index = msg.ue_index]() { ue_manager.remove_ue(ue_index); },
       [this, ue_index = msg.ue_index]() {
-        logger.warning("ue={}: Postponed UE removal. Cause: Task queue is full", ue_index);
+        logger.warning("ue={}: Postponed UE removal. Cause: Task queue is full", fmt::underlying(ue_index));
       });
 }
 
@@ -94,7 +98,8 @@ bool mac_ul_processor::flush_ul_ccch_msg(du_ue_index_t ue_index, byte_buffer ccc
   if (not cfg.ue_exec_mapper.ctrl_executor(ue_index).execute([this, ue_index, pdu = std::move(ccch_pdu)]() mutable {
         pdu_handler.push_ul_ccch_msg(ue_index, std::move(pdu));
       })) {
-    logger.warning("ue={}: Unable to forward UL-CCCH message to upper layers. Cause: task queue is full.", ue_index);
+    logger.warning("ue={}: Unable to forward UL-CCCH message to upper layers. Cause: task queue is full.",
+                   fmt::underlying(ue_index));
     // Note: The UE is not yet created in the CU, so there in no inactivity timer.
     return false;
   }
@@ -105,7 +110,8 @@ void mac_ul_processor::handle_ue_config_applied(du_ue_index_t ue_index)
 {
   if (not cfg.ue_exec_mapper.ctrl_executor(ue_index).execute(
           [this, ue_index]() { ue_manager.handle_ue_config_applied(ue_index); })) {
-    logger.warning("ue={}: Unable to forward UE config applied to upper layers. Cause: task queue is full.", ue_index);
+    logger.warning("ue={}: Unable to forward UE config applied to upper layers. Cause: task queue is full.",
+                   fmt::underlying(ue_index));
   }
 }
 
@@ -114,7 +120,7 @@ void mac_ul_processor::handle_rx_data_indication(mac_rx_data_indication msg)
   for (mac_rx_pdu& pdu : msg.pdus) {
     if (pdu.pdu.empty()) {
       logger.error("cell={} slot_rx={} rnti={}: Received empty MAC RX PDU from lower layers",
-                   msg.cell_index,
+                   fmt::underlying(msg.cell_index),
                    msg.sl_rx,
                    pdu.rnti);
       continue;
@@ -131,7 +137,9 @@ void mac_ul_processor::handle_rx_data_indication(mac_rx_data_indication msg)
               // > Decode Rx PDU and handle respective subPDUs.
               pdu_handler.handle_rx_pdu(slot_rx, cell_idx, std::move(pdu));
             })) {
-      logger.warning("cell={} slot_rx={}: Discarding Rx PDU. Cause: Rx task queue is full.", msg.cell_index, msg.sl_rx);
+      logger.warning("cell={} slot_rx={}: Discarding Rx PDU. Cause: Rx task queue is full.",
+                     fmt::underlying(msg.cell_index),
+                     msg.sl_rx);
     }
   }
 }

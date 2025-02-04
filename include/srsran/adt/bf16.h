@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "strong_type.h"
+#include "srsran/adt/strong_type.h"
 #include <cmath>
 #include <cstdint>
 #include <cstring>

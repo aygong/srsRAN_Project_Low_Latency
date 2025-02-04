@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -52,6 +52,8 @@ private:
 
   /// Creates procedure result to send back to procedure caller.
   ngap_ng_setup_result create_ng_setup_result();
+
+  static bool is_failure_misconfiguration(const asn1::ngap::cause_c& cause);
 
   ngap_context_t&           context;
   const ngap_message        request;

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -56,6 +56,10 @@ std::ostream& operator<<(std::ostream& os, const f2_code_rate_param& value)
 }
 
 } // namespace pucch_info_test
+
+template <>
+struct fmt::formatter<pucch_info_test::f2_code_rate_param> : ostream_formatter {
+};
 
 using namespace pucch_info_test;
 

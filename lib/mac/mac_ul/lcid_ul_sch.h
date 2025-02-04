@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/support/srsran_assert.h"
 #include "fmt/format.h"
 
@@ -148,7 +148,7 @@ namespace fmt {
 template <>
 struct formatter<srsran::lcid_ul_sch_t> : public formatter<uint32_t> {
   template <typename FormatContext>
-  auto format(srsran::lcid_ul_sch_t lcid, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::lcid_ul_sch_t lcid, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{}", (uint16_t)lcid);
   }

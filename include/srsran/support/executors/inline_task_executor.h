@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -29,13 +29,13 @@ namespace srsran {
 class inline_task_executor final : public task_executor
 {
 public:
-  SRSRAN_NODISCARD bool execute(unique_task task) override
+  [[nodiscard]] bool execute(unique_task task) override
   {
     task();
     return true;
   }
 
-  SRSRAN_NODISCARD bool defer(unique_task task) override
+  [[nodiscard]] bool defer(unique_task task) override
   {
     task();
     return true;

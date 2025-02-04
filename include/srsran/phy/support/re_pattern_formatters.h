@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,8 +21,8 @@
  */
 
 #pragma once
+
 #include "srsran/phy/support/re_pattern.h"
-#include "srsran/support/format_utils.h"
 #include <fmt/format.h>
 
 namespace fmt {
@@ -37,13 +37,13 @@ struct formatter<srsran::re_pattern> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const srsran::re_pattern& pattern, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::re_pattern& pattern, FormatContext& ctx) const
   {
     helper.format_always(
         ctx, "symb={:n}", static_cast<srsran::bounded_bitset<srsran::MAX_NSYMB_PER_SLOT>>(pattern.symbols));

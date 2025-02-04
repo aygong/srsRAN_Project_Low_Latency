@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,6 +25,8 @@
 #include "srsran/phy/support/support_formatters.h"
 #include "srsran/phy/upper/channel_processors/pusch/formatters.h"
 #include "srsran/phy/upper/unique_rx_buffer.h"
+#include "fmt/std.h"
+#include <atomic>
 
 namespace fmt {
 
@@ -43,13 +45,13 @@ struct formatter<pusch_results_wrapper> {
   formatter() = default;
 
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return helper.parse(ctx);
   }
 
   template <typename FormatContext>
-  auto format(const pusch_results_wrapper& result, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const pusch_results_wrapper& result, FormatContext& ctx) const
   {
     // Format SCH message.
     if (result.sch.has_value()) {
@@ -96,14 +98,14 @@ public:
     pdu         = pdu_;
     time_start  = std::chrono::steady_clock::now();
     time_uci    = std::chrono::time_point<std::chrono::steady_clock>();
-    time_return = std::chrono::time_point<std::chrono::steady_clock>();
+    time_return = 0;
 
     // Clear processor results.
     results.sch.reset();
     results.uci.reset();
 
     processor->process(data, std::move(rm_buffer), *this, grid, pdu);
-    time_return = std::chrono::steady_clock::now();
+    time_return = std::chrono::steady_clock::now().time_since_epoch().count();
   }
 
 private:
@@ -137,9 +139,11 @@ private:
     }
 
     // Calculate the return latency if available.
-    std::chrono::nanoseconds time_return_ns(0);
-    if (time_return != std::chrono::time_point<std::chrono::steady_clock>()) {
-      time_return_ns = time_return - time_start;
+    std::chrono::nanoseconds                           time_return_ns(0);
+    std::chrono::time_point<std::chrono::steady_clock> time_return_local =
+        std::chrono::time_point<std::chrono::steady_clock>(std::chrono::steady_clock::duration(time_return));
+    if (time_return_local != std::chrono::time_point<std::chrono::steady_clock>()) {
+      time_return_ns = time_return_local - time_start;
     }
 
     // Calculate the final time.
@@ -190,8 +194,11 @@ private:
   pusch_processor_result_notifier*                   notifier;
   std::chrono::time_point<std::chrono::steady_clock> time_start;
   std::chrono::time_point<std::chrono::steady_clock> time_uci;
-  std::chrono::time_point<std::chrono::steady_clock> time_return;
+  std::atomic<uint64_t>                              time_return;
   fmt::pusch_results_wrapper                         results;
+
+  // Makes sure atomics are lock free.
+  static_assert(std::atomic<decltype(time_return)>::is_always_lock_free);
 };
 
 } // namespace srsran

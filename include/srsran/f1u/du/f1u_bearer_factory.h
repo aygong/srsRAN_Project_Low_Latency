@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "f1u_bearer.h"
-#include "f1u_rx_sdu_notifier.h"
-#include "f1u_tx_pdu_notifier.h"
+#include "srsran/f1u/du/f1u_bearer.h"
 #include "srsran/f1u/du/f1u_config.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/f1u/du/f1u_rx_sdu_notifier.h"
+#include "srsran/f1u/du/f1u_tx_pdu_notifier.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/ran/up_transport_layer_info.h"
 #include "srsran/support/timers.h"
 

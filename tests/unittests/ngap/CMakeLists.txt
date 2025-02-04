@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -25,6 +25,7 @@ target_link_libraries(ngap_test_helpers srsran_support ngap_asn1 srslog)
 set(SOURCES
         ngap_asn1_packer_test.cpp
         ngap_validators_test.cpp
+        ngap_ue_context_test.cpp
         ng_setup_procedure_test.cpp
         ngap_nas_message_test.cpp
         ngap_ue_context_management_procedure_test.cpp
@@ -41,5 +42,3 @@ target_include_directories(ngap_test PRIVATE ${CMAKE_SOURCE_DIR})
 set_target_properties(ngap_test PROPERTIES UNITY_BUILD ON)
 target_link_libraries(ngap_test ngap_test_helpers srsran_ngap srsran_support ngap_asn1 srsran_ran srslog gtest gtest_main)
 gtest_discover_tests(ngap_test PROPERTIES "LABELS;ngap")
-
-add_to_exported_libs(ngap_test_helpers)

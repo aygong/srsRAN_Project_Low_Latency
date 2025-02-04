@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -71,10 +71,14 @@ option(STOP_ON_WARNING       "Interrupt application on warning"         OFF)
 option(ENABLE_WERROR         "Stop compilation on errors"               ON)
 option(ENABLE_TSAN           "Enable clang thread sanitizer"            OFF)
 option(ENABLE_ASAN           "Enable clang address sanitizer"           OFF)
+option(ENABLE_RTSAN          "Enable clang real-time sanitizer"         OFF)
 option(ENABLE_GCOV           "Enable code coverage"                     OFF)
+option(ENABLE_BACKWARD       "Enable backward"                          ON)
 option(ENABLE_UHD            "Enable UHD"                               ON)
 option(ENABLE_ZEROMQ         "Enable ZeroMQ"                            OFF)
 option(ENABLE_FFTW           "Enable FFTW"                              ON)
+option(ENABLE_MKL            "Enable Intel MKL"                         ON)
+option(ENABLE_ARMPL          "Enable ARM performance library"           ON)
 option(ENABLE_DPDK           "Enable DPDK"                              OFF)
 option(ENABLE_LIBNUMA        "Enable LibNUMA"                           OFF)
 option(ENABLE_EXPORT         "Enable PIC and export libraries"          OFF)
@@ -121,9 +125,7 @@ endif ()
 # Hardware acceleration for both PUSCH and PDSCH is enabled by default when using DPDK.
 if (ENABLE_DPDK)
   SET(ENABLE_PDSCH_HWACC ON CACHE BOOL "Enable PDSCH hardware-acceleration")
-  message(STATUS "Hardware-acceleration enabled for PDSCH.")
   SET(ENABLE_PUSCH_HWACC ON CACHE BOOL "Enable PUSCH hardware-acceleration")
-  message(STATUS "Hardware-acceleration enabled for PUSCH.")
 else (ENABLE_DPDK)
   unset(ENABLE_PDSCH_HWACC CACHE)
   unset(ENABLE_PUSCH_HWACC CACHE)
@@ -210,6 +212,12 @@ if (ENABLE_TSAN)
     add_definitions(-DENABLE_TSAN)
 endif (ENABLE_TSAN)
 
+if (ENABLE_RTSAN)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=realtime")
+    ADD_CXX_COMPILER_FLAG_IF_AVAILABLE("-fsanitize=realtime" HAVE_RPATH_FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=realtime")
+endif ()
+
 if (FORCE_DEBUG_INFO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 endif (FORCE_DEBUG_INFO)
@@ -241,14 +249,26 @@ endif()
 ########################################################################
 
 # Backward-cpp
-find_package(Backward)
-if(Backward_FOUND)
-    if(BACKWARD_HAS_EXTERNAL_LIBRARIES)
-        message(STATUS "Building with backward-cpp support")
-    else (BACKWARD_HAS_EXTERNAL_LIBRARIES)
-        message(STATUS "Backward-cpp found, but external libraries are missing.")
+if (ENABLE_BACKWARD)
+    find_package(Backward)
+    # Define macro for adding backwards to a target.
+    macro(add_backward TARGET)
+        target_include_directories(${TARGET} PRIVATE ${BACKWARD_INCLUDE_DIRS})
+        set_property(TARGET ${TARGET} APPEND PROPERTY COMPILE_DEFINITIONS ${BACKWARD_DEFINITIONS})
+        target_link_libraries(${TARGET} PRIVATE ${BACKWARD_LIBRARIES})
+    endmacro(add_backward TARGET)
+    if(BACKWARD_FOUND)
+        if(BACKWARD_HAS_EXTERNAL_LIBRARIES)
+            message(STATUS "Building with backward-cpp support")
+        else (BACKWARD_HAS_EXTERNAL_LIBRARIES)
+            message(STATUS "Backward-cpp found, but external libraries are missing.")
+        endif()
     endif()
-endif()
+else ()
+    # Empty macro to add backward when it is not enabled.
+    macro(add_backward)
+    endmacro()
+endif ()
 
 # Crypto
 find_package(MbedTLS REQUIRED)
@@ -267,6 +287,16 @@ endif (MBEDTLS_FOUND)
 if (ENABLE_FFTW)
     find_package(FFTW3F)
 endif (ENABLE_FFTW)
+
+# MKL
+if (ENABLE_MKL AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+    find_package(MKL)
+endif (ENABLE_MKL AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+
+# ARMPL
+if (ENABLE_ARMPL AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
+    find_package(ARMPL)
+endif (ENABLE_ARMPL AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
 
 # Google Tests
 if (BUILD_TESTS)
@@ -359,34 +389,6 @@ message(STATUS "TUNE value is ${MTUNE}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${MARCH} -mtune=${MTUNE}")
 
 ########################################################################
-# DU split setup
-########################################################################
-# Public variable to select the DU split.
-set(DU_SPLIT_TYPE "DYNAMIC" CACHE STRING "DU split type. Default value is 'DYNAMIC'. Allowed values: DYNAMIC, SPLIT_6, SPLIT_7_2, SPLIT_8")
-
-# Internal private booleans to represent the selected DU split type. Values auto-derived from DU_SPLIT_TYPE variable.
-set(DU_SPLIT_DYNAMIC OFF CACHE BOOL "DU dynamic split enabled boolean")
-set(DU_SPLIT_6 OFF CACHE BOOL "DU split 6 enabled boolean")
-set(DU_SPLIT_7_2 OFF CACHE BOOL "DU split 7.2 enabled boolean")
-set(DU_SPLIT_8 OFF CACHE BOOL "DU split 8 enabled boolean")
-
-if (DU_SPLIT_TYPE STREQUAL "DYNAMIC")
-    set(DU_SPLIT_DYNAMIC ON)
-elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_6")
-    set(DU_SPLIT_6 ON)
-elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_7_2")
-    set(DU_SPLIT_7_2 ON)
-elseif (DU_SPLIT_TYPE STREQUAL "SPLIT_8")
-    set(DU_SPLIT_8 ON)
-else ()
-    message(WARNING "DU split value '${DU_SPLIT_TYPE}' is not supported. Defaulting to 'DYNAMIC'")
-    set(DU_SPLIT_TYPE "DYNAMIC")
-    set(DU_SPLIT_DYNAMIC ON)
-endif ()
-
-message(STATUS "Selected DU split is '${DU_SPLIT_TYPE}'")
-
-########################################################################
 # Compiler launcher setup
 ########################################################################
 
@@ -429,6 +431,14 @@ endforeach()
 add_custom_target(all_srsran_headers SOURCES ${ALL_HEADER_FILES})
 
 ########################################################################
+# Simple function to notify binary targets.
+########################################################################
+
+function(notify_binary_target)
+    message(STATUS "Adding binary target: ${ARGV}")
+endfunction()
+
+########################################################################
 # Add the subdirectories
 ########################################################################
 
@@ -468,7 +478,7 @@ endif ()
 if(ENABLE_EXPORT)
   export(EXPORT srsran_export NAMESPACE srsran:: FILE "${CMAKE_BINARY_DIR}/srsran.cmake")
 else(ENABLE_EXPORT)
-  # Remove any previous export file (if it exists), since it will become outdated.
+  # Remove any previous export file (if it   exists), since it will become outdated.
   file(REMOVE "${CMAKE_BINARY_DIR}/srsran.cmake")
 endif(ENABLE_EXPORT)
 

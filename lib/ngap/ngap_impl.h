@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -78,6 +78,7 @@ public:
                                                               const nr_cell_global_id_t& cgi,
                                                               const unsigned             tac) override;
   const ngap_context_t& get_ngap_context() const override { return context; };
+  void handle_ul_ue_associated_nrppa_transport(ue_index_t ue_index, const byte_buffer& nrppa_pdu) override;
 
   // ngap_statistics_handler
   size_t get_nof_ues() const override { return ue_ctxt_list.size(); }
@@ -143,9 +144,15 @@ private:
   /// \param[in] msg The received Paging message.
   void handle_paging(const asn1::ngap::paging_s& msg);
 
-  /// \brief Notify about the reception of an Handover request message.
+  /// \brief Notify about the reception of a Handover request message.
   /// \param[in] msg The received handover request message.
   void handle_handover_request(const asn1::ngap::ho_request_s& msg);
+
+  /// \brief Notifiy about the reception of a DL UE Associated NRPPA Transport message.
+  void handle_dl_ue_associated_nrppa_transport(const asn1::ngap::dl_ue_associated_nrppa_transport_s& msg);
+
+  /// \brief Notifiy about the reception of a DL Non UE Associated NRPPA Transport message.
+  void handle_dl_non_ue_associated_nrppa_transport(const asn1::ngap::dl_non_ue_associated_nrppa_transport_s& msg);
 
   /// \brief Notify about the reception of an Error Indication message.
   /// \param[in] msg The received Error Indication message.
@@ -165,8 +172,8 @@ private:
   /// \param[in] amf_ue_id The AMF UE ID.
   void schedule_error_indication(ue_index_t ue_index, ngap_cause_t cause, std::optional<amf_ue_id_t> amf_ue_id = {});
 
-  /// \brief Callback for the PDU Session Setup Timer expiration. Triggers the release of the UE.
-  void on_pdu_session_setup_timer_expired(ue_index_t ue_index);
+  /// \brief Callback for the PDU Session Request Timer expiration. Triggers the release of the UE.
+  void on_request_pdu_session_timer_expired(ue_index_t ue_index);
 
   /// \brief Log NGAP RX PDU.
   void log_rx_pdu(const ngap_message& msg);

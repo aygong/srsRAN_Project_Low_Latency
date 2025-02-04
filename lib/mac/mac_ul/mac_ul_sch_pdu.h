@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -31,6 +31,7 @@
 #include "srsran/adt/static_vector.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/support/srsran_assert.h"
+#include "fmt/std.h"
 
 namespace srsran {
 
@@ -104,13 +105,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::mac_ul_sch_subpdu> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::mac_ul_sch_subpdu& subpdu, FormatContext& ctx) -> decltype(ctx.out())
+  auto format(const srsran::mac_ul_sch_subpdu& subpdu, FormatContext& ctx) const -> decltype(ctx.out())
   {
     using namespace srsran;
     if (subpdu.lcid().is_sdu()) {
@@ -137,7 +138,7 @@ struct formatter<srsran::mac_ul_sch_subpdu> {
         break;
       case lcid_ul_sch_t::SHORT_BSR: {
         lcg_bsr_report sbsr = decode_sbsr(subpdu.payload());
-        format_to(ctx.out(), "SBSR: lcg={} bs={}", sbsr.lcg_id, sbsr.buffer_size);
+        format_to(ctx.out(), "SBSR: lcg={} bs={}", fmt::underlying(sbsr.lcg_id), sbsr.buffer_size);
         break;
       }
       case lcid_ul_sch_t::LONG_BSR: {
@@ -145,7 +146,7 @@ struct formatter<srsran::mac_ul_sch_subpdu> {
         if (lbsr.has_value()) {
           format_to(ctx.out(), "LBSR: ");
           for (const auto& lcg : lbsr.value().list) {
-            format_to(ctx.out(), "lcg={} bs={} ", lcg.lcg_id, lcg.buffer_size);
+            format_to(ctx.out(), "lcg={} bs={} ", fmt::underlying(lcg.lcg_id), lcg.buffer_size);
           }
         } else {
           format_to(ctx.out(), "LBSR: invalid");
@@ -171,12 +172,12 @@ struct formatter<srsran::mac_ul_sch_subpdu> {
 template <>
 struct formatter<srsran::mac_ul_sch_pdu> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
   template <typename FormatContext>
-  auto format(const srsran::mac_ul_sch_pdu& pdu, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::mac_ul_sch_pdu& pdu, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{}", fmt::join(pdu.begin(), pdu.end(), ", "));
   }

@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -32,8 +32,10 @@
 # warning_as_errors: treat warnings as errors
 
 campaign_filename: &campaign_filename "C:\\ci\\CI 4x4 ORAN-FH-complete.xml"
-gnb_extra_commands: &gnb_extra_commands "ru_ofh --ta4_max 700 --ta4_min 10 metrics --rlc_report_period=1000"
-test_timeout: &test_timeout 2400 # 40 * 60
+gnb_extra_commands: &gnb_extra_commands "log --metrics_level=info metrics --rlc_report_period=1000"
+gnb_extra_commands_no_warn: &gnb_extra_commands_no_warn "log --all_level=error metrics --sched_report_period=5000 --rlc_report_period=5000"
+
+test_timeout: &test_timeout 2400
 
 tests:
   - campaign_filename: *campaign_filename
@@ -47,7 +49,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.2e+9
     expected_ul_bitrate: 80.0e+6
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -61,7 +63,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.2e+9
     expected_ul_bitrate: 80.0e+6
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -75,8 +77,10 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 9999999999999
-    warning_as_errors: true
+    expected_nof_kos: .inf
+    warning_as_errors: false
+    warning_allowlist:
+      - is not associated with any existing UE
 
   - campaign_filename: *campaign_filename
     test_name: "1UE fading noise UDP uplink"
@@ -89,8 +93,10 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 9999999999999
-    warning_as_errors: true
+    expected_nof_kos: .inf
+    warning_as_errors: false
+    warning_allowlist:
+      - is not associated with any existing UE
 
   - campaign_filename: *campaign_filename
     test_name: "1UE ideal TCP downlink"
@@ -103,7 +109,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.0e+9
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -117,7 +123,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.0e+9
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -131,22 +137,10 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 9999999999999
-    warning_as_errors: true
-
-  # - campaign_filename: *campaign_filename
-  #   test_name: "32UE fading TCP bidirectional"
-  #   test_timeout: *test_timeout
-  #   gnb_extra_commands: *gnb_extra_commands
-  #   id: "32UE fading TCP bidirectional"
-  #   max_pdschs_per_slot: 1
-  #   max_puschs_per_slot: 4
-  #   enable_qos_viavi: false
-  #   # test/fail criteria
-  #   expected_dl_bitrate: 14.0e+3
-  #   expected_ul_bitrate: 1.0e+3
-  #   expected_nof_kos: 9999999999999
-  #   warning_as_errors: false
+    expected_nof_kos: .inf
+    warning_as_errors: false
+    warning_allowlist:
+      - is not associated with any existing UE
 
   - campaign_filename: *campaign_filename
     test_name: "32UE fading UDP attach-detach with traffic"
@@ -159,13 +153,29 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 9999999999999
-    warning_as_errors: true
+    expected_nof_kos: .inf
+    warning_as_errors: false
+    warning_allowlist:
+      - is not associated with any existing UE
+
+  - campaign_filename: *campaign_filename
+    test_name: "32UE ideal UDP attach-detach with traffic 24h"
+    test_timeout: 93600
+    gnb_extra_commands: *gnb_extra_commands_no_warn
+    id: "32UE ideal UDP attach-detach with traffic 24h extended"
+    max_pdschs_per_slot: 1
+    max_puschs_per_slot: 4
+    enable_qos_viavi: false
+    # test/fail criteria
+    expected_dl_bitrate: 14.0e+3
+    expected_ul_bitrate: 1.0e+3
+    expected_nof_kos: .inf
+    warning_as_errors: false
 
   - campaign_filename: *campaign_filename
     test_name: "32UE ideal UDP attach-detach with traffic"
     test_timeout: *test_timeout
-    gnb_extra_commands: "log --ngap_level=debug metrics --rlc_report_period=1000"
+    gnb_extra_commands: *gnb_extra_commands
     id: "32UE ideal UDP attach-detach with traffic"
     max_pdschs_per_slot: 1
     max_puschs_per_slot: 4
@@ -173,23 +183,53 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 4
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
-    test_name: "32UE ideal UDP attach-detach with traffic"
+    test_name: "32UE ideal UDP attach-detach with traffic High brate"
     test_timeout: *test_timeout
-    gnb_extra_commands: "log --ngap_level=debug metrics --rlc_report_period=1000"
-    id: "32UE ideal UDP attach-detach with traffic DDDSU"
+    gnb_extra_commands: *gnb_extra_commands
+    id: "32UE ideal UDP attach-detach with traffic tdd DDDSU"
     max_pdschs_per_slot: 1
     max_puschs_per_slot: 4
     enable_qos_viavi: false
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 4
+    expected_nof_kos: 10
     warning_as_errors: true
     enable_dddsu: true
+
+  - campaign_filename: *campaign_filename
+    test_name: "32UE ideal UDP attach-detach with traffic High brate"
+    test_timeout: *test_timeout
+    gnb_extra_commands: *gnb_extra_commands
+    id: "32UE ideal UDP attach-detach with traffic tdd UL Heavy 7u2d"
+    max_pdschs_per_slot: 1
+    max_puschs_per_slot: 4
+    enable_qos_viavi: false
+    # test/fail criteria
+    expected_dl_bitrate: 14.0e+3
+    expected_ul_bitrate: 1.0e+3
+    expected_nof_kos: 10
+    warning_as_errors: true
+    ul_heavy_7u2d: true
+
+  - campaign_filename: *campaign_filename
+    test_name: "32UE ideal UDP attach-detach with traffic High brate"
+    test_timeout: *test_timeout
+    gnb_extra_commands: *gnb_extra_commands
+    id: "32UE ideal UDP attach-detach with traffic tdd UL Heavy 6u3d"
+    max_pdschs_per_slot: 1
+    max_puschs_per_slot: 4
+    enable_qos_viavi: false
+    # test/fail criteria
+    expected_dl_bitrate: 14.0e+3
+    expected_ul_bitrate: 1.0e+3
+    expected_nof_kos: 10
+    warning_as_errors: true
+    ul_heavy_6u3d: true
 
   - campaign_filename: *campaign_filename
     test_name: "1UE birth-death UDP bidirectional"
@@ -202,7 +242,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 9999999999999
+    expected_nof_kos: .inf
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -216,7 +256,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -230,7 +270,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 14.0e+3
     expected_ul_bitrate: 1.0e+3
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: true
 
   - campaign_filename: *campaign_filename
@@ -244,7 +284,7 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.2e+9
     expected_ul_bitrate: 80.0e+6
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: false
 
   - campaign_filename: *campaign_filename
@@ -258,5 +298,5 @@ tests:
     # test/fail criteria
     expected_dl_bitrate: 1.2e+9
     expected_ul_bitrate: 80.0e+6
-    expected_nof_kos: 3
+    expected_nof_kos: 10
     warning_as_errors: false

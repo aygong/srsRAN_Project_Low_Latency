@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -27,26 +27,5 @@ target_link_libraries(ofh_integration_test
         srsran_phy_support
         srsran_channel_precoder
         srsran_support)
-add_test(ofh_integration_test ofh_integration_test)
+add_test(ofh_integration_test ofh_integration_test -d \'{0,1}\')
 set_tests_properties(ofh_integration_test PROPERTIES LABELS "tsan;NO_MEMCHECK")
-
-set (SOURCES
-        ru_emulator_cli11_schema.cpp
-        ru_emulator.cpp
-        ru_emulator_rx_window_checker.cpp
-        ru_emulator_socket_transceiver.cpp
-        ru_emulator_timing_notifier.cpp)
-if (DPDK_FOUND)
-    list(APPEND SOURCES ru_emulator_dpdk_transceiver.cpp)
-endif (DPDK_FOUND)
-
-add_executable(ru_emulator ${SOURCES})
-target_include_directories(ru_emulator PRIVATE ${CMAKE_SOURCE_DIR})
-include_directories(${CMAKE_SOURCE_DIR}/external)
-target_link_libraries(ru_emulator srslog srsran_ofh_ethernet srsran_phy_support srsran_support)
-
-if (DPDK_FOUND)
-    target_compile_options(ru_emulator PRIVATE ${DPDK_CFLAGS})
-    target_link_libraries(ru_emulator hal_dpdk ${DPDK_LIBRARIES})
-    add_definitions(-DDPDK_FOUND)
-endif (DPDK_FOUND)

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "rrc_types.h"
 #include "srsran/adt/byte_buffer.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/asn1/rrc_nr/ue_cap.h"
@@ -30,6 +29,7 @@
 #include "srsran/cu_cp/cu_cp_types.h"
 #include "srsran/cu_cp/cu_cp_ue_messages.h"
 #include "srsran/ran/rnti.h"
+#include "srsran/rrc/rrc_types.h"
 #include "srsran/rrc/rrc_ue_config.h"
 #include "srsran/security/security.h"
 #include "srsran/support/async/async_task.h"
@@ -46,6 +46,9 @@ struct dl_dcch_msg_s;
 
 namespace srsran {
 namespace srs_cu_cp {
+
+/// RRC states (3GPP 38.331 v15.5.1 Sec 4.2.1)
+enum class rrc_state { idle = 0, connected, connected_inactive };
 
 class rrc_ue_controller
 {
@@ -195,7 +198,7 @@ public:
   /// \brief Notify about the reception of an inter CU handove related RRC Reconfiguration Complete.
   virtual void on_inter_cu_ho_rrc_recfg_complete_received(const ue_index_t           ue_index,
                                                           const nr_cell_global_id_t& cgi,
-                                                          const unsigned             tac) = 0;
+                                                          const tac_t                tac) = 0;
 };
 
 struct rrc_reconfiguration_response_message {
@@ -274,14 +277,23 @@ public:
   virtual rrc_ue_transfer_context get_transfer_context() = 0;
 
   /// \brief Get the RRC measurement config for the current serving cell of the UE.
-  /// \params[in] current_meas_config The current meas config of the UE (if applicable).
+  /// \param[in] current_meas_config The current meas config of the UE (if applicable).
   /// \return The measurement config, if present.
-  virtual std::optional<rrc_meas_cfg> generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
+  virtual std::optional<rrc_meas_cfg>
+  generate_meas_config(std::optional<rrc_meas_cfg> current_meas_config = std::nullopt) = 0;
+
+  /// \brief Get the packed RRC measurement config for the current serving cell of the UE.
+  virtual byte_buffer get_packed_meas_config() = 0;
 
   /// \brief Handle the handover command RRC PDU.
   /// \param[in] cmd The handover command RRC PDU.
   /// \returns The handover RRC Reconfiguration PDU. If the handover command is invalid, the PDU is empty.
   virtual byte_buffer handle_rrc_handover_command(byte_buffer cmd) = 0;
+
+  /// \brief Handle the handover preparation info RRC PDU.
+  /// \param[in] pdu The handover preparation info RRC PDU.
+  /// \returns True if the handover preparation info was successfully handled, false otherwise.
+  virtual bool handle_rrc_handover_preparation_info(byte_buffer pdu) = 0;
 
   /// \brief Get the packed RRC Handover Command.
   /// \param[in] msg The new RRC Reconfiguration Request.
@@ -299,6 +311,9 @@ public:
 
   /// \brief Get all SRBs of the UE.
   virtual static_vector<srb_id_t, MAX_NOF_SRBS> get_srbs() = 0;
+
+  /// \brief Get the RRC connection state of the UE.
+  virtual rrc_state get_rrc_state() const = 0;
 };
 
 class rrc_ue_cu_cp_ue_notifier
@@ -407,7 +422,8 @@ public:
   /// \param[in] nci The cell id of the serving cell to update.
   /// \param[in] current_meas_config The current meas config of the UE (if applicable).
   virtual std::optional<rrc_meas_cfg>
-  on_measurement_config_request(nr_cell_identity nci, std::optional<rrc_meas_cfg> current_meas_config = {}) = 0;
+  on_measurement_config_request(nr_cell_identity            nci,
+                                std::optional<rrc_meas_cfg> current_meas_config = std::nullopt) = 0;
 
   /// \brief Submit measurement report for given UE to cell manager.
   virtual void on_measurement_report(const rrc_meas_results& meas_results) = 0;

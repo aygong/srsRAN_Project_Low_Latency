@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -51,7 +51,7 @@ struct dummy_cu_cp_measurement_handler : public cu_cp_measurement_handler {
   std::optional<rrc_meas_cfg>
   handle_measurement_config_request(ue_index_t                  ue_index,
                                     nr_cell_identity            nci,
-                                    std::optional<rrc_meas_cfg> current_meas_config = {}) override
+                                    std::optional<rrc_meas_cfg> current_meas_config = std::nullopt) override
   {
     return std::nullopt;
   };
@@ -118,7 +118,8 @@ du_processor_test::du_processor_test() :
     cu_cp_configuration cucfg     = config_helpers::make_default_cu_cp_config();
     cucfg.services.timers         = &timers;
     cucfg.services.cu_cp_executor = &ctrl_worker;
-    cu_cp_cfg.ngaps.push_back(cu_cp_configuration::ngap_params{nullptr, {{7, {{plmn_identity::test_value(), {{1}}}}}}});
+    cu_cp_cfg.ngaps.push_back(
+        cu_cp_configuration::ngap_params{nullptr, {{7, {{plmn_identity::test_value(), {{slice_service_type{1}}}}}}}});
 
     return cucfg;
   }()),

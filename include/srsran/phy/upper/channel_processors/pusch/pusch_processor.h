@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -144,7 +144,7 @@ public:
     unsigned n_id;
     /// Number of transmission layers as per TS38.211 Section 6.3.1.3.
     unsigned nof_tx_layers;
-    /// Port indexes the PUSCH reception is mapped to.
+    /// Port indices the PUSCH reception is mapped to.
     static_vector<uint8_t, MAX_PORTS> rx_ports;
     /// Indicates which symbol in the slot transmit DMRS.
     symbol_slot_mask dmrs_symbol_mask;

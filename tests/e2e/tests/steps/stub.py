@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -37,10 +37,13 @@ from retina.client.exception import ErrorReportedByAgent
 from retina.launcher.artifacts import RetinaTestData
 from retina.protocol import RanStub
 from retina.protocol.base_pb2 import Metrics, PingRequest, PingResponse, PLMN, StartInfo, StopResponse, UEDefinition
+from retina.protocol.exit_codes import exit_code_to_message
 from retina.protocol.fivegc_pb2 import FiveGCStartInfo, IPerfResponse
 from retina.protocol.fivegc_pb2_grpc import FiveGCStub
 from retina.protocol.gnb_pb2 import GNBStartInfo
 from retina.protocol.gnb_pb2_grpc import GNBStub
+from retina.protocol.ric_pb2 import KpmMonXappRequest, NearRtRicStartInfo, RcXappRequest
+from retina.protocol.ric_pb2_grpc import NearRtRicStub
 from retina.protocol.ue_pb2 import (
     HandoverInfo,
     IPerfDir,
@@ -59,6 +62,7 @@ UE_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
 GNB_STARTUP_TIMEOUT: int = 2  # GNB delay (we wait x seconds and check it's still alive). UE later and has a big timeout
 FIVEGC_STARTUP_TIMEOUT: int = RF_MAX_TIMEOUT
 ATTACH_TIMEOUT: int = 90
+RELEASE_TIMEOUT: int = 90
 INTER_UE_START_PERIOD: int = 0
 
 
@@ -75,6 +79,7 @@ def start_and_attach(
     attach_timeout: int = ATTACH_TIMEOUT,
     plmn: Optional[PLMN] = None,
     inter_ue_start_period=INTER_UE_START_PERIOD,
+    ric: Optional[NearRtRicStub] = None,
 ) -> Dict[UEStub, UEAttachedInfo]:
     """
     Start stubs & wait until attach
@@ -88,6 +93,7 @@ def start_and_attach(
         gnb_pre_cmd,
         gnb_post_cmd,
         plmn=plmn,
+        ric=ric,
     )
 
     return ue_start_and_attach(
@@ -120,9 +126,10 @@ def start_network(
     gnb_pre_cmd: Tuple[str, ...] = tuple(),
     gnb_post_cmd: Tuple[str, ...] = tuple(),
     plmn: Optional[PLMN] = None,
+    ric: Optional[NearRtRicStub] = None,
 ):
     """
-    Start Network (5GC + gNB)
+    Start Network (5GC + gNB + RIC(optional))
     """
 
     ue_def_for_gnb = UEDefinition()
@@ -155,6 +162,19 @@ def start_network(
             )
         )
 
+    ric_definition = None
+    if ric:
+        ric_startup_timeout = fivegc_startup_timeout
+        with handle_start_error(name=f"RIC [{id(ric)}]"):
+            # Near-RT RIC Start
+            ric.Start(
+                NearRtRicStartInfo(
+                    start_info=StartInfo(timeout=ric_startup_timeout),
+                )
+            )
+            ric_definition = ric.GetDefinition(Empty())
+            logging.info("RIC: %s", MessageToString(ric_definition, indent=2))
+
     with handle_start_error(name=f"GNB [{id(gnb)}]"):
         # GNB Start
         gnb.Start(
@@ -162,6 +182,7 @@ def start_network(
                 plmn=plmn,
                 ue_definition=ue_def_for_gnb,
                 fivegc_definition=fivegc.GetDefinition(Empty()),
+                ric_definition=ric_definition,
                 start_info=StartInfo(
                     timeout=gnb_startup_timeout,
                     pre_commands=gnb_pre_cmd,
@@ -213,6 +234,75 @@ def ue_start_and_attach(
     return ue_attach_info_dict
 
 
+def ue_await_release(
+    ue: UEStub,
+    release_timeout: int = RELEASE_TIMEOUT,
+) -> bool:
+    """
+    Wait until an UEs is released from already running gnb and 5gc
+    """
+
+    # Await release
+    ue_release_result: bool = False
+    with suppress(grpc.RpcError):
+        ue_release_result = ue.WaitUntilReleased(UInt32Value(value=release_timeout)) == Empty()
+
+    if ue_release_result:
+        logging.info("UE [%s] released", id(ue))
+    else:
+        pytest.fail("Release timeout reached")
+
+    return ue_release_result
+
+
+def start_kpm_mon_xapp(ric: NearRtRicStub, report_service_style: int = 1, metrics: str = "DRB.UEThpDl") -> None:
+    """
+    Start KPM Monitor xAPP in RIC
+    """
+    xapp_request = KpmMonXappRequest()
+    xapp_request.report_service_style = report_service_style
+    xapp_request.metrics = metrics
+    ric.StartKpmMonXapp(xapp_request)
+
+
+def stop_kpm_mon_xapp(ric: NearRtRicStub) -> None:
+    """
+    Stop KPM Monitor xAPP in RIC
+    """
+    ric.StopKpmMonXapp(Empty())
+
+
+def start_rc_xapp(ric: NearRtRicStub, control_service_style: int = 2, action_id: int = 6) -> None:
+    """
+    Start RC xAPP in RIC, currently only Slice-level PRB quota (Control Style 2, Action Id 6) is supported in Flexric.
+    Also, Flexric does not parse the control parameters.
+    """
+    xapp_request = RcXappRequest()
+    xapp_request.control_service_style = control_service_style
+    xapp_request.action_id = action_id
+    # Parameters
+    xapp_request.parameters[7].name = "PLMN Identity"
+    xapp_request.parameters[7].value = 1
+    xapp_request.parameters[9].name = "SST"
+    xapp_request.parameters[9].value = 1
+    xapp_request.parameters[10].name = "SD"
+    xapp_request.parameters[10].value = 1
+    xapp_request.parameters[11].name = "Min PRB Policy Ratio"
+    xapp_request.parameters[11].value = 10
+    xapp_request.parameters[12].name = "Max PRB Policy Ratio"
+    xapp_request.parameters[12].value = 90
+    xapp_request.parameters[13].name = "Dedicated PRB Policy Ratio"
+    xapp_request.parameters[13].value = 80
+    ric.StartRcXapp(xapp_request)
+
+
+def stop_rc_xapp(ric: NearRtRicStub) -> None:
+    """
+    Stop RC xAPP in RIC
+    """
+    ric.StopRcXapp(Empty())
+
+
 @contextmanager
 def handle_start_error(name: str) -> Generator[None, None, None]:
     """
@@ -241,16 +331,26 @@ def _log_attached_ue(future: grpc.Future, ue_stub: UEStub):
         )
 
 
-def ping(ue_attach_info_dict: Dict[UEStub, UEAttachedInfo], fivegc: FiveGCStub, ping_count, time_step: int = 0):
+def ping(
+    ue_attach_info_dict: Dict[UEStub, UEAttachedInfo],
+    fivegc: FiveGCStub,
+    ping_count,
+    time_step: int = 0,
+    ping_interval: float = 1.0,
+):
     """
     Ping command between an UE and a 5GC
     """
-    ping_task_array = ping_start(ue_attach_info_dict, fivegc, ping_count, time_step)
+    ping_task_array = ping_start(ue_attach_info_dict, fivegc, ping_count, time_step, ping_interval)
     ping_wait_until_finish(ping_task_array)
 
 
 def ping_start(
-    ue_attach_info_dict: Dict[UEStub, UEAttachedInfo], fivegc: FiveGCStub, ping_count, time_step: float = 0
+    ue_attach_info_dict: Dict[UEStub, UEAttachedInfo],
+    fivegc: FiveGCStub,
+    ping_count,
+    time_step: float = 0,
+    ping_interval: float = 1.0,
 ) -> List[grpc.Future]:
     """
     Ping command between an UE and a 5GC
@@ -261,7 +361,7 @@ def ping_start(
     ping_task_array: List[grpc.Future] = []
     for ue_stub, ue_attached_info in ue_attach_info_dict.items():
         ue_to_fivegc: grpc.Future = ue_stub.Ping.future(
-            PingRequest(address=ue_attached_info.ipv4_gateway, count=ping_count)
+            PingRequest(address=ue_attached_info.ipv4_gateway, count=ping_count, interval=ping_interval)
         )
         ue_to_fivegc.add_done_callback(
             lambda _task, _msg=f"[{ue_attached_info.ipv4}] UE -> 5GC": _print_ping_result(_msg, _task)
@@ -301,6 +401,37 @@ def _print_ping_result(msg: str, task: grpc.Future):
         log_fn("Ping %s:\n%s", msg, MessageToString(result, indent=2))
     except (grpc.RpcError, grpc.FutureCancelledError, grpc.FutureTimeoutError) as err:
         logging.error(ErrorReportedByAgent(err))
+
+
+def ping_from_5gc(
+    ue_attach_info_dict: Dict[UEStub, UEAttachedInfo], fivegc: FiveGCStub, ping_count, time_step: int = 0
+):
+    """
+    Ping command from a 5GC to a UE
+    """
+    ping_task_array = ping_start_from_5gc(ue_attach_info_dict, fivegc, ping_count, time_step)
+    ping_wait_until_finish(ping_task_array)
+
+
+def ping_start_from_5gc(
+    ue_attach_info_dict: Dict[UEStub, UEAttachedInfo], fivegc: FiveGCStub, ping_count, time_step: float = 0
+) -> List[grpc.Future]:
+    """
+    Ping command between a 5GC and an UE
+    """
+
+    # Launch ping (5gc -> ue) for each attached ue in parallel
+
+    ping_task_array: List[grpc.Future] = []
+    for ue_attached_info in ue_attach_info_dict.values():
+        fivegc_to_ue: grpc.Future = fivegc.Ping.future(PingRequest(address=ue_attached_info.ipv4, count=ping_count))
+        fivegc_to_ue.add_done_callback(
+            lambda _task, _msg=f"[{ue_attached_info.ipv4}] 5GC -> UE": _print_ping_result(_msg, _task)
+        )
+        ping_task_array.append(fivegc_to_ue)
+        sleep(time_step)
+
+    return ping_task_array
 
 
 def iperf_parallel(
@@ -597,6 +728,40 @@ def validate_ue_registered_via_ims(ue_stub_array: Sequence[UEStub], core: FiveGC
         pytest.fail("IMS Registered Subscriber array mismatch!")
 
 
+def ric_validate_e2_interface(ric: NearRtRicStub, kpm_expected: bool = False, rc_expected: bool = False) -> None:
+    """
+    Fails if E2 was not operating correctly
+    """
+    ric_summary = ric.GetNearRtRicSummary(Empty())
+    logging.info("RIC summary: %s", MessageToString(ric_summary, indent=2))
+
+    if not ric_summary.nof_connected_agents:
+        pytest.fail("No E2 agent connected to RIC.")
+
+    if kpm_expected:
+        if not ric_summary.nof_connected_xapps:
+            pytest.fail("No xApp connected, but expected.")
+
+        if not ric_summary.nof_subscription_reqs or not ric_summary.nof_subscription_reps:
+            pytest.fail("No valid RIC subscription received, but expected.")
+
+        if ric_summary.nof_subscription_reqs != ric_summary.nof_subscription_reps:
+            pytest.fail("Different number of Subscription Request and Replies.")
+
+        if not ric_summary.nof_ric_indication:
+            pytest.fail("No RIC Indiation messages after a successful subscription.")
+
+    if rc_expected:
+        if not ric_summary.nof_connected_xapps:
+            pytest.fail("No xApp connected, but expected.")
+
+        if not ric_summary.nof_control_reqs or not ric_summary.nof_control_reps:
+            pytest.fail("No RIC Control Request received, but expected.")
+
+        if ric_summary.nof_control_reqs != ric_summary.nof_control_reps:
+            pytest.fail("Different number of RIC Control Request and Replies.")
+
+
 def stop(
     ue_array: Sequence[UEStub],
     gnb: Optional[GNBStub],
@@ -608,9 +773,10 @@ def stop(
     log_search: bool = True,
     warning_as_errors: bool = True,
     fail_if_kos: bool = False,
+    ric: Optional[NearRtRicStub] = None,
 ):
     """
-    Stop ue(s), gnb and 5gc
+    Stop ue(s), gnb and 5gc, ric
     """
     # Stop
     error_msg_array = []
@@ -637,6 +803,10 @@ def stop(
             log_search,
             warning_as_errors,
         )
+        error_msg_array.append(error_message)
+
+    if ric is not None:
+        error_message, _ = _stop_stub(ric, "RIC", retina_data, gnb_stop_timeout, log_search, warning_as_errors)
         error_msg_array.append(error_message)
 
     # Fail if stop errors
@@ -715,7 +885,9 @@ def _stop_stub(
 
         if stop_info.exit_code:
             retina_data.download_artifacts = True
-            error_msg = f"{name} crashed with exit code {stop_info.exit_code}. "
+            error_msg = (
+                f"{name} crashed with exit code {stop_info.exit_code} ({exit_code_to_message(stop_info.exit_code)}). "
+            )
 
         if log_search:
             log_msg = f"{name} has {stop_info.error_count} errors and {stop_info.warning_count} warnings. "

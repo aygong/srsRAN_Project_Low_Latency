@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -19,6 +19,7 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #if defined(__GNUC__) && (__GNUC__ > 10) && (__GNUC__ < 14) && defined(__OPTIMIZE__)
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #pragma message "GCC versions greater than 10 give a likely false array-bounds alarm."

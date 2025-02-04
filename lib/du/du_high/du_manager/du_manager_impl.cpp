@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -112,7 +112,7 @@ void du_manager_impl::handle_ul_ccch_indication(const ul_ccch_indication_message
         ue_mng.handle_ue_create_request(msg);
       })) {
     logger.warning("Discarding UL-CCCH message cell={} tc-rnti={} slot_rx={}. Cause: DU manager task queue is full",
-                   msg.cell_index,
+                   fmt::underlying(msg.cell_index),
                    msg.tc_rnti,
                    msg.slot_rx);
   }
@@ -158,6 +158,11 @@ void du_manager_impl::handle_du_stop_request()
 du_ue_index_t du_manager_impl::find_unused_du_ue_index()
 {
   return ue_mng.find_unused_du_ue_index();
+}
+
+async_task<void> du_manager_impl::handle_f1_reset_request(const std::vector<du_ue_index_t>& ues_to_reset)
+{
+  return ue_mng.handle_f1_reset_request(ues_to_reset);
 }
 
 async_task<f1ap_ue_context_creation_response>

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -25,7 +25,6 @@
 #include "srsran/adt/bounded_bitset.h"
 #include "srsran/adt/bounded_integer.h"
 #include "srsran/adt/expected.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/static_vector.h"
 #include "srsran/ran/dmrs.h"
 #include "srsran/ran/pdcch/pdcch_constants.h"

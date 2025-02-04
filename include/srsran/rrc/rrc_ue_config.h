@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,8 @@
 
 #pragma once
 
-#include "rrc_types.h"
 #include "srsran/pdcp/pdcp_t_reordering.h"
+#include "srsran/rrc/rrc_types.h"
 
 namespace srsran {
 namespace srs_cu_cp {

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "gtpu_demux.h"
+#include "srsran/gtpu/gtpu_demux.h"
 #include "srsran/pcap/dlt_pcap.h"
 #include "srsran/support/executors/task_executor.h"
 #include <memory>

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,15 +22,15 @@
 
 #pragma once
 
-#include "mac_cell_group_config.h"
-#include "srsran/mac/bsr_format.h"
+#include "srsran/mac/bsr_config.h"
+#include "srsran/mac/mac_cell_group_config.h"
 #include "srsran/mac/mac_sdu_handler.h"
 #include "srsran/mac/phr_config.h"
-#include "srsran/mac/time_alignment_group_config.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/ran/physical_cell_group.h"
 #include "srsran/ran/rnti.h"
 #include "srsran/ran/sr_configuration.h"
+#include "srsran/ran/time_alignment_config.h"
 #include "srsran/scheduler/scheduler_configurator.h"
 #include "srsran/support/async/async_task.h"
 
@@ -78,6 +78,7 @@ struct mac_ue_create_request {
   physical_cell_group_config              phy_cell_group_cfg;
   bool                                    initial_fallback = true;
   const byte_buffer*                      ul_ccch_msg      = nullptr;
+  std::optional<slot_point>               ul_ccch_slot_rx;
 
   // Scheduler-only params.
   sched_ue_config_request sched_cfg;

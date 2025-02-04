@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -41,7 +41,7 @@ std::ostream& operator<<(std::ostream& os, const test_case_t& test_case)
              "message_length={} codeblock_length={}  mod={}",
              test_case.message_length,
              test_case.codeblock_length,
-             test_case.mod);
+             fmt::underlying(test_case.mod));
   return os;
 }
 

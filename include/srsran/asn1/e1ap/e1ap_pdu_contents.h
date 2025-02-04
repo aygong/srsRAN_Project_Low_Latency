@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "e1ap_ies.h"
+#include "srsran/asn1/e1ap/e1ap_ies.h"
 
 namespace asn1 {
 namespace e1ap {

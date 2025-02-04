@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,7 +27,7 @@
 #include "srsran/ran/dmrs.h"
 #include "srsran/ran/pdsch/pdsch_antenna_ports_mapping.h"
 #include "srsran/scheduler/config/dmrs.h"
-#include "srsran/scheduler/scheduler_slot_handler.h"
+#include "srsran/scheduler/result/dmrs_info.h"
 #include "srsran/support/error_handling.h"
 
 namespace srsran {
@@ -127,7 +127,7 @@ inline dmrs_information make_dmrs_info_dedicated(const pdsch_time_domain_resourc
   dmrs.dmrs_scrambling_id = pci;
   dmrs.low_papr_dmrs      = false;
   dmrs.n_scid             = false;
-  const pdsch_antenna_ports_mapping ant_mapping =
+  const pdsch_antenna_ports_mapping& ant_mapping =
       get_pdsch_antenna_port_mapping(nof_layers,
                                      nof_dl_antenna_ports,
                                      dmrs.config_type,

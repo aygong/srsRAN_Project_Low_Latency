@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -294,6 +294,13 @@ public:
 
   static bool bernoulli(double p) { return std::bernoulli_distribution(p)(get()); }
 
+  template <typename FloatingPoint>
+  static FloatingPoint normal_dist(FloatingPoint mean, FloatingPoint stddev)
+  {
+    srsran_assert(std::is_floating_point<FloatingPoint>::value, "result_type must be a floating point type");
+    return std::normal_distribution<FloatingPoint>(mean, stddev)(get());
+  }
+
   /// Return a vector of integers with specified size filled with random values.
   template <typename Integer>
   static std::vector<Integer> random_vector(size_t sz)
@@ -337,14 +344,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::moveonly_test_object> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(const srsran::moveonly_test_object& obj, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::moveonly_test_object& obj, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "{}", obj.value());
   }

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #ifdef ENABLE_TSAN
-#include "sanitizer/tsan_interface.h"
+#include <sanitizer/tsan_interface.h>
 #endif
 
 #include "cameron314/concurrentqueue.h"

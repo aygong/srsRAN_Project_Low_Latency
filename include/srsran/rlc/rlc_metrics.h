@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 
 #include "srsran/ran/du_types.h"
 #include "srsran/ran/gnb_du_id.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/rlc/rlc_rx_metrics.h"
 #include "srsran/rlc/rlc_tx_metrics.h"
 

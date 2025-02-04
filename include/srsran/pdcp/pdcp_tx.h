@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -44,6 +44,7 @@
  *    inherit or if a notifier that the PDCP will keep as a member.
  *
  */
+
 namespace srsran {
 
 /// This interface represents the data exit point of the transmitting side of a PDCP entity.
@@ -78,6 +79,17 @@ public:
   pdcp_tx_lower_interface& operator=(const pdcp_tx_lower_interface&)  = delete;
   pdcp_tx_lower_interface(const pdcp_tx_lower_interface&&)            = delete;
   pdcp_tx_lower_interface& operator=(const pdcp_tx_lower_interface&&) = delete;
+
+  /// \brief Handle desired buffer size from NR-U.
+  /// This informs the PDCP of how many bytes it can TX without overflowing the RLC SDU queue.
+  ///
+  /// In the case of RLC UM, this allows the PDCP to transmit up to "desired_buffer_size" bytes
+  /// starting from "Highest transmitted NR PDCP Sequence Number".
+  /// In the case of RLC AM, this allows the PDCP to transmit up to "desired_buffer_size" bytes
+  /// starting from "Highest delivered NR PDCP Sequence Number".
+  ///
+  /// For more details, see TS 38.425, section 5.4.2.
+  virtual void handle_desired_buffer_size_notification(uint32_t desired_buffer_size) = 0;
 
   /// \brief Informs the PDCP entity about the highest PDCP PDU sequence number of the PDCP PDU that was transmitted by
   /// the lower layers (i.e. by the RLC).

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "rrc_config.h"
+#include "srsran/rrc/rrc_config.h"
 #include "srsran/rrc/rrc_du.h"
 #include "srsran/rrc/rrc_ue.h"
 

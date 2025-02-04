@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -39,28 +39,43 @@ void process_successful_pdu_resource_setup_mod_outcome(
                                     pdu_session_resource_setup_list,
     const pdu_session_setup_result& result);
 
-cu_up_manager_impl::cu_up_manager_impl(const cu_up_configuration&    config_,
-                                       e1ap_interface&               e1ap,
-                                       gtpu_network_gateway_adapter& gtpu_gw_adapter,
-                                       gtpu_demux&                   ngu_demux,
-                                       gtpu_teid_pool&               n3_teid_allocator,
-                                       gtpu_teid_pool&               f1u_teid_allocator) :
-  cfg(config_)
+static ue_manager_config generate_ue_manager_config(const n3_interface_config&    n3_config,
+                                                    const cu_up_test_mode_config& test_mode_config)
+{
+  return {n3_config, test_mode_config};
+}
+
+static ue_manager_dependencies generate_ue_manager_dependencies(const cu_up_manager_impl_dependencies& dependencies,
+                                                                srslog::basic_logger&                  logger)
+{
+  return {dependencies.e1ap,
+          dependencies.timers,
+          dependencies.f1u_gateway,
+          dependencies.ngu_session_mngr,
+          dependencies.ngu_demux,
+          dependencies.n3_teid_allocator,
+          dependencies.f1u_teid_allocator,
+          dependencies.exec_mapper,
+          dependencies.gtpu_pcap,
+          logger};
+}
+
+cu_up_manager_impl::cu_up_manager_impl(const cu_up_manager_impl_config&       config,
+                                       const cu_up_manager_impl_dependencies& dependencies) :
+  qos(config.qos),
+  n3_cfg(config.n3_cfg),
+  test_mode_cfg(config.test_mode_cfg),
+  exec_mapper(dependencies.exec_mapper),
+  timers(dependencies.timers)
 {
   /// > Create UE manager
-  ue_mng = std::make_unique<ue_manager>(cfg.net_cfg,
-                                        cfg.n3_cfg,
-                                        cfg.test_mode_cfg,
-                                        e1ap,
-                                        *cfg.timers,
-                                        *cfg.f1u_gateway,
-                                        gtpu_gw_adapter,
-                                        ngu_demux,
-                                        n3_teid_allocator,
-                                        f1u_teid_allocator,
-                                        *cfg.exec_mapper,
-                                        *cfg.gtpu_pcap,
-                                        logger);
+  ue_mng = std::make_unique<ue_manager>(generate_ue_manager_config(n3_cfg, test_mode_cfg),
+                                        generate_ue_manager_dependencies(dependencies, logger));
+}
+
+async_task<void> cu_up_manager_impl::stop()
+{
+  return ue_mng->stop();
 }
 
 void cu_up_manager_impl::schedule_ue_async_task(ue_index_t ue_index, async_task<void> task)
@@ -80,7 +95,7 @@ cu_up_manager_impl::handle_bearer_context_setup_request(const e1ap_bearer_contex
   fill_sec_as_config(ue_cfg.security_info, msg.security_info);
   ue_cfg.activity_level        = msg.activity_notif_level;
   ue_cfg.ue_inactivity_timeout = msg.ue_inactivity_timer;
-  ue_cfg.qos                   = cfg.qos;
+  ue_cfg.qos                   = qos;
   ue_context* ue_ctxt          = ue_mng->add_ue(ue_cfg);
   if (ue_ctxt == nullptr) {
     logger.error("Could not create UE context");
@@ -123,7 +138,7 @@ cu_up_manager_impl::handle_bearer_context_modification_request(const e1ap_bearer
     });
   }
   return execute_and_continue_on_blocking(
-      ue_ctxt->ue_exec_mapper->ctrl_executor(), cfg.exec_mapper->ctrl_executor(), *cfg.timers, [this, ue_ctxt, msg]() {
+      ue_ctxt->ue_exec_mapper->ctrl_executor(), exec_mapper.ctrl_executor(), timers, [this, ue_ctxt, msg]() {
         return handle_bearer_context_modification_request_impl(*ue_ctxt, msg);
       });
 }
@@ -190,7 +205,8 @@ cu_up_manager_impl::handle_bearer_context_release_command(const e1ap_bearer_cont
 {
   ue_context* ue_ctxt = ue_mng->find_ue(msg.ue_index);
   if (ue_ctxt == nullptr) {
-    logger.error("ue={}: Discarding E1 Bearer Context Release Command. UE context not found", msg.ue_index);
+    logger.error("ue={}: Discarding E1 Bearer Context Release Command. UE context not found",
+                 fmt::underlying(msg.ue_index));
     return launch_async([](coro_context<async_task<void>>& ctx) {
       CORO_BEGIN(ctx);
       CORO_RETURN();
@@ -208,9 +224,9 @@ async_task<e1ap_bearer_context_modification_response> cu_up_manager_impl::enable
   e1ap_bearer_context_setup_request bearer_context_setup = {};
 
   bearer_context_setup.security_info.security_algorithm.ciphering_algo =
-      static_cast<srsran::security::ciphering_algorithm>(cfg.test_mode_cfg.nea_algo);
+      static_cast<srsran::security::ciphering_algorithm>(test_mode_cfg.nea_algo);
   bearer_context_setup.security_info.security_algorithm.integrity_protection_algorithm =
-      static_cast<srsran::security::integrity_algorithm>(cfg.test_mode_cfg.nia_algo);
+      static_cast<srsran::security::integrity_algorithm>(test_mode_cfg.nia_algo);
   bearer_context_setup.security_info.up_security_key.encryption_key =
       make_byte_buffer("0001020304050607080910111213141516171819202122232425262728293031").value();
   bearer_context_setup.security_info.up_security_key.integrity_protection_key =
@@ -223,10 +239,10 @@ async_task<e1ap_bearer_context_modification_response> cu_up_manager_impl::enable
   pdu_session.pdu_session_id                              = psi;
   pdu_session.ng_ul_up_tnl_info.tp_address                = transport_layer_address::create_from_string("127.0.5.2");
   pdu_session.ng_ul_up_tnl_info.gtp_teid                  = int_to_gtpu_teid(0x02);
-  pdu_session.security_ind.integrity_protection_ind       = cfg.test_mode_cfg.integrity_enabled
+  pdu_session.security_ind.integrity_protection_ind       = test_mode_cfg.integrity_enabled
                                                                 ? integrity_protection_indication_t::required
                                                                 : integrity_protection_indication_t::not_needed;
-  pdu_session.security_ind.confidentiality_protection_ind = cfg.test_mode_cfg.ciphering_enabled
+  pdu_session.security_ind.confidentiality_protection_ind = test_mode_cfg.ciphering_enabled
                                                                 ? confidentiality_protection_indication_t::required
                                                                 : confidentiality_protection_indication_t::not_needed;
 

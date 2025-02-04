@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -85,10 +85,8 @@ int main()
     // Load output golden data
     const std::vector<resource_grid_writer_spy::expected_entry_t> testvector_symbols = test_case.symbols.read();
 
-    // Tolerance: max BF16 error times sqrt(2), since we are taking the modulus.
-    constexpr float tolerance = M_SQRT2f32 / 256.0;
     // Assert resource grid entries.
-    grid.assert_entries(testvector_symbols, tolerance);
+    grid.assert_entries(testvector_symbols);
   }
 
   return 0;

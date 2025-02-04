@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -43,9 +43,14 @@ static du_high_env_sim_params create_custom_params()
   params.builder_params.value().tdd_ul_dl_cfg_common =
       tdd_ul_dl_config_common{subcarrier_spacing::kHz30, {10, 8, 5, 1, 4}};
   params.pucch_cfg.emplace();
-  params.pucch_cfg->nof_ue_pucch_f0_or_f1_res_harq = 8;
-  params.pucch_cfg->nof_ue_pucch_f2_res_harq       = 8;
-  params.pucch_cfg->nof_sr_resources               = 1;
+  params.pucch_cfg->nof_ue_pucch_f0_or_f1_res_harq       = 8;
+  params.pucch_cfg->nof_ue_pucch_f2_or_f3_or_f4_res_harq = 8;
+  params.pucch_cfg->nof_sr_resources                     = 1;
+  // Set the PRACH frequency start to avoid PRACH collisions with the PUCCH on the upper RBs of the BWP (this would
+  // trigger an error and abort the test).
+  // NOTE: this results in the PRACH overlapping with the PUCCH resources on the lower RBs of the BWP, but it doesn't
+  // trigger any error, as it the parameter was user-defined (which skips the validator for prach_frequency_start).
+  params.prach_frequency_start.emplace(3U);
   return params;
 }
 

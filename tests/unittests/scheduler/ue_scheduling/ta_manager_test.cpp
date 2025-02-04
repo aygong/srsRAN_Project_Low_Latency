@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -20,12 +20,12 @@
  *
  */
 
-#include "lib/scheduler/ue_scheduling/dl_logical_channel_manager.h"
-#include "lib/scheduler/ue_scheduling/ta_manager.h"
+#include "lib/scheduler/ue_context/dl_logical_channel_manager.h"
+#include "lib/scheduler/ue_context/ta_manager.h"
 #include "tests/unittests/scheduler/test_utils/config_generators.h"
 #include "tests/unittests/scheduler/test_utils/indication_generators.h"
 #include "srsran/ran/duplex_mode.h"
-#include "srsran/ran/prach/prach_helper.h"
+#include "srsran/support/test_utils.h"
 #include <gtest/gtest.h>
 
 using namespace srsran;
@@ -35,7 +35,7 @@ class ta_manager_tester : public ::testing::TestWithParam<duplex_mode>
 protected:
   ta_manager_tester() :
     ul_scs(GetParam() == duplex_mode::FDD ? subcarrier_spacing::kHz15 : subcarrier_spacing::kHz30),
-    ta_mgr(expert_cfg.ue, ul_scs, &dl_lc_ch_mgr),
+    ta_mgr(expert_cfg.ue, ul_scs, time_alignment_group::id_t{0}, &dl_lc_ch_mgr),
     current_sl(to_numerology_value(ul_scs), test_rgen::uniform_int<unsigned>(0, 10239))
   {
     run_slot();
@@ -77,7 +77,8 @@ TEST_P(ta_manager_tester, ta_cmd_is_not_triggered_when_reported_ul_n_ta_update_i
 {
   const uint8_t      new_ta_cmd = 33;
   static const float ul_sinr    = expert_cfg.ue.ta_update_measurement_ul_sinr_threshold - 10;
-  ta_mgr.handle_ul_n_ta_update_indication(0, compute_n_ta_diff_leading_to_new_ta_cmd(new_ta_cmd), ul_sinr);
+  ta_mgr.handle_ul_n_ta_update_indication(
+      time_alignment_group::id_t{0}, compute_n_ta_diff_leading_to_new_ta_cmd(new_ta_cmd), ul_sinr);
 
   for (unsigned count = 0; count < expert_cfg.ue.ta_measurement_slot_period * 2; ++count) {
     run_slot();
@@ -97,7 +98,8 @@ TEST_P(ta_manager_tester, ta_cmd_is_successfully_triggered)
 {
   const uint8_t      new_ta_cmd = 33;
   static const float ul_sinr    = expert_cfg.ue.ta_update_measurement_ul_sinr_threshold + 10;
-  ta_mgr.handle_ul_n_ta_update_indication(0, compute_n_ta_diff_leading_to_new_ta_cmd(new_ta_cmd), ul_sinr);
+  ta_mgr.handle_ul_n_ta_update_indication(
+      time_alignment_group::id_t{0}, compute_n_ta_diff_leading_to_new_ta_cmd(new_ta_cmd), ul_sinr);
 
   std::optional<dl_msg_lc_info> ta_cmd_mac_ce_alloc;
   for (unsigned count = 0; count < expert_cfg.ue.ta_measurement_slot_period * 2; ++count) {
@@ -118,13 +120,14 @@ TEST_P(ta_manager_tester, ta_cmd_is_successfully_triggered)
 TEST_P(ta_manager_tester, verify_computed_new_ta_cmd_based_on_multiple_n_ta_diff_reported)
 {
   // Expected value. Average of ta_values_reported excluding the outlier 45.
-  const uint8_t expected_new_ta_cmd = 34;
+  const unsigned expected_new_ta_cmd = 34;
 
   // TA values used to compute N_TA diff to be reported.
-  const std::vector<uint8_t> ta_values_reported = {34, 35, 45, 34, 33};
+  const std::vector<uint8_t> ta_values_reported = {34, 35, 43, 34, 33};
   const float                ul_sinr            = expert_cfg.ue.ta_update_measurement_ul_sinr_threshold + 10;
   for (const auto ta : ta_values_reported) {
-    ta_mgr.handle_ul_n_ta_update_indication(0, compute_n_ta_diff_leading_to_new_ta_cmd(ta), ul_sinr);
+    ta_mgr.handle_ul_n_ta_update_indication(
+        time_alignment_group::id_t{0}, compute_n_ta_diff_leading_to_new_ta_cmd(ta), ul_sinr);
   }
 
   std::optional<dl_msg_lc_info> ta_cmd_mac_ce_alloc;

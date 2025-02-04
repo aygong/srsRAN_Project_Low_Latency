@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,10 +24,9 @@
 
 #include "srsran/adt/bit_buffer.h"
 #include "srsran/adt/mpmc_queue.h"
-#include "srsran/adt/optional.h"
 #include "srsran/adt/span.h"
 #include "srsran/phy/upper/log_likelihood_ratio.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_assert.h"
 #include <cstdint>
 #include <vector>

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 #include "tests/unittests/ngap/ngap_test_messages.h"
 #include "srsran/ngap/ngap_handover.h"
 #include "srsran/ran/cu_types.h"
-#include "srsran/ran/lcid.h"
+#include "srsran/ran/rb_id.h"
 #include "srsran/support/async/async_test_utils.h"
 #include <gtest/gtest.h>
 

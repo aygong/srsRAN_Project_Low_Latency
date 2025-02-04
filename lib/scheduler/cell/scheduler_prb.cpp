@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -21,7 +21,7 @@
  */
 
 #include "scheduler_prb.h"
-#include "srsran/scheduler/resource_block_group.h"
+#include "srsran/scheduler/result/resource_block_group.h"
 
 using namespace srsran;
 

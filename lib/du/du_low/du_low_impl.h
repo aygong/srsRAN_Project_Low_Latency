@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -42,13 +42,10 @@ public:
   du_power_controller& get_power_controller() override { return *this; }
 
   // See interface for documentation.
-  void start() override{};
+  void start() override {}
 
   // See interface for documentation.
   void stop() override;
-
-  // See interface for documentation.
-  span<upper_phy*> get_all_upper_phys() override;
 
 private:
   std::vector<std::unique_ptr<upper_phy>> upper;

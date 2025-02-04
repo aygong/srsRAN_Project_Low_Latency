@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -39,8 +39,9 @@ struct ngap_context_t {
   std::string                          ran_node_name;
   std::vector<supported_tracking_area> supported_tas;
   std::vector<guami_t>                 served_guami_list;
-  uint16_t                             default_paging_drx = 256;  // default paging drx
-  std::chrono::seconds                 pdu_session_setup_timeout; // timeout for PDU context setup in seconds
+  uint16_t                             default_paging_drx = 256;    // default paging drx
+  std::chrono::seconds                 request_pdu_session_timeout; // timeout for requesting a PDU session in seconds
+  byte_buffer                          lmf_routing_id;
 
   std::vector<plmn_identity> get_supported_plmns() const
   {

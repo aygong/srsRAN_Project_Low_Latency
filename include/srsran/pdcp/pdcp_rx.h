@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -47,6 +47,7 @@
  *    inherit or if a notifier that the PDCP will keep as a member.
  *
  */
+
 namespace srsran {
 
 /// This interface represents the data entry point of the receiving side of a PDCP entity.

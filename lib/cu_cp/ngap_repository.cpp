@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -48,7 +48,7 @@ ngap_interface* ngap_repository::add_ngap(amf_index_t amf_index, const cu_cp_con
   ngap_configuration              ngap_cfg    = {cfg.cu_cp.node.gnb_id,
                                                  cfg.cu_cp.node.ran_node_name,
                                                  config.supported_tas,
-                                                 cfg.cu_cp.ue.pdu_session_setup_timeout};
+                                                 cfg.cu_cp.ue.request_pdu_session_timeout};
   std::unique_ptr<ngap_interface> ngap_entity = create_ngap(ngap_cfg,
                                                             ngap_ctxt.ngap_to_cu_cp_notifier,
                                                             *config.n2_gw,
@@ -69,7 +69,7 @@ void ngap_repository::update_plmn_lookup(amf_index_t amf_index)
 {
   auto ngap = ngap_db.find(amf_index);
   if (ngap == ngap_db.end()) {
-    logger.error("NGAP not found for AMF index {}", amf_index);
+    logger.error("NGAP not found for AMF index {}", fmt::underlying(amf_index));
     return;
   }
 

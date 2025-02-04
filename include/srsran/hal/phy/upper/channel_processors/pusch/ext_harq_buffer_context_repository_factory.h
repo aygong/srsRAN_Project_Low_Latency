@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,6 +23,7 @@
 #pragma once
 
 #include "srsran/hal/phy/upper/channel_processors/pusch/ext_harq_buffer_context_repository.h"
+#include <memory>
 
 namespace srsran {
 namespace hal {

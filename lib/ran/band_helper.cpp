@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -32,6 +32,7 @@
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/scheduler/sched_consts.h"
 #include "srsran/support/srsran_assert.h"
+#include "fmt/std.h"
 
 using namespace srsran;
 
@@ -61,12 +62,13 @@ struct nr_band_raster {
 
 // From Tables 5.4.2.3-1 and 5.4.2.3-2 in TS 38.104, table with NR operating FR1 and FR2 band and related ARFCN
 // lower-bound and upper-bound. (FDD, TDD or SDL).
+// NTN bands from Table 5.4.2.3-1 in TS38.108
 //
 // NOTE: It only includes FDD, TDD, and SDL bands.
 // NOTE: Band 2 is a subset of band 25.
 // NOTE: Band 41 has two different Freq raster, we only consider raster 15kHz.
 // NOTE: FR2 bands have two different Freq raster, we only consider raster 120kHz.
-const uint32_t                                               nof_nr_DL_bands = 83;
+const uint32_t                                               nof_nr_DL_bands = 84;
 static constexpr std::array<nr_band_raster, nof_nr_DL_bands> nr_band_table   = {{
       // clang-format off
     {nr_band::n1,    delta_freq_raster::kHz100, 384000, 20,  396000,  422000, 20,  434000},
@@ -147,8 +149,9 @@ static constexpr std::array<nr_band_raster, nof_nr_DL_bands> nr_band_table   = {
     {nr_band::n102,  delta_freq_raster::kHz15,  796334, 1 ,  828333,  796334,  1,  828333},
     {nr_band::n104,  delta_freq_raster::kHz15,  828334, 1 ,  875000,  828334,  1,  875000},
     {nr_band::n104,  delta_freq_raster::kHz30,  828334, 2 ,  875000,  828334,  2,  875000},
-    {nr_band::n255,  delta_freq_raster::kHz100, 305000, 20,  311800,  305000, 20,  311800},
-    {nr_band::n256,  delta_freq_raster::kHz100, 434000, 20,  440000,  434000, 20,  440000},
+    {nr_band::n254,  delta_freq_raster::kHz100, 322000, 20,  325300,  496700, 20,  500000},
+    {nr_band::n255,  delta_freq_raster::kHz100, 325300, 20,  332100,  305000, 20,  311800},
+    {nr_band::n256,  delta_freq_raster::kHz100, 396000, 20,  402000,  434000, 20,  440000},
     {nr_band::n257,  delta_freq_raster::kHz60,  2054166, 1, 2104165, 2054166,  1, 2104165},
     {nr_band::n257,  delta_freq_raster::kHz120, 2054167, 2, 2104165, 2054167,  2, 2104165},
     {nr_band::n258,  delta_freq_raster::kHz60,  2016667, 1, 2070832, 2016667,  1, 2070832},
@@ -801,7 +804,7 @@ error_type<std::string> srsran::band_helper::is_dl_arfcn_valid_given_band(nr_ban
                       raster_band.dl_nref_step));
     }
   }
-  return make_unexpected(fmt::format("Band {} is not valid", band));
+  return make_unexpected(fmt::format("Band {} is not valid", fmt::underlying(band)));
 }
 
 error_type<std::string>
@@ -828,7 +831,7 @@ srsran::band_helper::is_ul_arfcn_valid_given_band(nr_band band, uint32_t arfcn_f
         return make_unexpected(
             fmt::format("Asymmetrical UL and DL channel BWs are not supported. The UL ARFCN resulting from the DL "
                         "ARFCN for band n{} must not exceed the band upper-bound={}",
-                        band,
+                        fmt::underlying(band),
                         raster_band.ul_nref_last));
       }
       if (arfcn_f_ref >= raster_band.ul_nref_first and arfcn_f_ref <= raster_band.ul_nref_last and
@@ -842,7 +845,7 @@ srsran::band_helper::is_ul_arfcn_valid_given_band(nr_band band, uint32_t arfcn_f
                       raster_band.ul_nref_step));
     }
   }
-  return make_unexpected(fmt::format("Band {} is not valid", band));
+  return make_unexpected(fmt::format("Band {} is not valid", fmt::underlying(band)));
 }
 
 uint32_t srsran::band_helper::get_ul_arfcn_from_dl_arfcn(uint32_t dl_arfcn, std::optional<nr_band> band)
@@ -1571,7 +1574,8 @@ error_type<std::string> srsran::band_helper::is_ssb_arfcn_valid_given_band(uint3
   // Convert the ARFCN to GSCN.
   std::optional<unsigned> gscn = band_helper::get_gscn_from_ss_ref(nr_arfcn_to_freq(ssb_arfcn));
   if (not gscn.has_value()) {
-    return make_unexpected(fmt::format("GSCN {} is not valid for band {} with SSB SCS {}", gscn, band, ssb_scs));
+    return make_unexpected(fmt::format(
+        "GSCN {} is not valid for band {} with SSB SCS {}", gscn, fmt::underlying(band), fmt::underlying(ssb_scs)));
   }
   // If the GCSN exists, check if it is a valid one.
   return band_helper::is_gscn_valid_given_band(gscn.value(), band, ssb_scs, bw);

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -74,13 +74,13 @@ namespace fmt {
 template <>
 struct formatter<srsran::gtpu_demux_cfg_t> {
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     return ctx.begin();
   }
 
   template <typename FormatContext>
-  auto format(srsran::gtpu_demux_cfg_t cfg, FormatContext& ctx) -> decltype(std::declval<FormatContext>().out())
+  auto format(srsran::gtpu_demux_cfg_t cfg, FormatContext& ctx) const
   {
     return format_to(ctx.out(), "warn_on_drop={} test_mode={}", cfg.warn_on_drop, cfg.test_mode);
   }

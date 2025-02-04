@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -33,7 +33,7 @@ class srs_validator_generic_impl : public srs_estimator_configuration_validator
 {
 public:
   // See interface for documentation.
-  bool is_valid(const srs_estimator_configuration& config) const override;
+  error_type<std::string> is_valid(const srs_estimator_configuration& config) const override;
 };
 
 } // namespace srsran

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,6 @@
 #include "pusch_decoder_buffer_dummy.h"
 #include "pusch_processor_notifier_adaptor.h"
 #include "pusch_processor_validator_impl.h"
-
 #include "srsran/phy/upper/channel_processors/pusch/formatters.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_codeword_buffer.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_decoder_buffer.h"
@@ -37,7 +36,8 @@
 
 using namespace srsran;
 
-/// Looks at the output of the validator and, if unsuccessful, fills msg with the error message.
+/// \brief Looks at the output of the validator and, if unsuccessful, fills msg with the error message.
+///
 /// This is used to call the validator inside the process methods only if asserts are active.
 [[maybe_unused]] static bool handle_validation(std::string& msg, const error_type<std::string>& err)
 {

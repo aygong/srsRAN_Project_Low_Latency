@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "srsran/adt/bounded_integer.h"
-#include "srsran/adt/optional.h"
+#include <optional>
 #include <variant>
 
 namespace srsran {
@@ -58,7 +58,7 @@ struct csi_report_pmi {
   std::variant<two_antenna_port, typeI_single_panel_4ports_mode1> type;
 };
 
-/// Collects Chanel State Information (CSI) report fields.
+/// Collects Channel State Information (CSI) report fields.
 struct csi_report_data {
   /// Rank Indicator (RI) data type.
   using ri_type = bounded_integer<uint8_t, 1, 8>;

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -28,12 +28,27 @@
 namespace srsran {
 
 /// Spy implementation of a downlink processor
-class downlink_processor_spy : public downlink_processor
+class downlink_processor_spy : public downlink_processor_controller,
+                               private unique_downlink_processor::downlink_processor_callback
 {
+private:
   unsigned id;
   bool     configure_resource_grid_method_called = false;
   bool     process_ssb_method_called             = false;
   bool     finish_processing_pdus_method_called  = false;
+
+  void process_pdcch(const pdcch_processor::pdu_t& pdu) override {}
+
+  void process_pdsch(static_vector<shared_transport_block, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS> data,
+                     const pdsch_processor::pdu_t&                                                    pdu) override
+  {
+  }
+
+  void process_ssb(const ssb_processor::pdu_t& pdu) override { process_ssb_method_called = true; }
+
+  void process_nzp_csi_rs(const nzp_csi_rs_generator::config_t& config) override {}
+
+  void finish_processing_pdus() override { finish_processing_pdus_method_called = true; }
 
 public:
   explicit downlink_processor_spy(unsigned id_) : id(id_) {}
@@ -46,24 +61,12 @@ public:
   bool has_process_ssb_method_been_called() const { return process_ssb_method_called; }
   bool has_finish_processing_pdus_method_been_called() const { return finish_processing_pdus_method_called; }
 
-  void process_pdcch(const pdcch_processor::pdu_t& pdu) override {}
-
-  void process_pdsch(const static_vector<span<const uint8_t>, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS>& data,
-                     const pdsch_processor::pdu_t&                                                        pdu) override
-  {
-  }
-
-  void process_ssb(const ssb_processor::pdu_t& pdu) override { process_ssb_method_called = true; }
-
-  void process_nzp_csi_rs(const nzp_csi_rs_generator::config_t& config) override {}
-
-  bool configure_resource_grid(const resource_grid_context& context, shared_resource_grid grid) override
+  unique_downlink_processor configure_resource_grid(const resource_grid_context& context,
+                                                    shared_resource_grid         grid) override
   {
     configure_resource_grid_method_called = true;
-    return true;
+    return unique_downlink_processor(*this);
   }
-
-  void finish_processing_pdus() override { finish_processing_pdus_method_called = true; }
 };
 
 } // namespace srsran

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,22 +22,25 @@
 
 #pragma once
 
-#include "bsr_format.h"
-#include "phr_config.h"
-#include "time_alignment_group_config.h"
 #include "srsran/adt/static_vector.h"
+#include "srsran/mac/bsr_config.h"
+#include "srsran/mac/phr_config.h"
+#include "srsran/ran/drx_config.h"
 #include "srsran/ran/sr_configuration.h"
+#include "srsran/ran/time_alignment_config.h"
 
 namespace srsran {
 
 /// \c MAC-CellGroupConfig, TS 38.331.
 struct mac_cell_group_config {
+  /// \c drx-Config.
+  std::optional<drx_config> drx_cfg;
   /// \c schedulingRequestConfig.
   std::vector<scheduling_request_to_addmod> scheduling_request_config;
   /// \c bsr-Config.
   std::optional<bsr_config> bsr_cfg;
   /// \c tag-Config.
-  static_vector<tag, MAX_NOF_TAGS> tag_config;
+  static_vector<time_alignment_group, MAX_NOF_TIME_ALIGNMENT_GROUPS> tag_config;
   /// \c phr-Config.
   std::optional<phr_config> phr_cfg;
   /// \c skipUplinkTxDynamic.

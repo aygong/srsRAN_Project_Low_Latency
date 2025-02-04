@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -27,10 +27,14 @@
 #include "srsran/adt/concurrent_queue.h"
 #include "srsran/adt/mpmc_queue.h"
 #include "srsran/scheduler/config/scheduler_expert_config.h"
+#include "srsran/scheduler/result/pdsch_info.h"
+#include "srsran/scheduler/scheduler_paging_handler.h"
 #include "srsran/srslog/logger.h"
 #include <unordered_map>
 
 namespace srsran {
+
+struct sched_paging_information;
 
 /// Defines Paging scheduler that is used to allocate resources to send paging information to UE in a given slot.
 class paging_scheduler

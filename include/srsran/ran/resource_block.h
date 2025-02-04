@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,8 +22,10 @@
 
 #pragma once
 
-#include "subcarrier_spacing.h"
+#include "srsran/ran/subcarrier_spacing.h"
+#include <array>
 #include <cstdint>
+#include <limits>
 
 namespace srsran {
 

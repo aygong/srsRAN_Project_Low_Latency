@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -34,6 +34,14 @@ void prod(span<const float> x, span<const float> y, span<float> z);
 void prod(span<const int16_t> x, span<const int16_t> y, span<int16_t> z);
 
 void prod_conj(span<const cf_t> x, span<const cf_t> y, span<cf_t> z);
+
+/// \brief Multiplies a given signal by a complex exponential.
+///
+/// \param[out] out           Resultant complex samples.
+/// \param[in]  in            Input complex samples.
+/// \param[in]  norm_freq     Normalized frequency.
+/// \param[in]  initial_phase Initial phase in radians.
+void prod_cexp(span<cf_t> out, span<const cf_t> in, float norm_freq, float initial_phase = 0.0F);
 
 } // namespace srsvec
 } // namespace srsran

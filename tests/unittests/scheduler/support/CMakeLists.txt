@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -37,6 +37,10 @@ add_test(pucch_default_resource_test pucch_default_resource_test)
 add_executable(pusch_default_time_allocation_test pusch/pusch_default_time_allocation_test.cpp)
 target_link_libraries(pusch_default_time_allocation_test srsran_sched srslog gtest gtest_main)
 add_test(pusch_default_time_allocation_test pusch_default_time_allocation_test)
+
+add_executable(pusch_td_resource_indices_test pusch/pusch_td_resource_indices_test.cpp)
+target_link_libraries(pusch_td_resource_indices_test srsran_sched sched_test_doubles srslog gtest gtest_main)
+add_test(pusch_td_resource_indices_test pusch_td_resource_indices_test)
 
 add_executable(pusch_dmrs_symbol_mask_test pusch/pusch_dmrs_symbol_mask_test.cpp)
 target_link_libraries(pusch_dmrs_symbol_mask_test srsran_sched srslog gtest gtest_main)

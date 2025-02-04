@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -24,7 +24,7 @@
 
 #include "srsran/adt/span.h"
 #include "srsran/adt/static_vector.h"
-#include "srsran/support/math_utils.h"
+#include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_assert.h"
 #include "fmt/format.h"
 #include <cstdint>
@@ -1460,7 +1460,7 @@ struct formatter<srsran::bounded_bitset<N, LowestInfoBitIsMSB>> {
   enum { hexadecimal, binary, bit_positions } mode = binary;
   enum { forward, reverse } order                  = forward;
   template <typename ParseContext>
-  auto parse(ParseContext& ctx) -> decltype(ctx.begin())
+  auto parse(ParseContext& ctx)
   {
     auto it = ctx.begin();
     while (it != ctx.end() and *it != '}') {
@@ -1480,8 +1480,7 @@ struct formatter<srsran::bounded_bitset<N, LowestInfoBitIsMSB>> {
   }
 
   template <typename FormatContext>
-  auto format(const srsran::bounded_bitset<N, LowestInfoBitIsMSB>& s, FormatContext& ctx)
-      -> decltype(std::declval<FormatContext>().out())
+  auto format(const srsran::bounded_bitset<N, LowestInfoBitIsMSB>& s, FormatContext& ctx) const
   {
     if (mode == hexadecimal) {
       return s.template to_string_of_hex<decltype(std::declval<FormatContext>().out())>(ctx.out(), order == reverse);

@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -23,7 +23,7 @@
 #pragma once
 
 #include "../config/sched_config_manager.h"
-#include "ue.h"
+#include "../ue_context/ue.h"
 #include "srsran/adt/ring_buffer.h"
 #include "srsran/adt/unique_function.h"
 
@@ -74,6 +74,8 @@ public:
 
   const_iterator lower_bound(du_ue_index_t ue_index) const { return ues.lower_bound(ue_index); }
 
+  void destroy_pending_ues();
+
 private:
   srslog::basic_logger& logger;
 
@@ -89,6 +91,12 @@ private:
 
   // Last slot indication.
   slot_point last_sl_tx;
+
+  // UE objects pending to be destroyed by a low priority thread.
+  concurrent_queue<std::unique_ptr<ue>,
+                   concurrent_queue_policy::lockfree_mpmc,
+                   concurrent_queue_wait_policy::non_blocking>
+      ues_to_destroy;
 };
 
 } // namespace srsran

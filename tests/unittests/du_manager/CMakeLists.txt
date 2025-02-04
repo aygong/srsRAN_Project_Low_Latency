@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2024 Software Radio Systems Limited
+# Copyright 2021-2025 Software Radio Systems Limited
 #
 # This file is part of srsRAN
 #
@@ -73,17 +73,17 @@ add_executable(du_ue_config_test
         procedures/ue_deletion_test.cpp
         procedures/du_ue_ric_configuration_procedure_test.cpp)
 target_include_directories(du_ue_config_test PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(du_ue_config_test du_manager_test_helpers gtest gtest_main pdcp_test_doubles)
+target_link_libraries(du_ue_config_test du_manager_test_helpers rrc_test_doubles pdcp_test_doubles gtest gtest_main)
 gtest_discover_tests(du_ue_config_test)
 
-add_executable(du_ran_resource_manager_test du_ran_resource_manager_test.cpp)
+add_executable(du_ran_resource_manager_test du_ran_resource_manager_test.cpp du_drx_resource_manager_test.cpp)
 target_include_directories(du_ran_resource_manager_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(du_ran_resource_manager_test du_manager_test_helpers gtest gtest_main)
 gtest_discover_tests(du_ran_resource_manager_test)
 
 add_executable(pucch_resource_generator_test pucch_resource_generator_test.cpp)
 target_include_directories(pucch_resource_generator_test PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(pucch_resource_generator_test du_manager_test_helpers gtest gtest_main)
+target_link_libraries(pucch_resource_generator_test du_manager_test_helpers sched_test_doubles gtest gtest_main)
 gtest_discover_tests(pucch_resource_generator_test)
 
 add_executable(srs_resource_generator_test srs_resource_generator_test.cpp)

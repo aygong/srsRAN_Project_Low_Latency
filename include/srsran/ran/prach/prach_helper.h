@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2021-2024 Software Radio Systems Limited
+ * Copyright 2021-2025 Software Radio Systems Limited
  *
  * This file is part of srsRAN.
  *
@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include "rach_config_common.h"
 #include "srsran/adt/expected.h"
 #include "srsran/adt/interval.h"
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/ran/duplex_mode.h"
+#include "srsran/ran/prach/rach_config_common.h"
 
 namespace srsran {
 
