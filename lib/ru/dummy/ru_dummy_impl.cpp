@@ -47,10 +47,10 @@ ru_dummy_impl::ru_dummy_impl(const ru_dummy_configuration& config, ru_dummy_depe
   executor(*dependencies.executor),
   timing_notifier(*dependencies.timing_notifier),
   slot_duration(static_cast<unsigned>(config.time_scaling * 1000.0 / pow2(to_numerology_value(config.scs)))),
-  max_processing_delay_slots(config.max_processing_delay_slots),
-  current_slot(config.scs, config.max_processing_delay_slots)
+  integer_processing_delay_slots(config.integer_processing_delay_slots),
+  current_slot(config.scs, config.integer_processing_delay_slots)
 {
-  srsran_assert(config.max_processing_delay_slots > 0, "The maximum processing delay must be greater than 0.");
+  srsran_assert(config.integer_processing_delay_slots > 0, "The maximum processing delay must be greater than 0.");
   srsran_assert(dependencies.logger != nullptr, "Invalid logger.");
   srsran_assert(dependencies.executor != nullptr, "Invalid executor.");
   srsran_assert(dependencies.symbol_notifier != nullptr, "Invalid symbol notifier.");
@@ -127,7 +127,7 @@ void ru_dummy_impl::loop()
     ++current_slot;
 
     // Notify new slot boundary.
-    timing_notifier.on_tti_boundary(current_slot + max_processing_delay_slots);
+    timing_notifier.on_tti_boundary(current_slot + integer_processing_delay_slots);
 
     // Notify UL half slot.
     timing_notifier.on_ul_half_slot_boundary(current_slot);

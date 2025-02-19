@@ -51,7 +51,7 @@ ru_dummy_configuration srsran::generate_ru_dummy_config(const ru_dummy_unit_conf
   out_cfg.rx_rg_nof_prb              = channel_bw_prb;
   out_cfg.rx_rg_nof_ports            = cell.ul_carrier.nof_ant;
   out_cfg.rx_prach_nof_ports         = nof_prach_ports;
-  out_cfg.max_processing_delay_slots = max_processing_delay_slots;
+  out_cfg.integer_processing_delay_slots = max_processing_delay_slots;
   out_cfg.dl_processing_delay        = ru_cfg.dl_processing_delay;
   out_cfg.time_scaling               = ru_cfg.time_scaling;
 

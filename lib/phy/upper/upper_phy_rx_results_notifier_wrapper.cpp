@@ -39,6 +39,12 @@ void upper_phy_rx_results_notifier_wrapper::on_new_pusch_results_control(const u
 
 void upper_phy_rx_results_notifier_wrapper::on_new_pusch_results_data(const ul_pusch_results_data& result)
 {
+  // ################################################################################ //
+  srslog::fetch_basic_logger("TEMP PHY").debug(
+    "aoyu | upper_phy_rx_results_notifier_wrapper | result.slot.sfn={}, result.slot.slot_index={}", 
+    result.slot.sfn(), result.slot.slot_index()
+  );
+  // ################################################################################ //
   report_fatal_error_if_not(rx_results_notifier, "Invalid results notifier object.");
   rx_results_notifier->on_new_pusch_results_data(result);
 }

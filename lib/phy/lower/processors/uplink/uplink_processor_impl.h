@@ -33,6 +33,7 @@
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/ran/slot_point.h"
 #include "srsran/support/srsran_assert.h"
+#include "srsran/srslog/srslog.h"
 #include <memory>
 
 namespace srsran {

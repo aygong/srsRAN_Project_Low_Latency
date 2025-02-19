@@ -86,7 +86,7 @@ static void generate_config(ru_ofh_configuration&              out_cfg,
 
   out_cfg.gps_Alpha                  = ru_cfg.gps_Alpha;
   out_cfg.gps_Beta                   = ru_cfg.gps_Beta;
-  out_cfg.max_processing_delay_slots = max_processing_delay_slots;
+  out_cfg.integer_processing_delay_slots = max_processing_delay_slots;
   out_cfg.dl_processing_time         = std::chrono::microseconds(ru_cfg.dl_processing_time);
   out_cfg.uses_dpdk                  = ru_cfg.hal_config.has_value();
 

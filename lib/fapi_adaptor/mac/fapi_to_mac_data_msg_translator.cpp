@@ -134,6 +134,14 @@ void fapi_to_mac_data_msg_translator::on_rx_data_indication(const fapi::rx_data_
     pdu.pdu         = std::move(pdu_buffer.value());
   }
 
+  // ################################################################################ //
+  srslog::fetch_basic_logger("FAPI").debug(
+    "aoyu | fapi_to_mac_data_msg_translator | msg.sfn={}, msg.slot={} -> cell_index={}, slot_rx={}", 
+    msg.sfn, msg.slot, static_cast<uint16_t>(indication.cell_index), indication.sl_rx
+  );
+  // ################################################################################ //
+  
+
   // Only invoke the MAC when there are successfully decoded PDUs available.
   if (!indication.pdus.empty()) {
     pdu_handler.get().handle_rx_data_indication(indication);

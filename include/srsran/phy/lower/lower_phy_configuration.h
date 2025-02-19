@@ -37,6 +37,7 @@
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/executors/task_executor.h"
+#include "srsran/ran/tdd/tdd_ul_dl_config.h"
 
 namespace srsran {
 
@@ -86,7 +87,7 @@ struct lower_phy_configuration {
   /// \brief Number of slots the timing handler is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
-  unsigned max_processing_delay_slots;
+  unsigned integer_processing_delay_slots;
   /// Sampling rate.
   sampling_rate srate;
   /// Time alignment offset.
@@ -135,6 +136,16 @@ struct lower_phy_configuration {
   task_executor* ul_task_executor;
   /// PRACH asynchronous task executor.
   task_executor* prach_async_executor;
+  // ################################################################################ //
+  /// Optional TDD configuration.
+  std::optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
+  /// Sets the maximum allowed processing delay in slots (decimal part).
+  float decimal_processing_delay_slots;
+  /// Maximum allowed preparation time for resource grids.
+  float max_grids_prep_time;
+  /// Maximum allowed preparation time for radio heads.
+  float radio_heads_prep_time;
+  // ################################################################################ //
 };
 
 /// Converts a string into a baseband buffer size policy.

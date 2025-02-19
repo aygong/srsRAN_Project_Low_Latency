@@ -28,6 +28,11 @@ using namespace srsran;
 void processor_handler_adaptor::rg_handler_adaptor::handle_resource_grid(const resource_grid_context& context,
                                                                          const shared_resource_grid&  grid)
 {
+  // ################################################################################ //
+  srslog::fetch_basic_logger("LOWER PHY").debug(
+    "aoyu | processor_handler_adaptor.cpp | track grid : context.slot={}", context.slot
+  );
+  // ################################################################################ //
   pdxch_handler.handle_request(grid, context);
 }
 

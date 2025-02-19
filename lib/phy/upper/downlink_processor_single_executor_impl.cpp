@@ -126,6 +126,10 @@ void downlink_processor_single_executor_impl::process_pdsch(
 
     // Do not execute if the grid is not available.
     if (current_grid) {
+      // // ################################################################################ //
+      // logger.debug("aoyu | downlink_processor_single_executor_impl.cpp | pdu.slot={}, data={}", pdsch_args.pdu.slot, pdsch_args.data);
+      // // Make this debug output work
+      // // ################################################################################ //
       pdsch_proc->process(current_grid.get_writer(), pdsch_notifier, std::move(pdsch_args.data), pdsch_args.pdu);
 
       l1_tracer << trace_event("process_pdsch", process_pdsch_tp);
@@ -290,6 +294,9 @@ void downlink_processor_single_executor_impl::send_resource_grid()
 
   // Send the resource grid if available.
   if (current_grid.is_valid()) {
+    // ################################################################################ //
+    logger.debug("aoyu | downlink_processor_single_executor_impl.cpp | track grid : rg_context.slot={}", rg_context.slot);
+    // ################################################################################ //
     gateway.send(rg_context, std::move(current_grid));
   }
 

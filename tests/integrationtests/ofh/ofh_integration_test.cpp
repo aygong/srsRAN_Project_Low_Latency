@@ -1039,7 +1039,7 @@ static ru_ofh_configuration generate_ru_config()
   const std::chrono::microseconds dl_processing_time = 400us;
 
   ru_ofh_configuration ru_cfg;
-  ru_cfg.max_processing_delay_slots = processing_delay_slots;
+  ru_cfg.integer_processing_delay_slots = processing_delay_slots;
   ru_cfg.gps_Alpha                  = 0;
   ru_cfg.gps_Beta                   = 0;
   ru_cfg.dl_processing_time         = dl_processing_time;

@@ -24,6 +24,7 @@
 #include "srsran/phy/support/resource_grid_context.h"
 #include "srsran/phy/support/shared_resource_grid.h"
 #include "srsran/support/srsran_assert.h"
+#include "srsran/phy/lower/lower_phy_rx_symbol_context.h"
 
 using namespace srsran;
 
@@ -92,5 +93,11 @@ void processor_notifier_adaptor::puxch_adaptor::on_rx_symbol(const shared_resour
                                                              const lower_phy_rx_symbol_context& context)
 {
   srsran_assert(error_notifier, "The adaptor is not connected to an error notifier.");
+  // ################################################################################ //
+  // srslog::fetch_basic_logger("LOWER PHY").debug(
+  //   "aoyu | processor_notifier_adaptor.cpp | context.slot={}, context.nof_symbols={}",
+  //   context.slot, context.nof_symbols
+  // );
+  // ################################################################################ //
   rx_notifier->on_rx_symbol(context, grid);
 }

@@ -220,6 +220,12 @@ void pdsch_processor_lite_impl::process(resource_grid_writer&                   
   }
   precoding2 *= scaling;
 
+  // // ################################################################################ //
+  // srslog::fetch_basic_logger("UPPER PHY").debug(
+  //   "aoyu | pdsch_processor_lite_impl.cpp | pdu.slot={}, data={}", pdu.slot, data
+  // );
+  // // ################################################################################ //
+
   // Map PDSCH.
   mapper->map(grid, subprocessor, allocation, reserved, precoding2);
 
@@ -233,4 +239,9 @@ void pdsch_processor_lite_impl::process(resource_grid_writer&                   
 
   // Notify the end of the processing.
   notifier.on_finish_processing();
+  // ################################################################################ //
+  srslog::fetch_basic_logger("UPPER PHY").debug(
+    "aoyu | pdsch_processor_lite_impl.cpp | notify the end of the processing: pdu.slot={}", pdu.slot
+  );
+  // ################################################################################ //
 }

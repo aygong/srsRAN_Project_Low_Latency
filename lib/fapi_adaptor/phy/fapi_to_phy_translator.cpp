@@ -653,6 +653,12 @@ void fapi_to_phy_translator::tx_data_request(const fapi::tx_data_request_message
 
   slot_based_upper_phy_controller& controller = slot_controller_mngr.get_controller(slot);
   for (unsigned i = 0, e = msg.pdus.size(); i != e; ++i) {
+    // ################################################################################ //
+    logger.debug(
+      "aoyu | fapi_to_phy_translator.cpp | {} : msg.sfn={}, msg.slot={}, data=not_impl", 
+      i, msg.sfn, msg.slot
+    );
+    // ################################################################################ //
     // Process PDSCH.
     controller->process_pdsch(
         static_vector<shared_transport_block, pdsch_processor::MAX_NOF_TRANSPORT_BLOCKS>{msg.pdus[i].pdu},

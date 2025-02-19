@@ -66,6 +66,12 @@ void upper_phy_rx_symbol_handler_impl::handle_rx_symbol(const upper_phy_rx_symbo
   // Process all the PDUs taken from the repository.
   for (const auto& pdu : pdus) {
     if (const auto* pusch_pdu = std::get_if<uplink_processor::pusch_pdu>(&pdu)) {
+      // ################################################################################ //
+      srslog::fetch_basic_logger("LOWER PHY").debug(
+        "aoyu | upper_phy_rx_symbol_handler_impl.cpp | context.slot={}, context.symbol={}", 
+        context.slot, context.symbol
+      );
+      // ################################################################################ //
       process_pusch(*pusch_pdu, ul_processor, grid, context.slot);
     } else if (const auto* pucch_pdu = std::get_if<uplink_processor::pucch_pdu>(&pdu)) {
       ul_processor.process_pucch(rx_results_notifier, grid, *pucch_pdu);
@@ -126,6 +132,12 @@ void upper_phy_rx_symbol_handler_impl::process_pusch(const uplink_processor::pus
 
     return;
   }
+
+  // ################################################################################ //
+  srslog::fetch_basic_logger("LOWER PHY").debug(
+    "aoyu | upper_phy_rx_symbol_handler_impl.cpp | pdu.pdu.slot={}", pdu.pdu.slot
+  );
+  // ################################################################################ //
 
   // Retrieves transport block data and starts PUSCH processing.
   auto payload = rx_payload_pool.acquire_payload_buffer(pdu.tb_size);

@@ -31,5 +31,11 @@ void ru_downlink_handler_generic_impl::handle_dl_data(const resource_grid_contex
 {
   srsran_assert(context.sector < handler.size(), "Invalid sector {}", context.sector);
 
+  // ################################################################################ //
+  srslog::fetch_basic_logger("RU").debug(
+    "aoyu | ru_downlink_handler_generic_impl.cpp | track grid : context.slot={}", context.slot
+  );
+  // ################################################################################ //
+
   handler[context.sector]->handle_resource_grid(context, grid);
 }

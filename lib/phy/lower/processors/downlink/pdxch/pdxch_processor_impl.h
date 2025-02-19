@@ -30,6 +30,7 @@
 #include "srsran/phy/lower/processors/downlink/pdxch/pdxch_processor_notifier.h"
 #include "srsran/phy/lower/processors/downlink/pdxch/pdxch_processor_request_handler.h"
 #include "srsran/phy/support/resource_grid_context.h"
+#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 
@@ -69,6 +70,12 @@ private:
   // See interface for documentation.
   void handle_request(const shared_resource_grid& grid, const resource_grid_context& context) override;
 
+  // See interface for documentation.
+  bool check_grid_status() override;
+
+  // See interface for documentation.
+  void reset_grid_status() override;
+
   unsigned                               nof_symbols_per_slot;
   unsigned                               nof_tx_ports;
   pdxch_processor_notifier*              notifier = nullptr;
@@ -76,6 +83,8 @@ private:
   slot_point                             current_slot;
   shared_resource_grid                   current_grid;
   resource_grid_request_pool             requests;
+  bool                                                   grid_status = false;
+  slot_point                                             grid_slot;
 };
 
 } // namespace srsran

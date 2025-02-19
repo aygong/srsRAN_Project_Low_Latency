@@ -47,6 +47,7 @@ public:
   /// \remark The number of channels in \c buffer must be equal to the number of transmit ports for the sector.
   virtual baseband_gateway_transmitter_metadata process(baseband_gateway_buffer_writer& buffer,
                                                         baseband_gateway_timestamp      timestamp) = 0;
+  virtual void notify() = 0;
 };
 
 } // namespace srsran

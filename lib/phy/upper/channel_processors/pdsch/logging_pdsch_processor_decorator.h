@@ -53,6 +53,11 @@ public:
     pdu      = pdu_;
 
     start = std::chrono::steady_clock::now();
+    // // ################################################################################ //
+    // srslog::fetch_basic_logger("UPPER PHY").debug(
+    //   "aoyu | channel_processor_factories.cpp | pdu.slot={}, data_={}", pdu.slot, data_
+    // );
+    // // ################################################################################ //
     processor->process(grid, *this, std::move(data_), pdu);
   }
 

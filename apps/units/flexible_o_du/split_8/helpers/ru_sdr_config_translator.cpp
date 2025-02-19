@@ -40,7 +40,7 @@ static lower_phy_configuration generate_low_phy_config(const srs_du::du_cell_con
   out_cfg.scs                        = config.scs_common;
   out_cfg.cp                         = cp;
   out_cfg.dft_window_offset          = 0.5F;
-  out_cfg.max_processing_delay_slots = max_processing_delay_slot;
+  out_cfg.integer_processing_delay_slots = max_processing_delay_slot;
 
   out_cfg.srate = sampling_rate::from_MHz(ru_cfg.srate_MHz);
 

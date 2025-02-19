@@ -30,6 +30,7 @@
 #include "srsran/ran/pusch/pusch_constants.h"
 #include "srsran/support/executors/task_executor.h"
 #include "srsran/support/memory_pool/concurrent_thread_local_object_pool.h"
+#include "srsran/srslog/srslog.h"
 #include <atomic>
 
 namespace srsran {

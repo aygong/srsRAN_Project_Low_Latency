@@ -42,13 +42,30 @@ pdxch_processor_baseband& pdxch_processor_impl::get_baseband()
   return *this;
 }
 
+bool pdxch_processor_impl::check_grid_status()
+{
+  return grid_status;
+}
+
+void pdxch_processor_impl::reset_grid_status()
+{
+  grid_status = false;
+}
+
 bool pdxch_processor_impl::process_symbol(baseband_gateway_buffer_writer&                 samples,
                                           const pdxch_processor_baseband::symbol_context& context)
 {
   srsran_assert(notifier != nullptr, "Notifier has not been connected.");
 
+  // ################################################################################ //
+  // srslog::fetch_basic_logger("LOWER PHY").debug(
+  //   "aoyu | pdxch_processor_impl.cpp | context.slot={}, context.symbol={}, current_slot={}", 
+  //   context.slot, context.symbol, current_slot
+  // );
+  // ################################################################################ //
+
   // Update the current resource grid if the slot has changed.
-  if (context.slot != current_slot) {
+  if (context.slot != current_slot || context.symbol < 1) {
     // Update slot.
     current_slot = context.slot;
 
@@ -60,6 +77,12 @@ bool pdxch_processor_impl::process_symbol(baseband_gateway_buffer_writer&       
 
     // If the request resource grid pointer is invalid, the request is empty.
     if (!request.grid) {
+      // ################################################################################ //
+      // srslog::fetch_basic_logger("LOWER PHY").debug(
+      //   "aoyu | pdxch_processor_impl.cpp | context.slot={} : request.grid == nullptr", context.slot
+      // );
+      // ################################################################################ //
+      // If the request resource grid pointer is nullptr, the request is empty.
       return false;
     }
 
@@ -74,6 +97,11 @@ bool pdxch_processor_impl::process_symbol(baseband_gateway_buffer_writer&       
 
     // Discard the resource grid if there is nothing to transmit.
     if (request.grid.get_reader().is_empty()) {
+    // ################################################################################ //
+    // srslog::fetch_basic_logger("LOWER PHY").debug(
+    //   "aoyu | pdxch_processor_impl.cpp | context.slot={} : current_grid.get().is_empty()", context.slot
+    // );
+    // ################################################################################ //
       return false;
     }
 
@@ -101,6 +129,12 @@ void pdxch_processor_impl::handle_request(const shared_resource_grid& grid, cons
 {
   srsran_assert(notifier != nullptr, "Notifier has not been connected.");
 
+  // ################################################################################ //
+  srslog::fetch_basic_logger("LOWER PHY").debug(
+    "aoyu | pdxch_processor_impl.cpp | track grid : context.slot={}", context.slot
+  );
+  // ################################################################################ //
+
   // Swap the new request by the current request in the circular array.
   auto request = requests.exchange({context.slot, grid.copy()});
 
@@ -112,4 +146,7 @@ void pdxch_processor_impl::handle_request(const shared_resource_grid& grid, cons
     notifier->on_pdxch_request_late(late_context);
     l1_tracer << instant_trace_event{"on_pdxch_request_late", instant_trace_event::cpu_scope::thread};
   }
+  // Update the grid status and slot.
+  grid_status = true;
+  grid_slot   = context.slot;
 }

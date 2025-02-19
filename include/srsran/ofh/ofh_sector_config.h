@@ -112,7 +112,7 @@ struct sector_configuration {
   /// \brief Number of slots the timing handler is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
-  unsigned max_processing_delay_slots;
+  unsigned integer_processing_delay_slots;
   /// Downlink processing time in microseconds.
   std::chrono::microseconds dl_processing_time;
   /// Number of reception antennas.

@@ -83,6 +83,12 @@ private:
   {
     srsran_assert(notifier != nullptr, "Invalid notifier.");
 
+    // ################################################################################ //
+    srslog::fetch_basic_logger("TEMP PHY").debug(
+      "aoyu | pusch_processor_pool"
+    );
+    // ################################################################################ //
+
     // Notify the completion of the processing.
     notifier->on_sch(sch);
 

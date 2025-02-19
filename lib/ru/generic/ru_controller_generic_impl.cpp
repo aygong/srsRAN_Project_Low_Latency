@@ -54,6 +54,13 @@ void ru_controller_generic_impl::start()
   uint64_t sf_duration = static_cast<uint64_t>(srate_MHz * 1e3);
   start_time           = divide_ceil(start_time, sf_duration) * sf_duration;
 
+  // ################################################################################ //
+  srslog::fetch_basic_logger("LOWER PHY").debug(
+    "aoyu | ru_controller_generic_impl.cpp | current_time={}, delay_s={}, srate_Hz={}, start_time={}", 
+    current_time, delay_s, srate_MHz * 1e6, start_time
+  );
+  // ################################################################################ //
+
   radio.start(start_time);
 
   for (auto& low_phy : low_phy_crtl) {

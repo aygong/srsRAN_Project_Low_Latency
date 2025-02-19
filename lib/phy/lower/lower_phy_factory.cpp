@@ -143,7 +143,17 @@ public:
     dl_proc_config.bandwidth_prb           = sector.bandwidth_rb;
     dl_proc_config.center_frequency_Hz     = sector.dl_freq_hz;
     dl_proc_config.nof_tx_ports            = sector.nof_tx_ports;
-    dl_proc_config.nof_slot_tti_in_advance = config.max_processing_delay_slots;
+    dl_proc_config.nof_slot_tti_in_advance = config.integer_processing_delay_slots;
+    // ################################################################################ //
+    dl_proc_config.tdd_ul_dl_cfg_common    = config.tdd_ul_dl_cfg_common;
+    dl_proc_config.max_grids_prep_time     = config.max_grids_prep_time;
+    // ################################################################################ //
+
+    // ################################################################################ //
+    srslog::fetch_basic_logger("LOWER PHY").debug(
+      "aoyu | lower_phy_factory.cpp | integer_processing_delay_slots={}", config.integer_processing_delay_slots
+    );
+    // ################################################################################ //
 
     // Create downlink processor.
     std::unique_ptr<lower_phy_downlink_processor> dl_proc = downlink_proc_factory->create(dl_proc_config);
@@ -177,12 +187,19 @@ public:
     proc_bb_adaptor_config.nof_tx_ports           = config.sectors.back().nof_tx_ports;
     proc_bb_adaptor_config.nof_rx_ports           = config.sectors.back().nof_rx_ports;
     proc_bb_adaptor_config.tx_time_offset         = tx_time_offset;
-    proc_bb_adaptor_config.rx_to_tx_max_delay     = config.srate.to_kHz() + proc_bb_adaptor_config.tx_time_offset;
+    // ################################################################################ //
+    proc_bb_adaptor_config.rx_to_tx_max_delay     = static_cast<unsigned int>(
+      config.srate.to_kHz() * config.radio_heads_prep_time) + proc_bb_adaptor_config.tx_time_offset;
+    // ################################################################################ //
     proc_bb_adaptor_config.rx_buffer_size         = rx_buffer_size;
     proc_bb_adaptor_config.nof_rx_buffers         = std::max(4U, rx_to_tx_max_delay / rx_buffer_size);
     proc_bb_adaptor_config.tx_buffer_size         = tx_buffer_size;
     proc_bb_adaptor_config.nof_tx_buffers         = std::max(4U, rx_to_tx_max_delay / tx_buffer_size);
     proc_bb_adaptor_config.system_time_throttling = config.system_time_throttling;
+    // ################################################################################ //
+    proc_bb_adaptor_config.decimal_tti_in_advance = config.decimal_processing_delay_slots;
+    proc_bb_adaptor_config.scs                    = config.scs;
+    // ################################################################################ //
 
     // Create lower PHY controller from the processor baseband adaptor.
     std::unique_ptr<lower_phy_controller> controller =

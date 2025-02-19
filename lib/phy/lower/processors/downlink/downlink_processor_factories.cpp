@@ -56,6 +56,11 @@ public:
     baseband_config.rate                    = config.rate;
     baseband_config.nof_tx_ports            = config.nof_tx_ports;
     baseband_config.nof_slot_tti_in_advance = config.nof_slot_tti_in_advance;
+    baseband_config.logger                  = config.logger;
+    // ################################################################################ //
+    baseband_config.tdd_ul_dl_cfg_common    = config.tdd_ul_dl_cfg_common;
+    baseband_config.max_grids_prep_time     = config.max_grids_prep_time;
+    // ################################################################################ //
 
     return std::make_unique<downlink_processor_impl>(
         pdxch_proc_factory->create(pdxch_proc_config), amplitude_control_factory->create(), baseband_config);

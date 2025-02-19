@@ -64,7 +64,7 @@ static ofh::sector_configuration generate_sector_configuration(const ru_ofh_conf
   ofh_sector_config.dl_compression_params                = sector_cfg.dl_compression_params;
   ofh_sector_config.prach_compression_params             = sector_cfg.prach_compression_params;
   ofh_sector_config.iq_scaling                           = sector_cfg.iq_scaling;
-  ofh_sector_config.max_processing_delay_slots           = config.max_processing_delay_slots;
+  ofh_sector_config.integer_processing_delay_slots           = config.integer_processing_delay_slots;
   ofh_sector_config.dl_processing_time                   = config.dl_processing_time;
   ofh_sector_config.is_uplink_static_compr_hdr_enabled   = sector_cfg.is_uplink_static_comp_hdr_enabled;
   ofh_sector_config.is_downlink_static_compr_hdr_enabled = sector_cfg.is_downlink_static_comp_hdr_enabled;
@@ -94,8 +94,8 @@ static ofh::sector_dependencies generate_sector_dependencies(ru_ofh_sector_depen
 std::unique_ptr<radio_unit> srsran::create_ofh_ru(const ru_ofh_configuration& config,
                                                   ru_ofh_dependencies&&       dependencies)
 {
-  report_fatal_error_if_not(config.max_processing_delay_slots >= 1,
-                            "max_processing_delay_slots option should be greater than or equal to 1");
+  report_fatal_error_if_not(config.integer_processing_delay_slots >= 1,
+                            "integer_processing_delay_slots option should be greater than or equal to 1");
   report_fatal_error_if_not(dependencies.timing_notifier, "Invalid timing notifier");
 
   ru_ofh_impl_dependencies ofh_dependencies;
@@ -159,7 +159,7 @@ std::unique_ptr<radio_unit> srsran::create_ofh_ru(const ru_ofh_configuration& co
   report_fatal_error_if_not(ofh_dependencies.timing_mngr, "Unable to create OFH timing manager");
 
   ru_ofh_impl_config ru_config;
-  ru_config.nof_slot_offset_du_ru = config.max_processing_delay_slots;
+  ru_config.nof_slot_offset_du_ru = config.integer_processing_delay_slots;
   ru_config.nof_symbols_per_slot  = get_nsymb_per_slot(config.sector_configs.back().cp);
 
   return std::make_unique<ru_ofh_impl>(ru_config, std::move(ofh_dependencies));

@@ -123,6 +123,12 @@ std::unique_ptr<radio_unit> srsran::create_generic_ru(ru_generic_configuration& 
     auto lphy_factory = create_lower_phy_factory(low_cfg, config.max_nof_prach_concurrent_requests);
     report_error_if_not(lphy_factory, "Failed to create lower PHY factory.");
 
+    // ################################################################################ //
+    srslog::fetch_basic_logger("LOWER PHY").debug(
+      "aoyu | ru_factory_generic_impl.cpp | integer_processing_delay_slots={}", low_cfg.integer_processing_delay_slots
+    );
+    // ################################################################################ //
+
     // Create lower PHY.
     ru_cfg.low_phy.push_back(lphy_factory->create(low_cfg));
     report_error_if_not(ru_cfg.low_phy.back(), "Unable to create lower PHY.");

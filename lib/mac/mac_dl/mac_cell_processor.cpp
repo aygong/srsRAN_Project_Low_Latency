@@ -289,6 +289,12 @@ void mac_cell_processor::handle_slot_indication_impl(slot_point sl_tx) SRSRAN_RT
 
       assemble_dl_data_request(data_res, sl_tx, cell_cfg.cell_index, sl_res.dl);
 
+      // ################################################################################ //
+      logger.debug(
+        "aoyu | mac_cell_processor.cpp | data_res.slot={}", data_res.slot
+      );
+      // ################################################################################ //
+
       // Send DL Data to PHY.
       phy_cell.on_new_downlink_data(data_res);
 

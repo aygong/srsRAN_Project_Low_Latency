@@ -254,7 +254,7 @@ protected:
     scs                          = std::get<0>(params);
     cp                           = std::get<1>(params);
     dft_window_offset            = dft_window_offset_dist(rgen);
-    max_processing_delay_slots   = max_processing_delay_slots_dist(rgen);
+    integer_processing_delay_slots   = integer_processing_delay_slots_dist(rgen);
     srate                        = std::get<2>(params);
     ta_offset                    = std::get<3>(params);
     time_alignment_calibration   = time_alignment_calibration_dist(rgen);
@@ -271,7 +271,7 @@ protected:
     config.scs                            = scs;
     config.cp                             = cp;
     config.dft_window_offset              = dft_window_offset;
-    config.max_processing_delay_slots     = max_processing_delay_slots;
+    config.integer_processing_delay_slots     = integer_processing_delay_slots;
     config.srate                          = srate;
     config.ta_offset                      = ta_offset;
     config.time_alignment_calibration     = time_alignment_calibration;
@@ -365,7 +365,7 @@ protected:
   subcarrier_spacing scs;
   cyclic_prefix      cp;
   float              dft_window_offset;
-  unsigned           max_processing_delay_slots;
+  unsigned           integer_processing_delay_slots;
   sampling_rate      srate;
   n_ta_offset        ta_offset;
   int                time_alignment_calibration;
@@ -392,7 +392,7 @@ protected:
 
   static std::mt19937                            rgen;
   static std::uniform_real_distribution<float>   dft_window_offset_dist;
-  static std::uniform_int_distribution<unsigned> max_processing_delay_slots_dist;
+  static std::uniform_int_distribution<unsigned> integer_processing_delay_slots_dist;
   static std::uniform_int_distribution<int>      time_alignment_calibration_dist;
   static std::uniform_real_distribution<double>  dl_freq_hz_dist;
   static std::uniform_real_distribution<double>  ul_freq_hz_dist;
@@ -404,7 +404,7 @@ protected:
 
 std::mt19937                            LowerPhyFixture::rgen;
 std::uniform_real_distribution<float>   LowerPhyFixture::dft_window_offset_dist(0.1, 0.9);
-std::uniform_int_distribution<unsigned> LowerPhyFixture::max_processing_delay_slots_dist(1, 3);
+std::uniform_int_distribution<unsigned> LowerPhyFixture::integer_processing_delay_slots_dist(1, 3);
 std::uniform_int_distribution<int>      LowerPhyFixture::time_alignment_calibration_dist(-100, 100);
 std::uniform_real_distribution<double>  LowerPhyFixture::dl_freq_hz_dist(800e6, 6000e6);
 std::uniform_real_distribution<double>  LowerPhyFixture::ul_freq_hz_dist(800e6, 6000e6);
@@ -424,7 +424,7 @@ TEST_P(LowerPhyFixture, Factory)
   dl_proc_config.bandwidth_prb           = bandwidth_rb;
   dl_proc_config.center_frequency_Hz     = dl_freq_hz;
   dl_proc_config.nof_tx_ports            = nof_tx_ports;
-  dl_proc_config.nof_slot_tti_in_advance = max_processing_delay_slots;
+  dl_proc_config.nof_slot_tti_in_advance = integer_processing_delay_slots;
   ASSERT_EQ(dl_proc_config, downlink_proc_spy->get_config());
 
   // Check that the uplink processor configuration is correct.

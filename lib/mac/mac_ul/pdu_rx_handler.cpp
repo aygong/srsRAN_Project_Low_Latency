@@ -105,6 +105,12 @@ bool pdu_rx_handler::handle_rx_pdu(slot_point sl_rx, du_cell_index_t cell_index,
     return false;
   }
 
+  // ################################################################################ //
+  logger.debug(
+    "aoyu | pdu_rx_handler | Decode MAC UL PDU: ue={}, rnti={}, slot_rx={}", static_cast<uint16_t>(ctx.ue_index), static_cast<uint16_t>(ctx.pdu_rx.rnti), ctx.slot_rx
+  );
+  // ################################################################################ //
+
   // > Log MAC UL PDU.
   if (logger.info.enabled()) {
     // Note: Since subPDUs are just views, they should not be passed by value to the logging backend.
@@ -244,6 +250,7 @@ bool pdu_rx_handler::handle_mac_ce(const decoded_mac_rx_pdu& ctx, const mac_ul_s
       // Forward decoded BSR to scheduler.
       mac_bsr_ce_info bsr_ind{};
       bsr_ind.cell_index = ctx.cell_index_rx;
+      bsr_ind.slot_rx    = ctx.slot_rx;
       bsr_ind.ue_index   = ctx.ue_index;
       bsr_ind.rnti       = ctx.pdu_rx.rnti;
       if (subpdu.lcid() == lcid_ul_sch_t::SHORT_BSR or subpdu.lcid() == lcid_ul_sch_t::SHORT_TRUNC_BSR) {
@@ -259,6 +266,15 @@ bool pdu_rx_handler::handle_mac_ce(const decoded_mac_rx_pdu& ctx, const mac_ul_s
         }
         bsr_ind.lcg_reports = lbsr_report.value().list;
       }
+      // ################################################################################ //
+      logger.debug(
+        "aoyu | pdu_rx_handler | ue={}, rnti={}, slot_rx={}, format={}",
+        static_cast<uint16_t>(bsr_ind.ue_index), static_cast<uint16_t>(bsr_ind.rnti), bsr_ind.slot_rx, srsran::to_string(bsr_ind.bsr_fmt)
+      );
+      // for (unsigned i = 0; i != bsr_ind.lcg_reports.size(); ++i) {
+      //   logger.debug("aoyu | pdu_rx_handler | reported_lcg {} : {}", bsr_ind.lcg_reports[i].lcg_id, bsr_ind.lcg_reports[i].buffer_size);
+      // }
+      // ################################################################################ //
       sched.handle_ul_bsr_indication(bsr_ind);
     } break;
     case lcid_ul_sch_t::CRNTI: {

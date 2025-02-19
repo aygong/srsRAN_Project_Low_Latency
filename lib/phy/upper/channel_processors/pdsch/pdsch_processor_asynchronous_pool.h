@@ -69,6 +69,12 @@ public:
     // Save original notifier.
     notifier = &notifier_;
 
+    // // ################################################################################ //
+    // srslog::fetch_basic_logger("UPPER PHY").debug(
+    //   "aoyu | pdsch_processor_pool.h -> pdsch_processor_wrapper | pdu.slot={}, data={}", pdu.slot, data
+    // );
+    // // ################################################################################ //
+
     // Process.
     processor->process(grid, *this, std::move(data), pdu);
   }
@@ -133,6 +139,12 @@ public:
       notifier.on_finish_processing();
       return;
     }
+
+    // // ################################################################################ //
+    // srslog::fetch_basic_logger("UPPER PHY").debug(
+    //   "aoyu | pdsch_processor_pool.h -> pdsch_processor_pool | pdu.slot={}, data={}", pdu.slot, data
+    // );
+    // // ################################################################################ //
 
     // Process PDSCH.
     processors[index.value()].process(grid, notifier, std::move(data), pdu);
