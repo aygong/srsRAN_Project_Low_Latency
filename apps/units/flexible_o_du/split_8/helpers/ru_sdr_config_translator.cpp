@@ -28,9 +28,12 @@
 using namespace srsran;
 
 /// Fills the given low PHY configuration from the given gnb configuration.
-static lower_phy_configuration generate_low_phy_config(const srs_du::du_cell_config& config,
-                                                       const ru_sdr_unit_config&     ru_cfg,
-                                                       unsigned                      max_processing_delay_slot)
+static lower_phy_configuration generate_low_phy_config( const srs_du::du_cell_config& config,
+                                                        const ru_sdr_unit_config&     ru_cfg,
+                                                        unsigned                           integer_processing_delay_slots,
+                                                        float                              decimal_processing_delay_slots,
+                                                        float                              max_grids_prep_time,
+                                                        float                              radio_heads_prep_time)
 {
   /// Static configuration that the gnb supports.
   static constexpr cyclic_prefix cp = cyclic_prefix::NORMAL;
@@ -40,7 +43,14 @@ static lower_phy_configuration generate_low_phy_config(const srs_du::du_cell_con
   out_cfg.scs                        = config.scs_common;
   out_cfg.cp                         = cp;
   out_cfg.dft_window_offset          = 0.5F;
-  out_cfg.integer_processing_delay_slots = max_processing_delay_slot;
+  // ################################################################################ //
+  out_cfg.integer_processing_delay_slots = integer_processing_delay_slots;
+  out_cfg.decimal_processing_delay_slots = decimal_processing_delay_slots;
+  out_cfg.max_grids_prep_time            = max_grids_prep_time;
+  out_cfg.radio_heads_prep_time          = radio_heads_prep_time;
+  // ################################################################################ //
+
+  out_cfg.tdd_ul_dl_cfg_common = config.tdd_ul_dl_cfg_common;
 
   out_cfg.srate = sampling_rate::from_MHz(ru_cfg.srate_MHz);
 
@@ -52,6 +62,13 @@ static lower_phy_configuration generate_low_phy_config(const srs_du::du_cell_con
     // Selects a default parameter that ensures a valid time alignment in the MSG1 (PRACH).
     out_cfg.time_alignment_calibration = 0;
   }
+
+  // // ################################################################################ //
+  // srslog::fetch_basic_logger("LOWER PHY").debug(
+  //   "aoyu | gnb_appconfig_translators.cpp | low_phy_threads_cfg.execution_profile={}", 
+  //   low_phy_threads_cfg.execution_profile == lower_phy_thread_profile::quad
+  // );
+  // // ################################################################################ //
 
   // Select RX buffer size policy.
   if (ru_cfg.device_driver == "zmq") {
@@ -256,17 +273,24 @@ static void generate_radio_config(radio_configuration::radio&        out_cfg,
 
 ru_generic_configuration srsran::generate_ru_sdr_config(const ru_sdr_unit_config&          ru_cfg,
                                                         span<const srs_du::du_cell_config> du_cells,
-                                                        unsigned                           max_processing_delay_slots)
+                                                        unsigned                           integer_processing_delay_slots,
+                                                        float                              decimal_processing_delay_slots,
+                                                        float                              max_grids_prep_time,
+                                                        float                              radio_heads_prep_time)
 {
-  ru_generic_configuration out_cfg;
-  out_cfg.device_driver = ru_cfg.device_driver;
-  generate_radio_config(out_cfg.radio_cfg, ru_cfg, du_cells);
+    ru_generic_configuration out_cfg;
+    out_cfg.device_driver = ru_cfg.device_driver;
+    generate_radio_config(out_cfg.radio_cfg, ru_cfg, du_cells);
 
-  for (const auto& cell : du_cells) {
-    out_cfg.lower_phy_config.push_back(generate_low_phy_config(cell, ru_cfg, max_processing_delay_slots));
-  }
+    for (const auto& cell : du_cells) {
+        out_cfg.lower_phy_config.push_back(generate_low_phy_config(cell, ru_cfg,
+                                                                   integer_processing_delay_slots,
+                                                                   decimal_processing_delay_slots,
+                                                                   max_grids_prep_time,
+                                                                   radio_heads_prep_time));
+    }
 
-  return out_cfg;
+    return out_cfg;
 }
 
 void srsran::fill_sdr_worker_manager_config(worker_manager_config& config, const ru_sdr_unit_config& ru_cfg)

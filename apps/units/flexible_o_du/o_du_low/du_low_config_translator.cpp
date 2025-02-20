@@ -95,7 +95,12 @@ static void generate_du_low_config(srs_du::du_low_config&             out_config
 
     // Determine processing pipelines depth. Make sure the number of slots per system frame is divisible by the pipeline
     // depths.
-    unsigned dl_pipeline_depth = 4 * du_low.expert_phy_cfg.max_processing_delay_slots;
+    unsigned dl_pipeline_depth = 4 * du_low.expert_phy_cfg.integer_processing_delay_slots;
+    // ################################################################################ //
+    if (du_low.expert_phy_cfg.integer_processing_delay_slots == 0) {
+      dl_pipeline_depth += 4;
+    }
+    // ################################################################################ //
     while (nof_slots_per_system_frame % dl_pipeline_depth != 0) {
       ++dl_pipeline_depth;
     }

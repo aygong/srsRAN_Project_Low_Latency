@@ -75,7 +75,7 @@ static srslog::basic_levels log_level = srslog::basic_levels::warning;
 
 /// Program parameters.
 static subcarrier_spacing                        scs                        = subcarrier_spacing::kHz15;
-static unsigned                                  max_processing_delay_slots = 4;
+static unsigned                                  integer_processing_delay_slots = 4;
 static cyclic_prefix                             cy_prefix                  = cyclic_prefix::NORMAL;
 static double                                    dl_center_freq             = 3489.42e6;
 static double                                    ssb_center_freq            = 3488.16e6;
@@ -471,7 +471,7 @@ lower_phy_configuration create_lower_phy_configuration(task_executor*           
   lower_phy_configuration phy_config;
   phy_config.srate                          = srate;
   phy_config.scs                            = scs;
-  phy_config.max_processing_delay_slots     = max_processing_delay_slots;
+  phy_config.integer_processing_delay_slots     = integer_processing_delay_slots;
   phy_config.time_alignment_calibration     = 0;
   phy_config.system_time_throttling         = 0.0F;
   phy_config.ta_offset                      = n_ta_offset::n0;
@@ -683,7 +683,7 @@ int main(int argc, char** argv)
   upper_phy_sample_config.log_level                    = log_level;
   upper_phy_sample_config.max_nof_prb                  = bw_rb;
   upper_phy_sample_config.max_nof_ports                = nof_ports;
-  upper_phy_sample_config.rg_pool_size                 = 2 * max_processing_delay_slots;
+  upper_phy_sample_config.rg_pool_size                 = 2 * integer_processing_delay_slots;
   upper_phy_sample_config.ldpc_encoder_type            = "generic";
   upper_phy_sample_config.gateway                      = &rg_gateway_adapter;
   upper_phy_sample_config.rx_symb_req_notifier         = &phy_rx_symbol_req_adapter;

@@ -47,7 +47,10 @@ struct flexible_o_du_unit_config {
 /// Radio Unit dependencies of the flexible O-RAN DU.
 struct flexible_o_du_ru_config {
   span<const srs_du::du_cell_config> du_cells;
-  unsigned                           max_processing_delay;
+  unsigned                           integer_processing_delay_slots;
+  unsigned                           decimal_processing_delay_slots;
+  unsigned                           max_grids_prep_time;
+  unsigned                           radio_heads_prep_time;
   unsigned                           prach_nof_ports;
 };
 

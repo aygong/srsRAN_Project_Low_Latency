@@ -40,7 +40,7 @@ static std::unique_ptr<radio_unit> create_dummy_radio_unit(const ru_dummy_unit_c
   dependencies.symbol_notifier = &ru_dependencies.symbol_notifier;
 
   return create_dummy_ru(
-      generate_ru_dummy_config(ru_cfg, ru_config.du_cells, ru_config.max_processing_delay, ru_config.prach_nof_ports),
+      generate_ru_dummy_config(ru_cfg, ru_config.du_cells, ru_config.integer_processing_delay_slots, ru_config.prach_nof_ports),
       dependencies);
 }
 

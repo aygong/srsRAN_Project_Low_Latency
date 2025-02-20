@@ -108,7 +108,7 @@ o_du_unit flexible_o_du_factory::create_flexible_o_du(const o_du_unit_dependenci
   report_error_if_not(odu_instance, "Invalid Distributed Unit");
 
   flexible_o_du_ru_config       ru_config{{du_cells},
-                                    du_lo.expert_phy_cfg.max_processing_delay_slots,
+                                    du_lo.expert_phy_cfg.integer_processing_delay_slots,
                                     static_cast<unsigned>(du_hi.cells_cfg.front().cell.prach_cfg.ports.size())};
   flexible_o_du_ru_dependencies ru_dependencies{*dependencies.workers,
                                                 du_impl->get_upper_ru_ul_adapter(),

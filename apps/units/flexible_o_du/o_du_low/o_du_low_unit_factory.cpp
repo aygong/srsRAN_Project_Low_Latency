@@ -57,7 +57,12 @@ static void generate_dl_processor_config(downlink_processor_factory_sw_config& o
     pdsch_processor_concurrent_configuration pdsch_proc_config;
     pdsch_proc_config.nof_pdsch_codeblock_threads = upper_phy_threads_cfg.nof_dl_threads;
     pdsch_proc_config.max_nof_simultaneous_pdsch =
-        (MAX_UE_PDUS_PER_SLOT + 1) * unit_cfg.expert_phy_cfg.max_processing_delay_slots;
+        (MAX_UE_PDUS_PER_SLOT + 1) * unit_cfg.expert_phy_cfg.integer_processing_delay_slots;
+    
+    if (unit_cfg.expert_phy_cfg.integer_processing_delay_slots == 0) {
+      pdsch_proc_config.max_nof_simultaneous_pdsch = MAX_UE_PDUS_PER_SLOT + 1;
+    }
+
     pdsch_proc_config.pdsch_codeblock_task_executor = &pdsch_codeblock_executor;
     out_cfg.pdsch_processor.emplace<pdsch_processor_concurrent_configuration>(pdsch_proc_config);
   } else if ((hwacc_pdsch_processor) || (upper_phy_threads_cfg.pdsch_processor_type == "generic")) {

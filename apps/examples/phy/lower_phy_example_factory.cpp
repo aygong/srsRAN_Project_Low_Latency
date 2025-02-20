@@ -67,7 +67,7 @@ std::unique_ptr<lower_phy> srsran::create_lower_phy(lower_phy_configuration& con
 
   // Create PDxCH processor factory.
   std::shared_ptr<pdxch_processor_factory> pdxch_proc_factory =
-      create_pdxch_processor_factory_sw(config.max_processing_delay_slots + 1, modulator_factory);
+      create_pdxch_processor_factory_sw(config.integer_processing_delay_slots + 1, modulator_factory);
   report_fatal_error_if_not(pdxch_proc_factory, "Failed to create PDxCH processor factory.");
 
   // Create PRACH processor factory.
