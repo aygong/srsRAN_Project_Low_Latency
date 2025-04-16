@@ -1,0 +1,76 @@
+gnb_id: 107
+
+
+
+cu_cp:
+  inactivity_timer: 7200
+  amf:
+    addr: 10.43.189.248
+    bind_addr: 128.178.122.187
+    supported_tracking_areas:
+    -
+      tac: 1
+      plmn_list:
+      -
+        plmn: "00103"
+        tai_slice_support_list:
+        - sst: 1
+          sd: 0
+
+ru_sdr:
+  device_driver: uhd
+  device_args:
+  srate: 23.040
+  otw_format: sc12
+  tx_gain: 80
+  rx_gain: 40
+
+cell_cfg:
+  dl_arfcn: 623294
+  band: 78
+  channel_bandwidth_MHz: 20
+  common_scs: 30
+  plmn: "00103"
+  tac: 1
+  pci: 1
+  tdd_ul_dl_cfg:
+    dl_ul_tx_period: 4
+    nof_dl_slots: 2
+    nof_dl_symbols: 8
+    nof_ul_slots: 1
+    nof_ul_symbols: 0
+  nof_antennas_ul: 1
+  nof_antennas_dl: 1
+  pdsch:
+    mcs_table: qam256
+  pusch:
+    mcs_table: qam64
+    min_k2: 2
+    sr_free_access_mode: none
+  pucch:
+    sr_period_ms: 2
+    min_k1: 2
+  slicing:
+  - sst: 1
+    sd: 0
+
+#expert_execution:
+#  threads:
+#    upper_phy:
+#      pdsch_processor_type: lite
+
+expert_phy:
+  integer_proc_delay: 0
+  decimal_proc_delay: 0.8
+  max_grids_prep_time: 0.4
+  radio_heads_prep_time: 0.5
+
+log:
+  filename: /tmp/gnb.log
+  all_level: debug
+
+pcap:
+  mac_enable: false
+  mac_filename: /tmp/gnb_mac.pcap
+  ngap_enable: false
+  ngap_filename: /tmp/gnb_ngap.pcap

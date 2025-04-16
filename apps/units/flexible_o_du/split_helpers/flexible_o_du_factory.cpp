@@ -109,6 +109,9 @@ o_du_unit flexible_o_du_factory::create_flexible_o_du(const o_du_unit_dependenci
 
   flexible_o_du_ru_config       ru_config{{du_cells},
                                     du_lo.expert_phy_cfg.integer_processing_delay_slots,
+                                    du_lo.expert_phy_cfg.decimal_processing_delay_slots,
+                                    du_lo.expert_phy_cfg.max_grids_prep_time,
+                                    du_lo.expert_phy_cfg.radio_heads_prep_time,
                                     static_cast<unsigned>(du_hi.cells_cfg.front().cell.prach_cfg.ports.size())};
   flexible_o_du_ru_dependencies ru_dependencies{*dependencies.workers,
                                                 du_impl->get_upper_ru_ul_adapter(),
@@ -116,6 +119,8 @@ o_du_unit flexible_o_du_factory::create_flexible_o_du(const o_du_unit_dependenci
                                                 du_impl->get_upper_ru_error_adapter()};
 
   std::unique_ptr<radio_unit> ru = create_radio_unit(ru_config, ru_dependencies);
+  fmt::print("du_lo.expert_phy_cfg.integer_processing_delay_slots {}\n",ru_config.integer_processing_delay_slots);
+  fmt::print("du_lo.expert_phy_cfg.decimal_processing_delay_slots {}\n",ru_config.decimal_processing_delay_slots);
 
   srsran_assert(ru, "Invalid Radio Unit");
 

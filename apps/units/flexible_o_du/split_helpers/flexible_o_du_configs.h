@@ -48,9 +48,9 @@ struct flexible_o_du_unit_config {
 struct flexible_o_du_ru_config {
   span<const srs_du::du_cell_config> du_cells;
   unsigned                           integer_processing_delay_slots;
-  unsigned                           decimal_processing_delay_slots;
-  unsigned                           max_grids_prep_time;
-  unsigned                           radio_heads_prep_time;
+  float                              decimal_processing_delay_slots;
+  float                              max_grids_prep_time;
+  float                              radio_heads_prep_time;
   unsigned                           prach_nof_ports;
 };
 
