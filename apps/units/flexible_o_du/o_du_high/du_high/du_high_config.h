@@ -639,6 +639,13 @@ struct du_high_unit_cell_slice_sched_config {
   unsigned min_prb_policy_ratio = 0;
   /// Sets the maximum percentage of PRBs to be allocated to this group.
   unsigned max_prb_policy_ratio = 100;
+  // ################################################################################ //
+  /// Enables SR-free access to this group.
+  bool sr_free_access_enable = false;
+  /// Specifies the minimum size (in bytes) of uplink grants assigned 
+  /// to this group when SR-free access is enabled.
+  unsigned min_ul_grant_size = 0U;
+  // ################################################################################ //
   /// Policy scheduler parameters for the slice.
   policy_scheduler_expert_config slice_policy_sched_cfg = time_rr_scheduler_expert_config{};
 };

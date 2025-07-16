@@ -765,6 +765,10 @@ srsran::generate_du_slicing_rrm_policy_config(span<const std::string>           
       rrm_policy_cfgs.back().min_prb            = (nof_cell_crbs * cfg.sched_cfg.min_prb_policy_ratio) / 100;
       rrm_policy_cfgs.back().max_prb            = (nof_cell_crbs * cfg.sched_cfg.max_prb_policy_ratio) / 100;
       rrm_policy_cfgs.back().policy_sched_cfg   = cfg.sched_cfg.slice_policy_sched_cfg;
+      // ################################################################################ //
+      rrm_policy_cfgs.back().sr_free_access_enable = cfg.sched_cfg.sr_free_access_enable;
+      rrm_policy_cfgs.back().min_ul_grant_size     = cfg.sched_cfg.min_ul_grant_size;
+      // ################################################################################ //
     }
   }
   return rrm_policy_cfgs;

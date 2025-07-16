@@ -58,6 +58,10 @@ public:
   const slice_rrm_policy_config& slice_config(ran_slice_id_t id) const { return slices[id.value()].inst.cfg; }
   scheduler_policy&              get_policy(ran_slice_id_t id) { return *slices[id.value()].policy; }
 
+  // ################################################################################ //
+  ran_slice_instance& get_slice(const logical_channel_config& lc_cfg);
+  // ################################################################################ //
+
 private:
   /// RAN slice ID for default slice used to schedule SRB(s) traffic.
   const ran_slice_id_t default_srb_ran_slice_id = ran_slice_id_t{0};
@@ -122,8 +126,6 @@ private:
       std::priority_queue<slice_candidate_context>::push(elem);
     }
   };
-
-  ran_slice_instance& get_slice(const logical_channel_config& lc_cfg);
 
   // Fetch UE if it is in a state to be added/reconfigured.
   ue* fetch_ue_to_update(du_ue_index_t ue_idx);

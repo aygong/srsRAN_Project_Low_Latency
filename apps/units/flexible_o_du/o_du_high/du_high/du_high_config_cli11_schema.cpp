@@ -1254,6 +1254,19 @@ static void configure_cli11_slicing_scheduling_args(CLI::App&                   
              "Maximum percentage of PRBs to be allocated to the slice")
       ->capture_default_str()
       ->check(CLI::Range(1U, 100U));
+  // ################################################################################ //
+  add_option(app,
+             "--sr_free_access_enable",
+             slice_sched_params.sr_free_access_enable,
+             "Enable SR-free access to the slice")
+      ->capture_default_str();
+  add_option(app,
+             "--min_ul_grant_size",
+             slice_sched_params.min_ul_grant_size,
+             "Minimum size (in bytes) of uplink grants to be allocated to the slice")
+      ->capture_default_str()
+      ->check(CLI::Range(0U, 100000U));
+  // ################################################################################ //
 
   // Policy scheduler configuration.
   CLI::App* policy_sched_cfg_subcmd =

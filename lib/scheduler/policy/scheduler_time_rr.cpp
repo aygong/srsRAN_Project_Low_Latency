@@ -55,7 +55,9 @@ static unsigned get_max_ues_to_be_sched(const slice_ue_repository& ues, bool is_
   unsigned nof_ue_with_new_tx = 0;
   unsigned lookup_idx         = 0;
   for (const auto& u : ues) {
-    if ((is_dl and u.has_pending_dl_newtx_bytes()) or (not is_dl and u.pending_ul_newtx_bytes() > 0)) {
+    // ################################################################################ //
+    if ((is_dl && u.has_pending_dl_newtx_bytes()) ||
+        (!is_dl && (u.sr_free_access_enable || u.pending_ul_newtx_bytes() > 0))) {
       // count UEs with pending data.
       ++nof_ue_with_new_tx;
 
@@ -69,6 +71,7 @@ static unsigned get_max_ues_to_be_sched(const slice_ue_repository& ues, bool is_
         }
       }
     }
+    // ################################################################################ //
   }
   if (nof_ue_with_new_tx == 0) {
     return 0;
@@ -391,7 +394,13 @@ static ul_alloc_result alloc_ul_ue_newtx(const slice_ue&               u,
                                          std::optional<unsigned>       max_grant_rbs = {})
 {
   unsigned pending_newtx_bytes = 0;
-  pending_newtx_bytes          = u.pending_ul_newtx_bytes();
+  // ################################################################################ //
+  if (u.sr_free_access_enable) {
+    pending_newtx_bytes = std::max(u.min_ul_grant_size, u.pending_ul_newtx_bytes());
+  } else {
+    pending_newtx_bytes = u.pending_ul_newtx_bytes();
+  }
+  // ################################################################################ //
   if (pending_newtx_bytes == 0) {
     return {alloc_status::skip_ue};
   }

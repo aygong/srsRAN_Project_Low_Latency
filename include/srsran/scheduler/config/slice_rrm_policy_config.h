@@ -38,6 +38,13 @@ struct slice_rrm_policy_config {
   unsigned max_prb = MAX_NOF_PRBS;
   /// Policy scheduler configuration for the slice.
   policy_scheduler_expert_config policy_sched_cfg = time_rr_scheduler_expert_config{};
+  // ################################################################################ //
+  /// Enables SR-free access to this group.
+  bool sr_free_access_enable = false;
+  /// Specifies the minimum size (in bytes) of uplink grants assigned 
+  /// to this group when SR-free access is enabled.
+  unsigned min_ul_grant_size = 0U;
+  // ################################################################################ //
 };
 
 } // namespace srsran

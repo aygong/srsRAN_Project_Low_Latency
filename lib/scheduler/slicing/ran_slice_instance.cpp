@@ -98,7 +98,8 @@ const slice_ue_repository& ran_slice_instance::get_ues()
   return slice_ues;
 }
 
-void ran_slice_instance::add_logical_channel(const ue& u, lcid_t lcid, lcg_id_t lcg_id)
+// ################################################################################ //
+void ran_slice_instance::add_logical_channel(const ue& u, ran_slice_instance& sl_inst, lcid_t lcid, lcg_id_t lcg_id)
 {
   if (lcid == LCID_SRB0) {
     // SRB0 is not handled by slice scheduler.
@@ -108,4 +109,9 @@ void ran_slice_instance::add_logical_channel(const ue& u, lcid_t lcid, lcg_id_t 
     slice_ues.emplace(u.ue_index, u);
   }
   slice_ues[u.ue_index].add_logical_channel(lcid, lcg_id);
+
+  // Update slice UE SR-free configuration.
+  slice_ues[u.ue_index].sr_free_access_enable = sl_inst.cfg.sr_free_access_enable;
+  slice_ues[u.ue_index].min_ul_grant_size     = sl_inst.cfg.min_ul_grant_size;
 }
+// ################################################################################ //

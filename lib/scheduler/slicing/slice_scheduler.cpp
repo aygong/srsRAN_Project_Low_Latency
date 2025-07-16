@@ -190,7 +190,9 @@ void slice_scheduler::add_impl(const ue& u)
   const ue_configuration& ue_cfg = *u.ue_cfg_dedicated();
   for (const logical_channel_config& lc_cfg : ue_cfg.logical_channels()) {
     ran_slice_instance& sl_inst = get_slice(lc_cfg);
-    sl_inst.add_logical_channel(u, lc_cfg.lcid, lc_cfg.lc_group);
+    // ################################################################################ //
+    sl_inst.add_logical_channel(u, sl_inst, lc_cfg.lcid, lc_cfg.lc_group);
+    // ################################################################################ //
   }
 }
 
