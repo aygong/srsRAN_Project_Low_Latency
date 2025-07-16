@@ -103,20 +103,9 @@ void uplink_processor_impl::process_pusch(span<uint8_t>                      dat
     return;
   }
 
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | uplink_processor_impl.cpp | adaptor_id={}, pdu.pdu.slot={}, pusch_adaptor.slot={}", 
-    adaptor_id.value(), pdu.pdu.slot, pusch_adaptors[adaptor_id.value()].slot
-  );
-  // ################################################################################ //
-
   // Configure adaptor.
   pusch_processor_result_notifier& processor_notifier = pusch_adaptors[adaptor_id.value()].configure(
       notifier, to_rnti(pdu.pdu.rnti), pdu.pdu.slot, to_harq_id(pdu.harq_id), data);
-
-  // ################################################################################ //
-  logger.debug("aoyu | uplink_processor_impl.cpp -> process_pusch | data={}", data);
-  // ################################################################################ //
 
   // Process PUSCH.
   pusch_proc->process(data, std::move(rm_buffer), processor_notifier, grid.get_reader(), pdu.pdu);

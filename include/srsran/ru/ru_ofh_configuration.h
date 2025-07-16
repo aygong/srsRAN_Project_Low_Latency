@@ -109,10 +109,12 @@ struct ru_ofh_configuration {
   /// Individual Open Fronthaul sector configurations.
   std::vector<ru_ofh_sector_configuration> sector_configs;
 
+  // ################################################################################ //
   /// \brief Number of slots the timing handler is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
   unsigned integer_processing_delay_slots;
+  // ################################################################################ //
   /// GPS Alpha - Valid value range: [0, 1.2288e7].
   unsigned gps_Alpha;
   /// GPS Beta - Valid value range: [-32768, 32767].

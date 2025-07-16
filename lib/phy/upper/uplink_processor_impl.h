@@ -79,8 +79,6 @@ public:
     return *this;
   }
 
-  slot_point slot = slot_point();
-
 private:
   // See interface for documentation.
   void on_uci(const pusch_processor_result_control& uci) override
@@ -125,12 +123,6 @@ private:
     result.harq_id        = harq_id;
     result.decoder_result = sch.data;
     result.payload        = (sch.data.tb_crc_ok) ? payload : span<const uint8_t>();
-    // ################################################################################ //
-    srslog::fetch_basic_logger("TEMP PHY").debug(
-      "aoyu | uplink_processor_impl.h | queue_identifier={}, result.slot.sfn={}, result.slot.slot_index={}", 
-      queue_identifier, result.slot.sfn(), result.slot.slot_index()
-    );
-    // ################################################################################ //
     notifier_->on_new_pusch_results_data(result);
 
     // Return the adaptor identifier to the queue.
@@ -143,7 +135,7 @@ private:
   unsigned                       queue_identifier;
   upper_phy_rx_results_notifier* notifier = nullptr;
   rnti_t                         rnti     = rnti_t::INVALID_RNTI;
-  //slot_point                     slot     = slot_point();
+  slot_point                     slot     = slot_point();
   harq_id_t                      harq_id  = harq_id_t::INVALID_HARQ_ID;
   span<const uint8_t>            payload;
 };

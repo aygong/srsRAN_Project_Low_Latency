@@ -844,19 +844,6 @@ static void configure_cli11_pusch_args(CLI::App& app, du_high_unit_pusch_config&
                  pusch_params.enable_transform_precoding,
                  "Enable transform precoding for PUSCH.")
       ->capture_default_str();
-  // ################################################################################ //
-  auto access_mode_check = [](const std::string& value) -> std::string {
-    if (value == "none" || value == "static" || value == "dynamic") {
-      return {};
-    }
-    return "Access mode not supported. Accepted values [none, static, dynamic]";
-  };
-  app.add_option("--sr_free_access_mode",
-                 pusch_params.sr_free_access_mode, 
-                 "SR-free access mode")
-      ->capture_default_str()
-      ->check(access_mode_check);
-  // ################################################################################ //
 }
 
 static void configure_cli11_pucch_args(CLI::App& app, du_high_unit_pucch_config& pucch_params)

@@ -34,7 +34,6 @@ namespace srsran {
 /// \brief Information and context relative to a decoded MAC CE BSR.
 struct mac_bsr_ce_info {
   du_cell_index_t cell_index;
-  slot_point      slot_rx;
   du_ue_index_t   ue_index;
   rnti_t          rnti;
   bsr_format      bsr_fmt;

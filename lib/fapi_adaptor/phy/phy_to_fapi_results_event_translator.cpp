@@ -139,12 +139,6 @@ void phy_to_fapi_results_event_translator::on_new_pusch_results_control(const ul
 
 void phy_to_fapi_results_event_translator::on_new_pusch_results_data(const ul_pusch_results_data& result)
 {
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | phy_to_fapi_results_event_translator | result.slot.sfn={}, result.slot.slot_index={}", 
-    result.slot.sfn(), result.slot.slot_index()
-  );
-  // ################################################################################ //
   notify_crc_indication(result);
   notify_rx_data_indication(result);
 }
@@ -345,12 +339,6 @@ void phy_to_fapi_results_event_translator::notify_rx_data_indication(const ul_pu
     log_validator_report(validation_result.error(), logger);
     return;
   }
-
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | phy_to_fapi_results_event_translator | msg.sfn={}, msg.slot={}", msg.sfn, msg.slot
-  );
-  // ################################################################################ //
 
   data_notifier.get().on_rx_data_indication(msg);
 }

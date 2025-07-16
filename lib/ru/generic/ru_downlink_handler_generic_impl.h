@@ -24,7 +24,6 @@
 
 #include "srsran/phy/support/shared_resource_grid.h"
 #include "srsran/ru/ru_downlink_plane.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 

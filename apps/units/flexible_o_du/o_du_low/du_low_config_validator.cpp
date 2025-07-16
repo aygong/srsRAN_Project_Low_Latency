@@ -27,7 +27,9 @@
 using namespace srsran;
 
 static bool validate_upper_phy_threads_appconfig(const du_low_unit_expert_threads_config& config,
+                                                 // ################################################################################ //
                                                  unsigned                                 integer_processing_delay_slots,
+                                                 // ################################################################################ //
                                                  unsigned                                 nof_hwacc_pdsch,
                                                  unsigned                                 nof_hwacc_pusch)
 {
@@ -94,7 +96,9 @@ static bool validate_expert_execution_unit_config(const du_low_unit_config&     
   nof_hwacc_pusch = config.hal_config->bbdev_hwacc->pusch_dec->nof_hwacc;
 #endif // DPDK_FOUND
   if (!validate_upper_phy_threads_appconfig(config.expert_execution_cfg.threads,
+                                            // ################################################################################ //
                                             config.expert_phy_cfg.integer_processing_delay_slots,
+                                            // ################################################################################ //
                                             nof_hwacc_pdsch,
                                             nof_hwacc_pusch)) {
     return false;

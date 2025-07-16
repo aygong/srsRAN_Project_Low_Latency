@@ -33,11 +33,13 @@ std::unique_ptr<radio_unit> srsran::create_sdr_radio_unit(const ru_sdr_unit_conf
                                                           const flexible_o_du_ru_dependencies& ru_dependencies)
 {
   ru_generic_configuration config = generate_ru_sdr_config(ru_cfg, 
-                                                           ru_config.du_cells, 
+                                                           ru_config.du_cells,
+                                                           // ################################################################################ //
                                                            ru_config.integer_processing_delay_slots, 
                                                            ru_config.decimal_processing_delay_slots, 
                                                            ru_config.max_grids_prep_time, 
                                                            ru_config.radio_heads_prep_time);
+                                                           // ################################################################################ //
 
   config.rf_logger                   = &srslog::fetch_basic_logger("RF");
   config.radio_exec                  = ru_dependencies.workers.radio_exec;

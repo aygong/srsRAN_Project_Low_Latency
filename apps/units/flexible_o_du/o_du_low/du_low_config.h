@@ -31,12 +31,14 @@ namespace srsran {
 
 /// Expert upper physical layer configuration.
 struct du_low_unit_expert_upper_phy_config {
+  // ################################################################################ //
   /// \brief Sets the maximum allowed downlink processing delay in slots.
   ///
   /// Higher values increase the downlink processing pipeline length, which improves performance and stability for
   /// demanding cell configurations, such as using large bandwidths or higher order MIMO. Higher values also increase
   /// the round trip latency of the radio link.
   unsigned integer_processing_delay_slots = 5U;
+  // ################################################################################ //
   /// Number of PUSCH LDPC decoder iterations.
   unsigned pusch_decoder_max_iterations = 6;
   /// Set to true to enable the PUSCH LDPC decoder early stop.
@@ -54,9 +56,11 @@ struct du_low_unit_expert_upper_phy_config {
   /// current slot is M, the upper phy will consider the slot M - nof_slots_request_headroom as valid and process it.
   unsigned nof_slots_request_headroom = 0U;
   
+  // ################################################################################ //
   float decimal_processing_delay_slots = 0.0F;
   float max_grids_prep_time            = 0.0F;
   float radio_heads_prep_time          = 0.0F;
+  // ################################################################################ //
 };
 
 /// DU low logging functionalities.

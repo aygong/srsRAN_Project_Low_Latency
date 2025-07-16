@@ -74,14 +74,13 @@ inline std::shared_ptr<lower_phy_factory> create_lower_phy_factory(lower_phy_con
       create_ofdm_prach_demodulator_factory_sw(dft_factory, config.srate, fr);
   report_fatal_error_if_not(prach_demodulator_factory, "Failed to create PRACH demodulator factory.");
 
+  // ################################################################################ //
   // Create PDxCH processor factory.
-  unsigned request_queue_size = config.integer_processing_delay_slots;
-  if (config.integer_processing_delay_slots == 0) {
-    request_queue_size += 1;
-  }
+  unsigned request_queue_size = std::max(1U, config.integer_processing_delay_slots);
   std::shared_ptr<pdxch_processor_factory> pdxch_proc_factory =
       create_pdxch_processor_factory_sw(request_queue_size + 1, modulator_factory);
   report_fatal_error_if_not(pdxch_proc_factory, "Failed to create PDxCH processor factory.");
+  // ################################################################################ //
 
   // Create PRACH processor factory.
   std::shared_ptr<prach_processor_factory> prach_proc_factory =

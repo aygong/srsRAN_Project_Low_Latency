@@ -267,13 +267,6 @@ void mac_to_fapi_translator::on_new_downlink_data(const mac_dl_data_result& dl_d
     }
   }
 
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | mac_to_fapi_translator.cpp | dl_data.slot={}, msg.sfn={}, msg.slot={}", 
-    dl_data.slot, msg.sfn, msg.slot
-  );
-  // ################################################################################ //
-
   // Send the message.
   msg_gw.tx_data_request(msg);
 }

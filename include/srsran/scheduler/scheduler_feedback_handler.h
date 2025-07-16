@@ -54,7 +54,6 @@ using ul_bsr_lcg_report_list = static_vector<ul_bsr_lcg_report, MAX_NOF_LCGS>;
 struct ul_bsr_indication_message {
   du_cell_index_t        cell_index;
   du_ue_index_t          ue_index;
-  slot_point             slot_rx;
   rnti_t                 crnti;
   bsr_format             type;
   ul_bsr_lcg_report_list reported_lcgs;

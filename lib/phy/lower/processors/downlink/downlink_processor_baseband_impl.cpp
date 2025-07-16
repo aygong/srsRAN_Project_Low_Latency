@@ -44,8 +44,10 @@ downlink_processor_baseband_impl::downlink_processor_baseband_impl(
   nof_slots_per_subframe(get_nof_slots_per_subframe(config.scs)),
   nof_symbols_per_slot(get_nsymb_per_slot(config.cp)),
   temp_buffer(config.nof_tx_ports, 2 * config.rate.get_dft_size(config.scs)),
-  cp(config.cp),
-  cfo_processor(config.rate)
+  cfo_processor(config.rate),
+  // ################################################################################ //
+  cp(config.cp)
+  // ################################################################################ //
 {
   // ################################################################################ //
   if (config.tdd_ul_dl_cfg_common.has_value()) {
@@ -62,9 +64,7 @@ downlink_processor_baseband_impl::downlink_processor_baseband_impl(
     }
   }
 
-  downlink_processor_waiting_time = static_cast<unsigned int>(
-    1000 / get_nof_slots_per_subframe(scs) * config.max_grids_prep_time
-  );
+  downlink_processor_waiting_time = static_cast<unsigned int>(1000 / get_nof_slots_per_subframe(scs) * config.max_grids_prep_time);
   // ################################################################################ //
   unsigned symbol_size_no_cp        = config.rate.get_dft_size(config.scs);
   unsigned nof_symbols_per_subframe = nof_symbols_per_slot * nof_slots_per_subframe;
@@ -144,7 +144,7 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
           (std::chrono::steady_clock::now() < wait_until_tp) &&
           (is_dl_enabled(last_saved_slot))) {
       std::this_thread::sleep_for(std::chrono::microseconds(5));
-      // srslog::fetch_basic_logger("LOWER PHY").debug("aoyu | downlink_processor_baseband_impl.cpp | sleep for 5 microseconds");
+      // srslog::fetch_basic_logger("LOWER PHY").debug("downlink_processor_baseband_impl.cpp | sleep for 5 microseconds");
     }
   }
   // ################################################################################ //
@@ -196,9 +196,7 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
       // ################################################################################ //
       // Detect half-slot boundary.
       if (i_symbol == (nof_symbols_per_slot / 2) - 1) {
-        srslog::fetch_basic_logger("LOWER PHY").debug(
-          "aoyu | downlink_processor_baseband_impl.cpp | notify half slot boundary: slot={}", slot
-        );
+        srslog::fetch_basic_logger("LOWER PHY").debug("downlink_processor_baseband_impl.cpp | notify half slot boundary: slot={}", slot);
       }
       // ################################################################################ //
 
@@ -207,9 +205,9 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
         // Notify slot boundary.
         lower_phy_timing_context context;
         context.slot = slot + nof_slot_tti_in_advance;
+        // ################################################################################ //
         // last_notified_slot.emplace(slot);
         // notifier->on_tti_boundary(context);
-        // ################################################################################ //
         last_saved_slot    = slot;
         last_saved_context = context;
         // ################################################################################ //
@@ -255,12 +253,6 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
       }
     }
 
-    // ################################################################################ //
-    // srslog::fetch_basic_logger("LOWER PHY").debug(
-    //   "aoyu | downlink_processor_baseband_impl.cpp | processed={}", processed
-    // );
-    // ################################################################################ //
-
     // Update output buffer metadata.
     update_metadata(md, processed, writing_index);
 
@@ -271,23 +263,26 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
   // Fill the unprocessed regions of the buffer with zeros.
   fill_zeros(buffer, md);
 
-
+  // ################################################################################ //
   if (nof_slot_tti_in_advance == 0) {
     pdxch_proc_baseband.reset_grid_status();
   }
+  // ################################################################################ //
 
   return md;
 }
 
+// ################################################################################ //
 void downlink_processor_baseband_impl::notify()
 {
   srslog::fetch_basic_logger("LOWER PHY").debug(
-    "aoyu | downlink_processor_baseband_impl.cpp | notify full slot boundary: slot={}, nof_slot_tti_in_advance={}, context.slot={}", 
+    "downlink_processor_baseband_impl.cpp | notify full slot boundary: slot={}, nof_slot_tti_in_advance={}, context.slot={}", 
     last_saved_slot, nof_slot_tti_in_advance, last_saved_context.slot
   );
   last_notified_slot.emplace(last_saved_slot);
   notifier->on_tti_boundary(last_saved_context);
 }
+// ################################################################################ //
 
 bool downlink_processor_baseband_impl::process_new_symbol(baseband_gateway_buffer_writer& buffer,
                                                           slot_point                      slot,

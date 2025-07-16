@@ -26,7 +26,6 @@
 #include "srsran/phy/lower/lower_phy_controller.h"
 #include "srsran/phy/lower/lower_phy_metrics_notifier.h"
 #include "srsran/ru/ru_controller.h"
-#include "srsran/srslog/srslog.h"
 #include <vector>
 
 namespace srsran {

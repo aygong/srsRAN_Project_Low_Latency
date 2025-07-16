@@ -130,12 +130,14 @@ private:
     unsigned temp_underflow_count = underflow_count.exchange(0);
     unsigned temp_overflow_count  = overflow_count.exchange(0);
 
+    // ################################################################################ //
     // Print late, underflow and overflow counts since last print.
-    bool always_print = false; 
+    bool always_print = false;
     if ((temp_late_count != 0) || (temp_underflow_count != 0) || (temp_overflow_count != 0) || always_print) {
       fmt::print(
           "Late: {}; Underflow: {}; Overflow: {};\n", temp_late_count, temp_underflow_count, temp_overflow_count);
     }
+    // ################################################################################ //
   }
 
 private:

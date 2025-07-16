@@ -44,7 +44,7 @@ public:
     symbol_context                    context;
   };
 
-
+  // ################################################################################ //
   // Implement pure virtual functions
   bool check_grid_status() override
   {
@@ -56,6 +56,7 @@ public:
   {
     // Reset any internal state if needed
   }
+  // ################################################################################ //
 
   // Constructs a PDxCH processor baseband spy that processes all slots and symbols.
   pdxch_processor_baseband_spy() : random_data(1009)

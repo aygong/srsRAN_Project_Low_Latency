@@ -46,12 +46,6 @@ public:
     upper_context.slot   = context.slot;
     upper_context.sector = context.sector;
     upper_context.symbol = context.nof_symbols;
-    // ################################################################################ //
-    srslog::fetch_basic_logger("LOWER PHY").debug(
-      "aoyu | phy_rx_symbol_adapter.h | lower_context.slot={}, lower_context.symbol={}", 
-      context.slot, context.nof_symbols
-    );
-    // ################################################################################ //
     rx_symbol_handler->handle_rx_symbol(upper_context, grid);
   }
 

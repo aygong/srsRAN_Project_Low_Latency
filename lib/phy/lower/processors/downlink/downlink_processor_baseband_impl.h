@@ -34,9 +34,11 @@
 #include "srsran/phy/lower/sampling_rate.h"
 #include "srsran/ran/cyclic_prefix.h"
 #include "srsran/support/math/stats.h"
+// ################################################################################ //
 #include "srsran/phy/lower/lower_phy_timing_context.h"
 #include "srsran/ran/tdd/tdd_ul_dl_config.h"
 #include "srsran/srslog/srslog.h"
+// ################################################################################ //
 
 namespace srsran {
 
@@ -54,10 +56,10 @@ struct downlink_processor_baseband_configuration {
   unsigned nof_tx_ports;
   /// Number of slots notified in advance in the TTI boundary event.
   unsigned nof_slot_tti_in_advance;
-  /// Logger.
-  srslog::basic_logger* logger;
 
   // ################################################################################ //
+  /// Logger.
+  srslog::basic_logger* logger;
   /// Optional TDD configuration.
   std::optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
   /// Maximum allowed preparation time for resource grids.
@@ -213,9 +215,10 @@ public:
   // See interface for documentation.
   baseband_gateway_transmitter_metadata process(baseband_gateway_buffer_writer& buffer,
                                                 baseband_gateway_timestamp      timestamp) override;
-  void notify() override;
 
   // ################################################################################ //
+  void notify() override;
+
   bool is_dl_enabled(slot_point sl) const
   {
     if (dl_symbols_per_slot_lst.empty()) {
@@ -271,18 +274,18 @@ private:
   detail::baseband_symbol_buffer temp_buffer;
   /// Last notified slot boundary.
   std::optional<slot_point> last_notified_slot;
-
-  slot_point               last_saved_slot;
-  lower_phy_timing_context last_saved_context;
-
+  /// Carrier Frequency Offset processor.
+  baseband_cfo_processor cfo_processor;
   // ################################################################################ //
   /// Cyclic prefix configuration.
   cyclic_prefix cp;
   /// Maximum allowed waiting time for downlink processors.
   unsigned downlink_processor_waiting_time = 0;
+
+  slot_point               last_saved_slot;
+  lower_phy_timing_context last_saved_context;
   // ################################################################################ //
-  /// Carrier Frequency Offset processor.
-  baseband_cfo_processor cfo_processor;
+
 };
 
 } // namespace srsran

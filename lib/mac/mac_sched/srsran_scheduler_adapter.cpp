@@ -159,12 +159,6 @@ void srsran_scheduler_adapter::handle_ul_bsr_indication(const mac_bsr_ce_info& b
       ul_bsr_ind.reported_lcgs.push_back(make_sched_lcg_report(lb, bsr.bsr_fmt));
     }
   }
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | srsran_scheduler_adapter.cpp | ue={}, rnti={}, slot_rx=not_impl", 
-    static_cast<uint16_t>(ul_bsr_ind.ue_index), static_cast<uint16_t>(ul_bsr_ind.crnti)
-  );
-  // ################################################################################ //
 
   // Send UL BSR indication to Scheduler.
   sched_impl->handle_ul_bsr_indication(ul_bsr_ind);
@@ -176,7 +170,6 @@ void srsran_scheduler_adapter::handle_ul_sched_command(const mac_ul_scheduling_c
   // because the Scheduler relies on UCI signalling to know the current UE state.
   ul_bsr_indication_message bsr{};
   bsr.cell_index    = cmd.cell_index;
-  bsr.slot_rx = cmd.sl_rx;
   bsr.ue_index      = cmd.ue_index;
   bsr.crnti         = cmd.rnti;
   bsr.type          = bsr_format::SHORT_BSR;

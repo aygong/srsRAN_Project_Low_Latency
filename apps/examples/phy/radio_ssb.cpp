@@ -74,33 +74,35 @@ static const auto modulations = to_array<std::string>({to_string(modulation_sche
 static srslog::basic_levels log_level = srslog::basic_levels::warning;
 
 /// Program parameters.
-static subcarrier_spacing                        scs                        = subcarrier_spacing::kHz15;
+static subcarrier_spacing                        scs                            = subcarrier_spacing::kHz15;
+// ################################################################################ //
 static unsigned                                  integer_processing_delay_slots = 4;
-static cyclic_prefix                             cy_prefix                  = cyclic_prefix::NORMAL;
-static double                                    dl_center_freq             = 3489.42e6;
-static double                                    ssb_center_freq            = 3488.16e6;
-static double                                    tx_gain                    = 60.0;
-static double                                    rx_freq                    = 3.5e9;
-static double                                    rx_gain                    = 60.0;
-static unsigned                                  nof_ports                  = 1;
-static unsigned                                  nof_sectors                = 1;
-static std::string                               driver_name                = "uhd";
-static std::string                               device_arguments           = "type=b200";
-static std::vector<std::string>                  tx_channel_args            = {};
-static std::vector<std::string>                  rx_channel_args            = {};
-static sampling_rate                             srate                      = sampling_rate::from_MHz(23.04);
-static unsigned                                  bw_rb                      = 52;
-static radio_configuration::over_the_wire_format otw_format           = radio_configuration::over_the_wire_format::SC16;
-static unsigned                                  duration_slots       = 60000;
-static bool                                      zmq_loopback         = true;
-static ssb_pattern_case                          ssb_pattern          = ssb_pattern_case::A;
-static bool                                      enable_random_data   = false;
-static bool                                      enable_ul_processing = false;
-static bool                                      enable_prach_processing = false;
-static modulation_scheme                         data_mod_scheme         = modulation_scheme::QPSK;
-static std::string                               thread_profile_name     = "single";
-static std::string                               clock_source            = "internal";
-static std::string                               sync_source             = "internal";
+// ################################################################################ //
+static cyclic_prefix                             cy_prefix                      = cyclic_prefix::NORMAL;
+static double                                    dl_center_freq                 = 3489.42e6;
+static double                                    ssb_center_freq                = 3488.16e6;
+static double                                    tx_gain                        = 60.0;
+static double                                    rx_freq                        = 3.5e9;
+static double                                    rx_gain                        = 60.0;
+static unsigned                                  nof_ports                      = 1;
+static unsigned                                  nof_sectors                    = 1;
+static std::string                               driver_name                    = "uhd";
+static std::string                               device_arguments               = "type=b200";
+static std::vector<std::string>                  tx_channel_args                = {};
+static std::vector<std::string>                  rx_channel_args                = {};
+static sampling_rate                             srate                          = sampling_rate::from_MHz(23.04);
+static unsigned                                  bw_rb                          = 52;
+static radio_configuration::over_the_wire_format otw_format                     = radio_configuration::over_the_wire_format::SC16;
+static unsigned                                  duration_slots                 = 60000;
+static bool                                      zmq_loopback                   = true;
+static ssb_pattern_case                          ssb_pattern                    = ssb_pattern_case::A;
+static bool                                      enable_random_data             = false;
+static bool                                      enable_ul_processing           = false;
+static bool                                      enable_prach_processing        = false;
+static modulation_scheme                         data_mod_scheme                = modulation_scheme::QPSK;
+static std::string                               thread_profile_name            = "single";
+static std::string                               clock_source                   = "internal";
+static std::string                               sync_source                    = "internal";
 
 /// Amplitude control args.
 static float baseband_backoff_dB    = 12.0F;
@@ -471,7 +473,9 @@ lower_phy_configuration create_lower_phy_configuration(task_executor*           
   lower_phy_configuration phy_config;
   phy_config.srate                          = srate;
   phy_config.scs                            = scs;
-  phy_config.integer_processing_delay_slots     = integer_processing_delay_slots;
+  // ################################################################################ //
+  phy_config.integer_processing_delay_slots = integer_processing_delay_slots;
+  // ################################################################################ //
   phy_config.time_alignment_calibration     = 0;
   phy_config.system_time_throttling         = 0.0F;
   phy_config.ta_offset                      = n_ta_offset::n0;
@@ -683,7 +687,9 @@ int main(int argc, char** argv)
   upper_phy_sample_config.log_level                    = log_level;
   upper_phy_sample_config.max_nof_prb                  = bw_rb;
   upper_phy_sample_config.max_nof_ports                = nof_ports;
+  // ################################################################################ //
   upper_phy_sample_config.rg_pool_size                 = 2 * integer_processing_delay_slots;
+  // ################################################################################ //
   upper_phy_sample_config.ldpc_encoder_type            = "generic";
   upper_phy_sample_config.gateway                      = &rg_gateway_adapter;
   upper_phy_sample_config.rx_symb_req_notifier         = &phy_rx_symbol_req_adapter;

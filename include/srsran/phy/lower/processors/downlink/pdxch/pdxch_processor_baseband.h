@@ -59,11 +59,13 @@ public:
   /// \return \c true if the symbol has been processed, \c false otherwise.
   virtual bool process_symbol(baseband_gateway_buffer_writer& samples, const symbol_context& context) = 0;
   
+  // ################################################################################ //
   /// \brief Checks if a resource grid is available for the given slot.
   virtual bool check_grid_status() = 0;
 
   /// \brief Resets the resource grid status.
   virtual void reset_grid_status() = 0;
+  // ################################################################################ //
 };
 
 } // namespace srsran

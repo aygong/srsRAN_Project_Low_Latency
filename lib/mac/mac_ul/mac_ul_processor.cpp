@@ -117,9 +117,6 @@ void mac_ul_processor::handle_ue_config_applied(du_ue_index_t ue_index)
 
 void mac_ul_processor::handle_rx_data_indication(mac_rx_data_indication msg)
 {
-  // ################################################################################ //
-  logger.debug("aoyu | mac_ul_processor | cell_index={}, slot_rx={}", static_cast<uint16_t>(msg.cell_index), msg.sl_rx);
-  // ################################################################################ //
   for (mac_rx_pdu& pdu : msg.pdus) {
     if (pdu.pdu.empty()) {
       logger.error("cell={} slot_rx={} rnti={}: Received empty MAC RX PDU from lower layers",

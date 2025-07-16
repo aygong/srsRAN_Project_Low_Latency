@@ -76,7 +76,9 @@ static void fill_du_low_expert_execution_section(YAML::Node node, const du_low_u
 
 static void fill_du_low_expert_section(YAML::Node node, const du_low_unit_expert_upper_phy_config& config)
 {
-  node["integer_proc_delay"]              = config.integer_processing_delay_slots;
+  // ################################################################################ //
+  node["integer_proc_delay"]          = config.integer_processing_delay_slots;
+  // ################################################################################ //
   node["pusch_dec_max_iterations"]    = config.pusch_decoder_max_iterations;
   node["pusch_dec_enable_early_stop"] = config.pusch_decoder_early_stop;
   node["pusch_sinr_calc_method"]      = config.pusch_sinr_calc_method;

@@ -182,11 +182,14 @@ static void configure_cli11_expert_phy_args(CLI::App& app, du_low_unit_expert_up
     return "Invalid PUSCH SINR calculation method. Accepted values [channel_estimator,post_equalization,evm]";
   };
 
-  app.add_option("--integer_proc_delay",
-                 expert_phy_params.integer_processing_delay_slots,
-                 "Maximum allowed DL processing delay in slots (integer part).")
+  // ################################################################################ //
+  add_option(app,
+             "--integer_proc_delay",
+             expert_phy_params.integer_processing_delay_slots,
+             "Maximum allowed DL processing delay in slots (integer part).")
       ->capture_default_str()
       ->check(CLI::Range(0, 30));
+  // ################################################################################ //
   add_option(app,
              "--pusch_dec_max_iterations",
              expert_phy_params.pusch_decoder_max_iterations,
@@ -211,19 +214,22 @@ static void configure_cli11_expert_phy_args(CLI::App& app, du_low_unit_expert_up
       ->capture_default_str()
       ->check(CLI::Range(0, 30));
   // ################################################################################ //
-  app.add_option("--decimal_proc_delay",
-                 expert_phy_params.decimal_processing_delay_slots,
-                 "Maximum allowed DL processing delay in slots (decimal part).")
+  add_option(app,
+            "--decimal_proc_delay",
+            expert_phy_params.decimal_processing_delay_slots,
+            "Maximum allowed DL processing delay in slots (decimal part).")
       ->capture_default_str()
       ->check(CLI::Range(0.0, 1.0));
-  app.add_option("--max_grids_prep_time",
-                 expert_phy_params.max_grids_prep_time,
-                 "Maximum allowed preparation time for resource grids.")
+  add_option(app,
+             "--max_grids_prep_time",
+             expert_phy_params.max_grids_prep_time,
+             "Maximum allowed preparation time for resource grids.")
       ->capture_default_str()
       ->check(CLI::Range(0.0, 1.0));
-  app.add_option("--radio_heads_prep_time",
-                 expert_phy_params.radio_heads_prep_time,
-                 "Maximum allowed preparation time for radio heads.")
+  add_option(app,
+             "--radio_heads_prep_time",
+             expert_phy_params.radio_heads_prep_time,
+             "Maximum allowed preparation time for radio heads.")
       ->capture_default_str()
       ->check(CLI::Range(0.0, 10.0));
   // ################################################################################ //
@@ -349,6 +355,7 @@ void srsran::autoderive_du_low_parameters_after_parsing(CLI::App&           app,
                                                         bool                is_blocking_mode_enabled,
                                                         unsigned            nof_cells)
 {
+  // ################################################################################ //
   // If max proc delay property is not present in the config, configure the default value.
   CLI::App* expert_cmd = app.get_subcommand("expert_phy");
   if (expert_cmd->count_all() == 0 || expert_cmd->count("--integer_proc_delay") == 0) {
@@ -368,6 +375,7 @@ void srsran::autoderive_du_low_parameters_after_parsing(CLI::App&           app,
   if (expert_cmd->count_all() == 0 || expert_cmd->count("--max_request_headroom_slots") == 0) {
     parsed_cfg.expert_phy_cfg.nof_slots_request_headroom = parsed_cfg.expert_phy_cfg.integer_processing_delay_slots;
   }
+  // ################################################################################ //
 
   // Ignore the default settings based in the number of CPU cores for ZMQ.
   if (is_blocking_mode_enabled) {

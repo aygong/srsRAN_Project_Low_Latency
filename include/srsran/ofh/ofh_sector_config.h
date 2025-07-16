@@ -109,10 +109,12 @@ struct sector_configuration {
   bool is_uplink_static_compr_hdr_enabled = true;
   /// IQ data scaling to be applied prior to Downlink data compression.
   float iq_scaling;
+  // ################################################################################ //
   /// \brief Number of slots the timing handler is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
   unsigned integer_processing_delay_slots;
+  // ################################################################################ //
   /// Downlink processing time in microseconds.
   std::chrono::microseconds dl_processing_time;
   /// Number of reception antennas.

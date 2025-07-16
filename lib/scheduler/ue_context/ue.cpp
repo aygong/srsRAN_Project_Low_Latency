@@ -30,7 +30,6 @@ using namespace srsran;
 ue::ue(const ue_creation_command& cmd) :
   ue_index(cmd.cfg.ue_index),
   crnti(cmd.cfg.crnti),
-  sr_free_access_mode(cmd.cfg.expert_cfg().sr_free_access_mode),
   expert_cfg(cmd.cfg.expert_cfg()),
   cell_cfg_common(cmd.cfg.pcell_cfg().cell_cfg_common),
   ue_ded_cfg(&cmd.cfg),

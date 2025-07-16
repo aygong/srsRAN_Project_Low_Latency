@@ -222,14 +222,6 @@ void lower_phy_uplink_processor_impl::process_collecting(const baseband_gateway_
   prach_context.sector = sector_id;
   prach_proc->get_baseband().process_symbol(temp_buffer.get_reader(), prach_context);
 
-  // ################################################################################ //
-  // if (current_symbol_index == 0) {
-  //   srslog::fetch_basic_logger("LOWER PHY").debug(
-  //     "aoyu | uplink_processor_impl.cpp | start to process symbols: current_slot={}", current_slot
-  //   );
-  // }
-  // ################################################################################ //
-
   // Process symbol by PUxCH processor.
   lower_phy_rx_symbol_context puxch_context;
   puxch_context.slot        = current_slot;
@@ -273,7 +265,7 @@ void lower_phy_uplink_processor_impl::process_collecting(const baseband_gateway_
     context.slot = current_slot;
     // ################################################################################ //
     srslog::fetch_basic_logger("LOWER PHY").debug(
-      "aoyu | uplink_processor_impl.cpp | notify full slot boundary: context.slot={}", context.slot
+      "uplink_processor_impl.cpp | notify full slot boundary: context.slot={}", context.slot
     );
     // ################################################################################ //
     notifier->on_half_slot(context);
@@ -286,7 +278,7 @@ void lower_phy_uplink_processor_impl::process_collecting(const baseband_gateway_
     context.slot = current_slot;
     // ################################################################################ //
     srslog::fetch_basic_logger("LOWER PHY").debug(
-      "aoyu | uplink_processor_impl.cpp | notify half slot boundary: context.slot={}", context.slot
+      "uplink_processor_impl.cpp | notify half slot boundary: context.slot={}", context.slot
     );
     // ################################################################################ //
     notifier->on_full_slot(context);

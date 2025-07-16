@@ -511,10 +511,6 @@ void radio_session_uhd_impl::start(baseband_gateway_timestamp init_time)
 baseband_gateway_timestamp radio_session_uhd_impl::read_current_time()
 {
   uhd::time_spec_t time;
-  // ################################################################################ //
-  srslog::fetch_basic_logger("LOWER PHY").debug(
-    "aoyu | radio_bladerf_impl.cpp | read_current_time={}", device.get_time_now(time));
-  // ################################################################################ //
   if (!device.get_time_now(time)) {
     fmt::print("Error retrieving time.\n");
   }

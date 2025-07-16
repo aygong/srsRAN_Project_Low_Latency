@@ -25,7 +25,6 @@
 #include "srsran/mac/mac_pdu_format.h"
 #include "srsran/scheduler/config/logical_channel_config.h"
 #include "srsran/scheduler/scheduler_feedback_handler.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 
@@ -83,13 +82,6 @@ public:
   /// \brief Update UL BSR for a given LCG-ID.
   void handle_bsr_indication(const ul_bsr_indication_message& msg)
   {
-    // ################################################################################ //
-    srslog::fetch_basic_logger("SCHED").debug(
-      "aoyu | ul_logical_channel_manager.h | ue={}, rnti={}, slot_rx={}, format={}",
-      static_cast<uint16_t>(msg.ue_index), static_cast<uint16_t>(msg.crnti), msg.slot_rx, srsran::to_string(msg.type)
-    );
-    // ################################################################################ //
-    slot_rx = msg.slot_rx;
     for (const auto& lcg_report : msg.reported_lcgs) {
       groups[lcg_report.lcg_id].buf_st = lcg_report.nof_bytes;
     }
@@ -107,8 +99,6 @@ public:
   }
 
   void reset_sr_indication() { sr_pending.store(false, std::memory_order::memory_order_relaxed); }
-
-  slot_point slot_rx;
 
 private:
   struct channel_group_context {

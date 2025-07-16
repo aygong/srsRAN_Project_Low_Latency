@@ -27,7 +27,6 @@
 #include "srsran/phy/lower/processors/downlink/pdxch/pdxch_processor_request_handler.h"
 #include "srsran/phy/lower/processors/uplink/prach/prach_processor_request_handler.h"
 #include "srsran/phy/lower/processors/uplink/puxch/puxch_processor_request_handler.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 

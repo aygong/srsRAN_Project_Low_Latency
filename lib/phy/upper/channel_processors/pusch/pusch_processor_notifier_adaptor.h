@@ -28,7 +28,6 @@
 #include "srsran/phy/upper/channel_processors/pusch/pusch_demodulator_notifier.h"
 #include "srsran/phy/upper/channel_processors/pusch/pusch_processor_result_notifier.h"
 #include "srsran/srsvec/copy.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 
@@ -237,11 +236,6 @@ private:
 
   void on_sch_data(const pusch_decoder_result& result) override
   {
-    // ################################################################################ //
-    srslog::fetch_basic_logger("TEMP PHY").debug(
-      "aoyu | pusch_processor_notifier_adaptor"
-    );
-    // ################################################################################ //
     pusch_processor_result_data result_data;
     result_data.data = result;
     result_data.csi  = uci_payload.csi;

@@ -31,7 +31,9 @@
 #include "srsran/phy/lower/processors/downlink/downlink_processor_baseband.h"
 #include "srsran/phy/lower/processors/uplink/uplink_processor_baseband.h"
 #include "srsran/phy/lower/sampling_rate.h"
+// ################################################################################ //
 #include "srsran/srslog/srslog.h"
+// ################################################################################ //
 
 namespace srsran {
 
@@ -89,9 +91,11 @@ public:
     unsigned nof_rx_buffers;
     /// System time-based throttling. See \ref lower_phy_configuration::system_time_throttling.
     float system_time_throttling;
+    // ################################################################################ //
     float decimal_tti_in_advance;
     /// Subcarrier spacing.
     subcarrier_spacing scs;
+    // ################################################################################ //
   };
 
   /// Constructs a baseband adaptor.
@@ -206,8 +210,10 @@ private:
   internal_fsm                                                               rx_state;
   std::atomic<baseband_gateway_timestamp>                                    last_rx_timestamp;
   std::optional<std::chrono::time_point<std::chrono::high_resolution_clock>> last_tx_time;
+  // ################################################################################ //
   subcarrier_spacing                                                         scs;
   unsigned                                                                   notifier_waiting_time;
+  // ################################################################################ //
 };
 
 } // namespace srsran

@@ -33,7 +33,9 @@
 #include "srsran/ru/ru_error_notifier.h"
 #include "srsran/ru/ru_timing_notifier.h"
 #include "srsran/ru/ru_uplink_plane.h"
+// ################################################################################ //
 #include "srsran/srslog/srslog.h"
+// ################################################################################ //
 
 namespace srsran {
 
@@ -45,11 +47,6 @@ public:
   void send(const resource_grid_context& context, shared_resource_grid grid) override
   {
     srsran_assert(dl_handler, "Adapter is not connected.");
-    // ################################################################################ //
-    srslog::fetch_basic_logger("RU").debug(
-      "aoyu | ru_adapters.h | track grid : context.slot={}", context.slot
-    );
-    // ################################################################################ //
     dl_handler->handle_dl_data(context, grid);
   }
 
@@ -95,12 +92,6 @@ public:
   void on_new_uplink_symbol(const ru_uplink_rx_symbol_context& context, const shared_resource_grid& grid) override
   {
     srsran_assert(context.sector < handlers.size(), "Unsupported sector {}", context.sector);
-    // ################################################################################ //
-    // srslog::fetch_basic_logger("RU").debug(
-    //   "aoyu | ru_adapters.h | context.slot={}, context.symbol_id={}", 
-    //   context.slot, context.symbol_id
-    // );
-    // ################################################################################ //
     handlers[context.sector]->handle_rx_symbol({context.sector, context.slot, context.symbol_id}, grid);
   }
 

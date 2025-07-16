@@ -395,17 +395,6 @@ void ue_event_manager::handle_ul_bsr_indication(const ul_bsr_indication_message&
     auto&           u         = ue_db[bsr_ind->ue_index];
     du_cell_index_t pcell_idx = u.get_pcell().cell_index;
 
-
-    // // ################################################################################ //
-    // logger.debug(
-    //   "aoyu | ue_event_manager.cpp | ue={}, rnti={}, slot_rx={}, format={}",
-    //   bsr_ind.ue_index, bsr_ind.crnti, bsr_ind.slot_rx, bsr_ind.type
-    // );
-    // for (unsigned i = 0; i != bsr_ind.reported_lcgs.size(); ++i) {
-    //   logger.debug("aoyu | ue_event_manager.cpp | reported_lcg {} : {}", bsr_ind.reported_lcgs[i].lcg_id, bsr_ind.reported_lcgs[i].nof_bytes);
-    // }
-    // // ################################################################################ //
-
     // Handle event.
     u.handle_bsr_indication(*bsr_ind);
 

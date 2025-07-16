@@ -79,16 +79,20 @@ tx_timing_window_params_us_to_symbols(std::chrono::microseconds                T
 static void generate_config(ru_ofh_configuration&              out_cfg,
                             const ru_ofh_unit_config&          ru_cfg,
                             span<const srs_du::du_cell_config> du_cells,
+                            // ################################################################################ //
                             unsigned                           integer_processing_delay_slots)
+                            // ################################################################################ //
 {
   // Individual Open Fronthaul sector configurations.
   std::vector<ru_ofh_sector_configuration> sector_configs;
 
-  out_cfg.gps_Alpha                  = ru_cfg.gps_Alpha;
-  out_cfg.gps_Beta                   = ru_cfg.gps_Beta;
+  out_cfg.gps_Alpha                      = ru_cfg.gps_Alpha;
+  out_cfg.gps_Beta                       = ru_cfg.gps_Beta;
+  // ################################################################################ //
   out_cfg.integer_processing_delay_slots = integer_processing_delay_slots;
-  out_cfg.dl_processing_time         = std::chrono::microseconds(ru_cfg.dl_processing_time);
-  out_cfg.uses_dpdk                  = ru_cfg.hal_config.has_value();
+  // ################################################################################ //
+  out_cfg.dl_processing_time             = std::chrono::microseconds(ru_cfg.dl_processing_time);
+  out_cfg.uses_dpdk                      = ru_cfg.hal_config.has_value();
 
   // Add one cell.
   for (unsigned i = 0, e = ru_cfg.cells.size(); i != e; ++i) {
@@ -158,10 +162,14 @@ static void generate_config(ru_ofh_configuration&              out_cfg,
 
 ru_ofh_configuration srsran::generate_ru_ofh_config(const ru_ofh_unit_config&          ru_cfg,
                                                     span<const srs_du::du_cell_config> du_cells,
+                                                    // ################################################################################ //
                                                     unsigned                           integer_processing_delay_slots)
+                                                    // ################################################################################ //
 {
   ru_ofh_configuration out_cfg;
+  // ################################################################################ //
   generate_config(out_cfg, ru_cfg, du_cells, integer_processing_delay_slots);
+  // ################################################################################ //
 
   return out_cfg;
 }

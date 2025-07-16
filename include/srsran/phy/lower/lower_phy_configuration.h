@@ -37,7 +37,9 @@
 #include "srsran/ran/subcarrier_spacing.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/executors/task_executor.h"
+// ################################################################################ //
 #include "srsran/ran/tdd/tdd_ul_dl_config.h"
+// ################################################################################ //
 
 namespace srsran {
 
@@ -84,10 +86,12 @@ struct lower_phy_configuration {
   cyclic_prefix cp;
   /// Shifts the DFT window by a fraction of the cyclic prefix [0, 1).
   float dft_window_offset;
+  // ################################################################################ //
   /// \brief Number of slots the timing handler is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
   unsigned integer_processing_delay_slots;
+  // ################################################################################ //
   /// Sampling rate.
   sampling_rate srate;
   /// Time alignment offset.

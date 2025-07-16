@@ -143,16 +143,10 @@ public:
     dl_proc_config.bandwidth_prb           = sector.bandwidth_rb;
     dl_proc_config.center_frequency_Hz     = sector.dl_freq_hz;
     dl_proc_config.nof_tx_ports            = sector.nof_tx_ports;
-    dl_proc_config.nof_slot_tti_in_advance = config.integer_processing_delay_slots;
     // ################################################################################ //
+    dl_proc_config.nof_slot_tti_in_advance = config.integer_processing_delay_slots;
     dl_proc_config.tdd_ul_dl_cfg_common    = config.tdd_ul_dl_cfg_common;
     dl_proc_config.max_grids_prep_time     = config.max_grids_prep_time;
-    // ################################################################################ //
-
-    // ################################################################################ //
-    srslog::fetch_basic_logger("LOWER PHY").debug(
-      "aoyu | lower_phy_factory.cpp | integer_processing_delay_slots={}", config.integer_processing_delay_slots
-    );
     // ################################################################################ //
 
     // Create downlink processor.

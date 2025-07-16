@@ -44,12 +44,6 @@ public:
     upper_context.slot      = context.slot;
     upper_context.sector    = context.sector;
     upper_context.symbol_id = context.nof_symbols;
-    // ################################################################################ //
-    // srslog::fetch_basic_logger("RU").debug(
-    //   "aoyu | rx_symbol_adapter.h | context.slot={}, context.nof_symbols={}", 
-    //   context.slot, context.nof_symbols
-    // );
-    // ################################################################################ //
     rx_symbol_handler.on_new_uplink_symbol(upper_context, grid);
   }
 

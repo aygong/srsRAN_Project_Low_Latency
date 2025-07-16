@@ -29,7 +29,6 @@
 #include "radio_uhd_multi_usrp.h"
 #include "srsran/radio/radio_factory.h"
 #include "srsran/radio/radio_management_plane.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 

@@ -93,13 +93,9 @@ static void generate_du_low_config(srs_du::du_low_config&             out_config
     // - the number of PUSCH occasions in a HARQ process lifetime.
     const unsigned max_rx_nof_codeblocks = nof_ul_slots_in_harq_lifetime * max_nof_pusch_cb_slot;
 
-    // Determine processing pipelines depth. Make sure the number of slots per system frame is divisible by the pipeline
-    // depths.
-    unsigned dl_pipeline_depth = 4 * du_low.expert_phy_cfg.integer_processing_delay_slots;
     // ################################################################################ //
-    if (du_low.expert_phy_cfg.integer_processing_delay_slots == 0) {
-      dl_pipeline_depth += 4;
-    }
+    // Determine processing pipelines depth. Make sure the number of slots per system frame is divisible by the pipeline depths.
+    unsigned dl_pipeline_depth = 4 * std::max(1U, du_low.expert_phy_cfg.integer_processing_delay_slots);
     // ################################################################################ //
     while (nof_slots_per_system_frame % dl_pipeline_depth != 0) {
       ++dl_pipeline_depth;

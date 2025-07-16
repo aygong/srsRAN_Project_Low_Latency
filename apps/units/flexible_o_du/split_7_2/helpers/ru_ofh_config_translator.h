@@ -37,7 +37,9 @@ struct worker_manager_config;
 /// Unit configuration.
 ru_ofh_configuration generate_ru_ofh_config(const ru_ofh_unit_config&          ru_cfg,
                                             span<const srs_du::du_cell_config> du_cells,
+                                            // ################################################################################ //
                                             unsigned                           integer_processing_delay_slots);
+                                            // ################################################################################ //
 
 /// Fills the OFH worker manager parameters of the given worker manager configuration.
 void fill_ofh_worker_manager_config(worker_manager_config&             config,

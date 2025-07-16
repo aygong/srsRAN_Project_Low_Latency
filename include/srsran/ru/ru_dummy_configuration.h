@@ -42,10 +42,12 @@ struct ru_dummy_configuration {
   unsigned rx_rg_nof_ports;
   /// Receive PRACH buffer number of ports.
   unsigned rx_prach_nof_ports;
+  // ################################################################################ //
   /// \brief Number of slots is notified in advance of the transmission time.
   ///
   /// Sets the maximum allowed processing delay in slots.
   unsigned integer_processing_delay_slots;
+  // ################################################################################ //
   /// DL processing processing delay in slots. See \ref ru_dummy_appconfig::dl_processing_delay for more information.
   unsigned dl_processing_delay;
   /// Time scaling, \ref ru_dummy_unit_config::time_scaling for more details.

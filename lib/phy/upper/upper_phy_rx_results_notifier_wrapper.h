@@ -23,7 +23,6 @@
 #pragma once
 
 #include "srsran/phy/upper/upper_phy_rx_results_notifier.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 

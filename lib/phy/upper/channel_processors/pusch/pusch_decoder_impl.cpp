@@ -437,12 +437,6 @@ void pusch_decoder_impl::join_and_notify()
 
   // In case there are multiple codeblocks and at least one has a corrupted codeblock CRC, nothing to do.
 
-  // ################################################################################ //
-  srslog::fetch_basic_logger("TEMP PHY").debug(
-    "aoyu | pusch_decoder_impl"
-  );
-  // ################################################################################ //
-
   // Transition back to idle.
   internal_states previous_state = current_state.exchange(internal_states::idle);
   srsran_assert((previous_state == internal_states::decoding) || (previous_state == internal_states::decoded),

@@ -57,18 +57,6 @@ public:
   const du_ue_index_t ue_index;
   const rnti_t        crnti;
 
-  std::string sr_free_access_mode;
-
-  bool     is_sr_indication            = false;
-  unsigned min_nof_total_sr_free_slots = 5;
-  unsigned max_nof_total_sr_free_slots = 1500;
-  unsigned nof_total_sr_free_slots     = 5;
-  unsigned nof_remaining_sr_free_slots = 0;
-  unsigned nof_sr_pending_slots        = 0;
-
-  unsigned additive_parameter    = 0;
-  unsigned multiplicative_factor = 2;
-
   void slot_indication(slot_point sl_tx);
 
   void deactivate();
@@ -113,27 +101,14 @@ public:
   void activate_cells(bounded_bitset<MAX_NOF_DU_CELLS> activ_bitmap) {}
 
   /// \brief Handle received SR indication.
-  void handle_sr_indication()
-  {
-    ul_lc_ch_mgr.handle_sr_indication();
-    // ################################################################################ //
-    is_sr_indication = true;
-    // ################################################################################ //
-  }
+  void handle_sr_indication() { ul_lc_ch_mgr.handle_sr_indication(); }
 
   /// \brief Once an UL grant is given, the SR status of the UE must be reset.
   void reset_sr_indication() { ul_lc_ch_mgr.reset_sr_indication(); }
 
   /// \brief Handles received BSR indication by updating UE UL logical channel states.
-  void handle_bsr_indication(const ul_bsr_indication_message& msg) { 
-    // ################################################################################ //
-    logger.debug(
-      "aoyu | ue.h | ue={}, rnti={}, slot_rx={}, format={}",
-      static_cast<uint16_t>(msg.ue_index), static_cast<uint16_t>(msg.crnti), msg.slot_rx, srsran::to_string(msg.type)
-    );
-    // ################################################################################ //
-    ul_lc_ch_mgr.handle_bsr_indication(msg);
-  }
+  void handle_bsr_indication(const ul_bsr_indication_message& msg) { ul_lc_ch_mgr.handle_bsr_indication(msg); }
+
   /// \brief Handles received N_TA update indication by forwarding it to Timing Advance manager.
   void handle_ul_n_ta_update_indication(du_cell_index_t cell_index, float ul_sinr, phy_time_unit n_ta_diff)
   {
@@ -221,10 +196,6 @@ public:
   /// \return Returns the number of bytes reserved in the TB for subPDUs (other than padding).
   unsigned build_dl_fallback_transport_block_info(dl_msg_tb_info& tb_info, unsigned tb_size_bytes);
 
-  /// UE UL Logical Channel Manager.
-  ul_logical_channel_manager ul_lc_ch_mgr;
-
-
 private:
   /// Update UE configuration.
   void set_config(const ue_configuration& new_cfg);
@@ -250,6 +221,8 @@ private:
   /// UE DL Logical Channel Manager.
   dl_logical_channel_manager dl_lc_ch_mgr;
 
+  /// UE UL Logical Channel Manager.
+  ul_logical_channel_manager ul_lc_ch_mgr;
 
   slot_point last_sl_tx;
 

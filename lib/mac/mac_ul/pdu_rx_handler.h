@@ -34,7 +34,6 @@
 #include "srsran/ran/du_types.h"
 #include "srsran/ran/slot_point.h"
 #include "srsran/srslog/logger.h"
-#include "srsran/srslog/srslog.h"
 
 namespace srsran {
 

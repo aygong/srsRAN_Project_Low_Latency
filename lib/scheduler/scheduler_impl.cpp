@@ -119,13 +119,6 @@ void scheduler_impl::handle_ul_bsr_indication(const ul_bsr_indication_message& b
     return;
   }
 
-  // ################################################################################ //
-  logger.debug(
-    "aoyu | scheduler_impl.cpp | ue={}, rnti={}, slot_rx={}", 
-    static_cast<uint16_t>(bsr.ue_index), static_cast<uint16_t>(bsr.crnti), bsr.slot_rx
-  );
-  // ################################################################################ //
-
   groups[grp_idx]->get_feedback_handler().handle_ul_bsr_indication(bsr);
 }
 

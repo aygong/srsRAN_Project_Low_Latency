@@ -34,7 +34,9 @@ using namespace srsran;
 
 ru_dummy_configuration srsran::generate_ru_dummy_config(const ru_dummy_unit_config&        ru_cfg,
                                                         span<const srs_du::du_cell_config> du_cells,
+                                                        // ################################################################################ //
                                                         unsigned                           integer_processing_delay_slots,
+                                                        // ################################################################################ //
                                                         unsigned                           nof_prach_ports)
 {
   ru_dummy_configuration out_cfg;
@@ -46,14 +48,16 @@ ru_dummy_configuration srsran::generate_ru_dummy_config(const ru_dummy_unit_conf
       MHz_to_bs_channel_bandwidth(cell.dl_carrier.carrier_bw_mhz), cell.scs_common, frequency_range::FR1);
 
   // Fill configuration parameters.
-  out_cfg.scs                        = cell.scs_common;
-  out_cfg.nof_sectors                = du_cells.size();
-  out_cfg.rx_rg_nof_prb              = channel_bw_prb;
-  out_cfg.rx_rg_nof_ports            = cell.ul_carrier.nof_ant;
-  out_cfg.rx_prach_nof_ports         = nof_prach_ports;
+  out_cfg.scs                            = cell.scs_common;
+  out_cfg.nof_sectors                    = du_cells.size();
+  out_cfg.rx_rg_nof_prb                  = channel_bw_prb;
+  out_cfg.rx_rg_nof_ports                = cell.ul_carrier.nof_ant;
+  out_cfg.rx_prach_nof_ports             = nof_prach_ports;
+  // ################################################################################ //
   out_cfg.integer_processing_delay_slots = integer_processing_delay_slots;
-  out_cfg.dl_processing_delay        = ru_cfg.dl_processing_delay;
-  out_cfg.time_scaling               = ru_cfg.time_scaling;
+  // ################################################################################ //
+  out_cfg.dl_processing_delay            = ru_cfg.dl_processing_delay;
+  out_cfg.time_scaling                   = ru_cfg.time_scaling;
 
   return out_cfg;
 }

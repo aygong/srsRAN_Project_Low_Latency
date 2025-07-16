@@ -142,8 +142,10 @@ private:
   std::atomic<state> current_state = {state::idle};
   /// Slot time in microseconds.
   std::chrono::microseconds slot_duration;
+  // ################################################################################ //
   /// Number of slots is notified in advance of the transmission time.
   unsigned integer_processing_delay_slots;
+  // ################################################################################ //
   /// Current slot.
   slot_point current_slot;
   /// Radio unit sectors.

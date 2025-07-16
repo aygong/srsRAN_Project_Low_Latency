@@ -240,10 +240,6 @@ struct du_high_unit_pusch_config {
   float olla_max_snr_offset{5.0};
   /// Position for additional DM-RS in UL (see TS 38.211, clause 6.4.1.1.3).
   unsigned dmrs_add_pos{2};
-
-  std::string sr_free_access_mode{"none"};
-
-  
   /// Minimum number of RBs for resource allocation of UE PUSCHs.
   unsigned min_rb_size = 1;
   /// Maximum number of RBs for resource allocation of UE PUSCHs.
