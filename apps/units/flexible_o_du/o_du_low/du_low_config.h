@@ -32,7 +32,7 @@ namespace srsran {
 /// Expert upper physical layer configuration.
 struct du_low_unit_expert_upper_phy_config {
   // ################################################################################ //
-  /// \brief Sets the maximum allowed downlink processing delay in slots.
+  /// \brief Sets the maximum allowed downlink processing delay in slots (integer part).
   ///
   /// Higher values increase the downlink processing pipeline length, which improves performance and stability for
   /// demanding cell configurations, such as using large bandwidths or higher order MIMO. Higher values also increase
@@ -57,9 +57,12 @@ struct du_low_unit_expert_upper_phy_config {
   unsigned nof_slots_request_headroom = 0U;
   
   // ################################################################################ //
+  /// \brief Sets the maximum allowed downlink processing delay in slots (decimal part).
   float decimal_processing_delay_slots = 0.0F;
-  float max_grids_prep_time            = 0.0F;
-  float radio_heads_prep_time          = 0.0F;
+  /// \brief Sets the maximum allowed preparation time for resource grids.
+  float max_grids_prep_time            = 1.0F;
+  /// \brief Sets the maximum allowed preparation time for radio heads.
+  float radio_heads_prep_time          = 1.0F;
   // ################################################################################ //
 };
 

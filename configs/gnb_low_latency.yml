@@ -1,0 +1,84 @@
+gnb_id: 332
+
+cu_cp:
+  inactivity_timer: 7200
+
+  amf:
+    addr: open5gs-amf-ngap.open5gs
+    bind_addr: 10.42.1.4
+    supported_tracking_areas:
+    -
+      tac: 1
+      plmn_list:
+      -
+        plmn: "00104"
+        tai_slice_support_list:
+        - 
+          sst: 1
+          sd: 0
+
+cell_cfg:
+  pci: 1
+  dl_arfcn: 625294
+  band: 78
+  common_scs: 30
+  channel_bandwidth_MHz: 20
+  nof_antennas_ul: 1
+  nof_antennas_dl: 1
+  plmn: "00104"
+  tac: 1
+  slicing:
+    -
+      sst: 1
+      sd: 0
+      sched_cfg:
+        sr_free_access_enable: false
+        min_ul_grant_size: 512
+
+  mac_cell_group:
+    bsr_cfg:
+      periodic_bsr_timer: 1
+
+  pdsch:
+    mcs_table: qam64
+
+  pusch:
+    mcs_table: qam64
+    min_k2: 1
+
+  pucch:
+    sr_period_ms: 2
+    min_k1: 1
+
+  tdd_ul_dl_cfg:
+    dl_ul_tx_period: 4
+    nof_dl_slots: 2
+    nof_dl_symbols: 8
+    nof_ul_slots: 1
+    nof_ul_symbols: 0
+
+ru_sdr:
+ device_driver: uhd
+ srate: 23.040
+ otw_format: sc12
+ tx_gain: 80
+ rx_gain: 40
+
+expert_phy:
+  integer_proc_delay: 0
+  decimal_proc_delay: 0
+  max_grids_prep_time: 1
+  radio_heads_prep_time: 0
+
+log:
+  filename: /tmp/gnb.log
+  all_level: error
+
+pcap:
+  ngap_filename: /tmp/gnb_ngap.pcap
+  ngap_enable: false
+  mac_filename: /tmp/gnb_mac.pcap
+  mac_enable: false
+
+metrics:
+  autostart_stdout_metrics: true
