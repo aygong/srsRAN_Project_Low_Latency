@@ -2,7 +2,7 @@
 
 [Aoyu Gong](https://aygong.com/), [Arman Maghsoudnia](https://people.epfl.ch/arman.maghsoudnia), [Raphael Cannatà](https://www.raphaelcannata.com/), [Eduard Vlad](https://evlad.de/), [Néstor Lomba Lomba](https://www.linkedin.com/in/nlomba), [Dan Mihai Dumitriu](https://www.linkedin.com/in/dmdumitriu), [Haitham Hassanieh](https://people.epfl.ch/haitham.alhassanieh?lang=en)
 
-[Paper] [Slides] [Citation]
+[Paper] [Slides] [Citation] [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
 
 ## 🧭 Overview
 
@@ -20,8 +20,21 @@ This repository contains the code for our paper:
 ## 🔧 Environment Setup
 
 Our modifications are built on top of the original [srsRAN](https://github.com/srsran/srsRAN_Project).  
-- To build and run our modified version, please follow the same environment setup instructions as described in the official [srsRAN README](/srsRAN_README.md).
+### Build From Source
+To build and run our modified version, please follow the same environment setup instructions as described in the official [srsRAN README](/srsRAN_README.md).
 
+### Docker Image
+Alternatively, you can use our [pre-built Docker image](https://hub.docker.com/r/sensepfl/srs-gnb-low-latency).
+1. Pull the Docker image
+1. Start the Docker container
+1. Edit the configuration file `gnb_low_latency.yml` to match your setup (e.g., IP addresses, ports, etc.) 
+   ```bash
+   nano /srsRAN_Project_LowLatency/configs/gnb_low_latency.yml
+   ```
+1. Start the gNB (CU and DU are also available in the same image using `srscu` and `srsdu` commands)
+    ```bash
+    srsgnb -c /srsRAN_Project_LowLatency/configs/gnb_low_latency.yml
+    ```
 
 ## ⚙️ gNB Configuration Parameters
 
