@@ -2,15 +2,14 @@
 
 [Aoyu Gong](https://aygong.com/), [Arman Maghsoudnia](https://people.epfl.ch/arman.maghsoudnia), [Raphael Cannatà](https://www.raphaelcannata.com/), [Eduard Vlad](https://evlad.de/), [Néstor Lomba Lomba](https://www.linkedin.com/in/nlomba), [Dan Mihai Dumitriu](https://www.linkedin.com/in/dmdumitriu), [Haitham Hassanieh](https://people.epfl.ch/haitham.alhassanieh?lang=en)
 
-<!-- [[Paper](https://ojs.aaai.org/index.php/ICWSM/article/view/35838)] [[Slides](https://aygong.com/docu/icwsm25slides.pdf)] [[Citation](https://ojs.aaai.org/index.php/ICWSM/citationstylelanguage/download/bibtex?submissionId=35838&publicationId=34111)] -->
 [Paper] [Slides] [Citation]
 
 ## 🧭 Overview
 
 <div align="center">
   <p>
-    <img src="assets/sr_free_distribution.png" height="280" style="margin-right: 20px;"/>
-    <img src="assets/mean_latency_bar.png" height="280"/>
+    <img src="assets/sr_free_distribution.png" height="220"/> &nbsp;&nbsp;&nbsp;&nbsp;
+    <img src="assets/mean_latency_bar.png" height="220"/>
   </p>
 </div>
 
@@ -21,12 +20,12 @@ This repository contains the code for our paper:
 ## 🔧 Environment Setup
 
 Our modifications are built on top of the original [srsRAN](https://github.com/srsran/srsRAN_Project).  
-- To build and run our modified version, please follow the same environment setup instructions as described in the official [srsRAN README](/README.md).
+- To build and run our modified version, please follow the same environment setup instructions as described in the official [srsRAN README](/srsRAN_README.md).
 
 
 ## ⚙️ gNB Configuration Parameters
 
-> You can find the official list of srsRAN configuration parameters [here](https://docs.srsran.com/projects/project/en/latest/user_manuals/source/config_ref.html).
+> You can find the full list of srsRAN configuration parameters [here](https://docs.srsran.com/projects/project/en/latest/user_manuals/source/config_ref.html).
 
 We introduce four new configuration parameters to support low-latency modifications:
 
@@ -39,13 +38,13 @@ We introduce four new configuration parameters to support low-latency modificati
 - `max_proc_delay`
     - Sets the maximum allowed DL processing delay in slots.
     - Optional FLOAT (5.0). Supported: [0.0 - 30.0].
-    - This value corresponds to $M$
+    - This value corresponds to the $M$-slot offset.
 - `radio_heads_prep_time`
     - Sets the maximum allowed preparation time for radio heads in milliseconds.
-    - Optional FLOAT (1.0). Supported: [1 - 30].
-    - This value corresponds to $H$
+    - Optional INT (3). Supported: [1 - 30].
+    - This value corresponds to the $H$-slot offset.
 
-ℹ️ Note: We have extended the original `max_proc_delay` parameter to support `FLOAT` values in addition to `INT`.
+ℹ️ Note: We have extended the original `max_proc_delay` parameter to support `FLOAT` in addition to `INT`.
 
 🧾 Example Configuration:
 
@@ -62,6 +61,8 @@ expert_phy:
   max_proc_delay: 0.5
   radio_heads_prep_time: 1
 ```
+
+💡 An example YAML configuration file is provided [here](/configs/gnb_low_latency.yml).
 
 
 ## 📄 Citation
