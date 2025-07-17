@@ -146,7 +146,6 @@ public:
     // ################################################################################ //
     dl_proc_config.nof_slot_tti_in_advance = config.integer_processing_delay_slots;
     dl_proc_config.tdd_ul_dl_cfg_common    = config.tdd_ul_dl_cfg_common;
-    dl_proc_config.max_grids_prep_time     = config.max_grids_prep_time;
     // ################################################################################ //
 
     // Create downlink processor.
@@ -183,7 +182,8 @@ public:
     proc_bb_adaptor_config.tx_time_offset         = tx_time_offset;
     // ################################################################################ //
     proc_bb_adaptor_config.rx_to_tx_max_delay     = static_cast<unsigned int>(
-      config.srate.to_kHz() * config.radio_heads_prep_time) + proc_bb_adaptor_config.tx_time_offset;
+        config.srate.to_kHz() * (config.radio_heads_prep_time - 1) * 1.0 / get_nof_slots_per_subframe(config.scs)
+        + proc_bb_adaptor_config.tx_time_offset);
     // ################################################################################ //
     proc_bb_adaptor_config.rx_buffer_size         = rx_buffer_size;
     proc_bb_adaptor_config.nof_rx_buffers         = std::max(4U, rx_to_tx_max_delay / rx_buffer_size);

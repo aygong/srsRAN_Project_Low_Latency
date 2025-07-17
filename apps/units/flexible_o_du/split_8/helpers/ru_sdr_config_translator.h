@@ -39,8 +39,7 @@ ru_generic_configuration generate_ru_sdr_config(const ru_sdr_unit_config&       
                                                 // ################################################################################ //
                                                 unsigned                           integer_processing_delay_slots,
                                                 float                              decimal_processing_delay_slots,
-                                                float                              max_grids_prep_time,
-                                                float                              radio_heads_prep_time);
+                                                unsigned                           radio_heads_prep_time);
                                                 // ################################################################################ //
 
 /// Fills the SDR worker manager parameters of the given worker manager configuration.

@@ -50,8 +50,7 @@ struct flexible_o_du_ru_config {
   // ################################################################################ //
   unsigned                           integer_processing_delay_slots;
   float                              decimal_processing_delay_slots;
-  float                              max_grids_prep_time;
-  float                              radio_heads_prep_time;
+  unsigned                           radio_heads_prep_time;
   // ################################################################################ //
   unsigned                           prach_nof_ports;
 };

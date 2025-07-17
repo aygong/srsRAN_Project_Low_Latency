@@ -111,7 +111,6 @@ o_du_unit flexible_o_du_factory::create_flexible_o_du(const o_du_unit_dependenci
                                           // ################################################################################ //
                                           du_lo.expert_phy_cfg.integer_processing_delay_slots,
                                           du_lo.expert_phy_cfg.decimal_processing_delay_slots,
-                                          du_lo.expert_phy_cfg.max_grids_prep_time,
                                           du_lo.expert_phy_cfg.radio_heads_prep_time,
                                           // ################################################################################ //
                                     static_cast<unsigned>(du_hi.cells_cfg.front().cell.prach_cfg.ports.size())};

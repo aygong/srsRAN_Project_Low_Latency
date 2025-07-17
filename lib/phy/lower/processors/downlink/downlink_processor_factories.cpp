@@ -59,7 +59,6 @@ public:
     baseband_config.logger                  = config.logger;
     // ################################################################################ //
     baseband_config.tdd_ul_dl_cfg_common    = config.tdd_ul_dl_cfg_common;
-    baseband_config.max_grids_prep_time     = config.max_grids_prep_time;
     // ################################################################################ //
 
     return std::make_unique<downlink_processor_impl>(

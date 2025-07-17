@@ -145,10 +145,8 @@ struct lower_phy_configuration {
   std::optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
   /// Sets the maximum allowed processing delay in slots (decimal part).
   float decimal_processing_delay_slots;
-  /// Maximum allowed preparation time for resource grids.
-  float max_grids_prep_time;
   /// Maximum allowed preparation time for radio heads.
-  float radio_heads_prep_time;
+  unsigned radio_heads_prep_time;
   // ################################################################################ //
 };
 

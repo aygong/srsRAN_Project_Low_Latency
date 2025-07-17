@@ -62,8 +62,6 @@ struct downlink_processor_baseband_configuration {
   srslog::basic_logger* logger;
   /// Optional TDD configuration.
   std::optional<tdd_ul_dl_config_common> tdd_ul_dl_cfg_common;
-  /// Maximum allowed preparation time for resource grids.
-  float max_grids_prep_time;
   // ################################################################################ //
 };
 

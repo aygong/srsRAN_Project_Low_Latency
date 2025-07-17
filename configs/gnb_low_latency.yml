@@ -65,10 +65,8 @@ ru_sdr:
  rx_gain: 40
 
 expert_phy:
-  integer_proc_delay: 0
-  decimal_proc_delay: 0
-  max_grids_prep_time: 1
-  radio_heads_prep_time: 0
+  max_proc_delay: 1
+  radio_heads_prep_time: 3
 
 log:
   filename: /tmp/gnb.log

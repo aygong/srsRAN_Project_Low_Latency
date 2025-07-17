@@ -33,8 +33,7 @@ static lower_phy_configuration generate_low_phy_config( const srs_du::du_cell_co
                                                         // ################################################################################ //
                                                         unsigned                      integer_processing_delay_slots,
                                                         float                         decimal_processing_delay_slots,
-                                                        float                         max_grids_prep_time,
-                                                        float                         radio_heads_prep_time)
+                                                        unsigned                      radio_heads_prep_time)
                                                         // ################################################################################ //
 {
   /// Static configuration that the gnb supports.
@@ -48,7 +47,6 @@ static lower_phy_configuration generate_low_phy_config( const srs_du::du_cell_co
   // ################################################################################ //
   out_cfg.integer_processing_delay_slots = integer_processing_delay_slots;
   out_cfg.decimal_processing_delay_slots = decimal_processing_delay_slots;
-  out_cfg.max_grids_prep_time            = max_grids_prep_time;
   out_cfg.radio_heads_prep_time          = radio_heads_prep_time;
   // ################################################################################ //
 
@@ -271,8 +269,7 @@ ru_generic_configuration srsran::generate_ru_sdr_config(const ru_sdr_unit_config
                                                         // ################################################################################ //
                                                         unsigned                           integer_processing_delay_slots,
                                                         float                              decimal_processing_delay_slots,
-                                                        float                              max_grids_prep_time,
-                                                        float                              radio_heads_prep_time)
+                                                        unsigned                           radio_heads_prep_time)
                                                         // ################################################################################ //
 {
   ru_generic_configuration out_cfg;
@@ -284,7 +281,6 @@ ru_generic_configuration srsran::generate_ru_sdr_config(const ru_sdr_unit_config
       out_cfg.lower_phy_config.push_back(generate_low_phy_config(cell, ru_cfg,
                                                                  integer_processing_delay_slots,
                                                                  decimal_processing_delay_slots,
-                                                                 max_grids_prep_time,
                                                                  radio_heads_prep_time));
   }
   // ################################################################################ //

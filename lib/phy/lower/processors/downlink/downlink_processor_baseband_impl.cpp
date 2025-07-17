@@ -64,7 +64,7 @@ downlink_processor_baseband_impl::downlink_processor_baseband_impl(
     }
   }
 
-  downlink_processor_waiting_time = static_cast<unsigned int>(1000 / get_nof_slots_per_subframe(scs) * config.max_grids_prep_time);
+  downlink_processor_waiting_time = static_cast<unsigned int>(1000 / get_nof_slots_per_subframe(scs));
   // ################################################################################ //
   unsigned symbol_size_no_cp        = config.rate.get_dft_size(config.scs);
   unsigned nof_symbols_per_subframe = nof_symbols_per_slot * nof_slots_per_subframe;

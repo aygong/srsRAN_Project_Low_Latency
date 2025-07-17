@@ -36,8 +36,7 @@ std::unique_ptr<radio_unit> srsran::create_sdr_radio_unit(const ru_sdr_unit_conf
                                                            ru_config.du_cells,
                                                            // ################################################################################ //
                                                            ru_config.integer_processing_delay_slots, 
-                                                           ru_config.decimal_processing_delay_slots, 
-                                                           ru_config.max_grids_prep_time, 
+                                                           ru_config.decimal_processing_delay_slots,
                                                            ru_config.radio_heads_prep_time);
                                                            // ################################################################################ //
 

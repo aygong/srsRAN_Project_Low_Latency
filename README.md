@@ -1,176 +1,84 @@
-srsRAN Project
-==============
+# Towards URLLC with Open-Source 5G Software
 
-[![Build Status](https://github.com/srsran/srsRAN_Project/actions/workflows/ccpp.yml/badge.svg?branch=main)](https://github.com/srsran/srsRAN_Project/actions/workflows/ccpp.yml)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/7868/badge)](https://www.bestpractices.dev/projects/7868)
+[Aoyu Gong](https://aygong.com/), [Arman Maghsoudnia](https://people.epfl.ch/arman.maghsoudnia), [Raphael Cannatà](https://www.raphaelcannata.com/), [Eduard Vlad](https://evlad.de/), [Néstor Lomba Lomba](https://www.linkedin.com/in/nlomba), [Dan Mihai Dumitriu](https://www.linkedin.com/in/dmdumitriu), [Haitham Hassanieh](https://people.epfl.ch/haitham.alhassanieh?lang=en)
 
-The srsRAN Project is a complete 5G RAN solution, featuring an ORAN-native CU/DU developed by [SRS](http://www.srs.io).
+<!-- [[Paper](https://ojs.aaai.org/index.php/ICWSM/article/view/35838)] [[Slides](https://aygong.com/docu/icwsm25slides.pdf)] [[Citation](https://ojs.aaai.org/index.php/ICWSM/citationstylelanguage/download/bibtex?submissionId=35838&publicationId=34111)] -->
+[Paper] [Slides] [Citation]
 
-The solution includes a complete L1/2/3 implementation with minimal external dependencies. Portable across processor architectures, the software has been optimized for x86 and ARM. srsRAN follows the 3GPP 5G system architecture implementing the functional splits between distributed unit (DU) and centralized unit (CU). The CU is further disaggregated into control plane (CU-CP) and user-plane (CU-UP).
+## 🧭 Overview
 
-See the [srsRAN Project](https://www.srsran.com/) for information, guides and project news.
+<div align="center">
+  <p>
+    <img src="assets/sr_free_distribution.png" height="280" style="margin-right: 20px;"/>
+    <img src="assets/mean_latency_bar.png" height="280"/>
+  </p>
+</div>
 
-Build instructions and user guides - [srsRAN Project documentation](https://docs.srsran.com/projects/project).
+This repository contains the code for our paper: 
+> Towards URLLC with Open-Source 5G Software
 
-Community announcements and support - [Discussion board](https://www.github.com/srsran/srsran_project/discussions).
 
-Features and roadmap - [Features](https://docs.srsran.com/projects/project/en/latest/general/source/2_features_and_roadmap.html).
+## 🔧 Environment Setup
 
-Build Preparation
------------------
+Our modifications are built on top of the original [srsRAN](https://github.com/srsran/srsRAN_Project).  
+- To build and run our modified version, please follow the same environment setup instructions as described in the official [srsRAN README](/README.md).
 
-### Dependencies
 
-* Build tools:
-  * cmake:               <https://cmake.org/>
-  
-* Mandatory requirements:
-  * libfftw:             <https://www.fftw.org/>
-  * libsctp:             <https://github.com/sctp/lksctp-tools>
-  * yaml-cpp:            <https://github.com/jbeder/yaml-cpp>
-  * mbedTLS:             <https://www.trustedfirmware.org/projects/mbed-tls/>
-  * googletest:          <https://github.com/google/googletest/>
+## ⚙️ gNB Configuration Parameters
 
-You can install the build tools and mandatory requirements for some example distributions with the commands below:
+> You can find the official list of srsRAN configuration parameters [here](https://docs.srsran.com/projects/project/en/latest/user_manuals/source/config_ref.html).
 
-<details open>
-<summary><strong>Ubuntu 22.04</strong></summary>
+We introduce four new configuration parameters to support low-latency modifications:
 
-```bash
-sudo apt-get install cmake make gcc g++ pkg-config libfftw3-dev libmbedtls-dev libsctp-dev libyaml-cpp-dev libgtest-dev
+- `sr_free_access_enable`
+    - Enables Scheduling Request (SR)-free access to the slice. 
+    - Optional BOOLEAN (true). Supported: [false, true].
+- `min_ul_grant_size`
+    - Specifies the minimum size (in bytes) of uplink grants assigned to the slice.
+    - Optional INT (0). Supported: [0 - 100000].
+- `max_proc_delay`
+    - Sets the maximum allowed DL processing delay in slots.
+    - Optional FLOAT (5.0). Supported: [0.0 - 30.0].
+    - This value corresponds to $M$
+- `radio_heads_prep_time`
+    - Sets the maximum allowed preparation time for radio heads in milliseconds.
+    - Optional FLOAT (1.0). Supported: [1 - 30].
+    - This value corresponds to $H$
+
+ℹ️ Note: We have extended the original `max_proc_delay` parameter to support `FLOAT` values in addition to `INT`.
+
+🧾 Example Configuration:
+
+```
+cell_cfg:
+  slicing:
+    - sst: 1
+      sd: 0
+      sched_cfg:
+        sr_free_access_enable: false
+        min_ul_grant_size: 512
+
+expert_phy:
+  max_proc_delay: 0.5
+  radio_heads_prep_time: 1
 ```
 
-</details>
-<details>
-<summary><strong>Fedora</strong></summary>
 
-```bash
-sudo yum install cmake make gcc gcc-c++ fftw-devel lksctp-tools-devel yaml-cpp-devel mbedtls-devel gtest-devel
+## 📄 Citation
+
+If you find the codebase helpful, please consider giving a ⭐ and citing our paper:
+```bibtex
+@inproceedings{sens2025urllc,
+  title={Towards URLLC with Open-Source 5G Software},
+  author={Gong, Aoyu and Maghsoudnia, Arman and Cannatà, Raphael and Vlad, Eduard and Lomba Lomba, Néstor and Dumitriu, Dan Mihai and Hassanieh, Haitham},
+  booktitle={Proceedings of the 2025 SIGCOMM Workshop on Open Research Infrastructures and Toolkits for 6G (OpenRIT6G '25)},
+  year={2025},
+  publisher={Association for Computing Machinery},
+  address={New York, NY, USA}
+}
 ```
 
-</details>
-<details>
-<summary><strong>Arch Linux</strong></summary>
 
-```bash
-sudo pacman -S cmake make base-devel fftw mbedtls yaml-cpp lksctp-tools gtest
-```
+## 😋 Questions or Issues?
 
-</details>
-
-#### Split-8
-
-For Split-8 configurations, either UHD or ZMQ is required for the fronthaul interface. Both drivers are linked below, please see their respective documentation for installation instructions.
-
-* UHD:                 <https://github.com/EttusResearch/uhd>
-* ZMQ:                 <https://zeromq.org/>
-
-#### Split-7.2
-
-For Split-7.2 configurations no extra 3rd-party dependencies are required, only those listed above.
-
-Optionally, DPDK can be installed for high-bandwidth low-latency scenarios. For more information on this, please see [this tutorial](https://docs.srsran.com/projects/project/en/latest/tutorials/source/dpdk/source/index.html#).
-
-Build Instructions
-------------------
-
-Download and build srsRAN:
-
-<details open>
-<summary><strong>Vanilla Installation</strong></summary>
-
-First, clone the srsRAN Project repository:
-
-```bash
-    git clone https://github.com/srsRAN/srsRAN_Project.git
-```
-
-Then build the code-base:
-
-```bash
-
-    cd srsRAN_Project
-    mkdir build
-    cd build
-    cmake ../ 
-    make -j $(nproc)
-    make test -j $(nproc)
-```
-
-You can now run the gNB from ``srsRAN_Project/build/apps/gnb/``. If you wish to install the srsRAN Project gNB, you can use the following command:
-
-```bash
-    sudo make install
-```
-
-</details>
-
-<details>
-<summary><strong>ZMQ Enabled Installation</strong></summary>
-
-Once ZMQ has been installed you will need build of srsRAN Project with the correct flags to enable the use of ZMQ.
-
-The following commands can be used to clone and build srsRAN Project from source. The relevant flags are added to the ``cmake`` command to enable the use of ZMQ:
-
-```bash
-git clone https://github.com/srsran/srsRAN_Project.git
-cd srsRAN_Project
-mkdir build
-cd build
-cmake ../ -DENABLE_EXPORT=ON -DENABLE_ZEROMQ=ON
-make -j $(nproc)
-make test -j $(nproc)
-```
-
-Pay extra attention to the cmake console output. Make sure you read the following line to ensure ZMQ has been correctly detected by srsRAN:
-
-```bash
-...
--- FINDING ZEROMQ.
--- Checking for module 'ZeroMQ'
---   No package 'ZeroMQ' found
--- Found libZEROMQ: /usr/local/include, /usr/local/lib/libzmq.so
-...
-```
-
-</details>
-
-<details>
-<summary><strong>DPDK Enabled Installation</strong></summary>
-
-Once DPDK has been installed and configured you will need to create a clean build of srsRAN Project to enable the use of DPDK.
-
-If you have not done so already, download the code-base with the following command:
-
-```bash
-git clone https://github.com/srsRAN/srsRAN_Project.git
-```
-
-Then build the code-base, making sure to include the correct flags when running cmake:
-
-```bash
-cd srsRAN_Project
-mkdir build
-cd build
-cmake ../ -DENABLE_DPDK=True -DASSERT_LEVEL=MINIMAL
-make -j $(nproc)
-make test -j $(nproc)
-```
-
-</details>
-
-### PHY Tests
-
-PHY layer tests use binary test vectors and are not built by default. To enable, see the [docs](https://docs.srsran.com/projects/project/en/latest/user_manuals/source/installation.html).
-
-Deploying srsRAN Project
-------------------------
-
-srsRAN Project can be run in two ways:
-
-* As a monolithic gNB (combined CU & DU)
-* With a split CU and DU
-
-For exact details on running srsRAN Project in any configuration, see [the documentation](https://docs.srsran.com/projects/project/en/latest/user_manuals/source/running.html).
-
-For information on configuring and running srsRAN for various different use cases,  check our [tutorials](https://docs.srsran.com/projects/project/en/latest/tutorials/source/index.html).
+If you run into problems or have suggestions, feel free to open an issue or reach out to us.
