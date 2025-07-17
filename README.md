@@ -4,6 +4,15 @@
 
 [Paper] [Slides] [Citation] [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
 
+## Table of Contents
+- [🧭 Overview](#-overview)
+- [🔧 Environment Setup](#-environment-setup)
+  - [Build From Source](#build-from-source)
+  - [Docker Image](#docker-image)
+- [⚙️ gNB Configuration Parameters](#-gnb-configuration-parameters)
+- [📄 Citation](#-citation)
+- [😋 Questions or Issues?](#-questions-or-issues)
+
 ## 🧭 Overview
 
 <div align="center">
