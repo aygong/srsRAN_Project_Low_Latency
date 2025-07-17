@@ -196,7 +196,9 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
       // ################################################################################ //
       // Detect half-slot boundary.
       if (i_symbol == (nof_symbols_per_slot / 2) - 1) {
-        srslog::fetch_basic_logger("LOWER PHY").debug("downlink_processor_baseband_impl.cpp | notify half slot boundary: slot={}", slot);
+        srslog::fetch_basic_logger("LOWER PHY").debug(
+          "radio-unit-downlink processor | notify half slot boundary : downlink-processor slot={}", slot
+        );
       }
       // ################################################################################ //
 
@@ -276,8 +278,7 @@ baseband_gateway_transmitter_metadata downlink_processor_baseband_impl::process(
 void downlink_processor_baseband_impl::notify()
 {
   srslog::fetch_basic_logger("LOWER PHY").debug(
-    "downlink_processor_baseband_impl.cpp | notify full slot boundary: slot={}, nof_slot_tti_in_advance={}, context.slot={}", 
-    last_saved_slot, nof_slot_tti_in_advance, last_saved_context.slot
+    "radio-unit-downlink processor | notify full slot boundary : downlink-processor slot={}", last_saved_slot
   );
   last_notified_slot.emplace(last_saved_slot);
   notifier->on_tti_boundary(last_saved_context);

@@ -265,7 +265,7 @@ void lower_phy_uplink_processor_impl::process_collecting(const baseband_gateway_
     context.slot = current_slot;
     // ################################################################################ //
     srslog::fetch_basic_logger("LOWER PHY").debug(
-      "uplink_processor_impl.cpp | notify full slot boundary: context.slot={}", context.slot
+      "radio-unit-uplink processor | notify half slot boundary : uplink-processor slot={}", context.slot
     );
     // ################################################################################ //
     notifier->on_half_slot(context);
@@ -278,7 +278,7 @@ void lower_phy_uplink_processor_impl::process_collecting(const baseband_gateway_
     context.slot = current_slot;
     // ################################################################################ //
     srslog::fetch_basic_logger("LOWER PHY").debug(
-      "uplink_processor_impl.cpp | notify half slot boundary: context.slot={}", context.slot
+      "radio-unit-uplink processor | notify full slot boundary : uplink-processor slot={}", context.slot + 1
     );
     // ################################################################################ //
     notifier->on_full_slot(context);
