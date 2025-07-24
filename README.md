@@ -53,7 +53,7 @@ We introduce four new configuration parameters to support low-latency modificati
 
 - `sr_free_access_enable`
     - Enables Scheduling Request (SR)-free access to the slice. 
-    - Optional BOOLEAN (true). Supported: [false, true].
+    - Optional BOOLEAN (false). Supported: [false, true].
 - `min_ul_grant_size`
     - Specifies the minimum size (in bytes) of uplink grants assigned to the slice.
     - Optional INT (0). Supported: [0 - 100000].
@@ -62,7 +62,7 @@ We introduce four new configuration parameters to support low-latency modificati
     - Optional FLOAT (5.0). Supported: [0.0 - 30.0].
     - This value corresponds to the $M$-slot offset.
 - `radio_heads_prep_time`
-    - Sets the maximum allowed preparation time for radio heads in milliseconds.
+    - Sets the maximum allowed preparation time for radio heads in slots.
     - Optional INT (3). Supported: [1 - 30].
     - This value corresponds to the $H$-slot offset.
 
