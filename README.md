@@ -22,7 +22,7 @@
   </p>
 </div>
 
-This repository contains the code for our paper: 
+This repository provides the code associated with our paper: 
 > Towards URLLC with Open-Source 5G Software
 
 
