@@ -44,11 +44,11 @@ cell_cfg:
 
   pusch:
     mcs_table: qam64
-    min_k2: 1
+    min_k2: 2
 
   pucch:
     sr_period_ms: 2
-    min_k1: 1
+    min_k1: 2
 
   tdd_ul_dl_cfg:
     dl_ul_tx_period: 4
