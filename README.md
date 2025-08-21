@@ -93,7 +93,7 @@ If you find the codebase helpful, please consider giving a ⭐ and citing our pa
 ```bibtex
 @inproceedings{sens2025urllc,
   author = {Gong, Aoyu and Maghsoudnia, Arman and Cannat\`{a}, Raphael and Vlad, Eduard and Lomba Lomba, N\'{e}stor and Dumitriu, Dan Mihai and Hassanieh, Haitham},
-  title = {Towards URLLC with Open-Source 5G Software},
+  title = {Towards {URLLC} with Open-Source {5G} Software},
   year = {2025},
   isbn = {9798400721083},
   publisher = {Association for Computing Machinery},
