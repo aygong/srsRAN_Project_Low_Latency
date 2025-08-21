@@ -2,7 +2,7 @@
 
 [Aoyu Gong](https://aygong.com/), [Arman Maghsoudnia](https://people.epfl.ch/arman.maghsoudnia), [Raphael Cannatà](https://www.raphaelcannata.com/), [Eduard Vlad](https://evlad.de/), [Néstor Lomba Lomba](https://www.linkedin.com/in/nlomba), [Dan Mihai Dumitriu](https://www.linkedin.com/in/dmdumitriu), [Haitham Hassanieh](https://people.epfl.ch/haitham.alhassanieh?lang=en)
 
-[[Paper](https://aygong.com/docu/openrit6g25-final5.pdf)] [Slides] [Citation] [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
+[[Paper](https://aygong.com/docu/openrit6g25-final5.pdf)] [Slides] [[Citation]](#-citation) [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
 
 ## Table of Contents
 - [🧭 Overview](#-overview)
@@ -92,12 +92,20 @@ expert_phy:
 If you find the codebase helpful, please consider giving a ⭐ and citing our paper:
 ```bibtex
 @inproceedings{sens2025urllc,
-  title={Towards URLLC with Open-Source 5G Software},
-  author={Gong, Aoyu and Maghsoudnia, Arman and Cannatà, Raphael and Vlad, Eduard and Lomba Lomba, Néstor and Dumitriu, Dan Mihai and Hassanieh, Haitham},
-  booktitle={Proceedings of the 2025 SIGCOMM Workshop on Open Research Infrastructures and Toolkits for 6G (OpenRIT6G '25)},
-  year={2025},
-  publisher={Association for Computing Machinery},
-  address={New York, NY, USA}
+  author = {Gong, Aoyu and Maghsoudnia, Arman and Cannat\`{a}, Raphael and Vlad, Eduard and Lomba Lomba, N\'{e}stor and Dumitriu, Dan Mihai and Hassanieh, Haitham},
+  title = {Towards URLLC with Open-Source 5G Software},
+  year = {2025},
+  isbn = {9798400721083},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3750718.3750743},
+  doi = {10.1145/3750718.3750743},
+  booktitle = {Proceedings of the 1st Workshop on Open Research Infrastructures and Toolkits for 6G},
+  pages = {7–14},
+  numpages = {8},
+  keywords = {5G, Open-source software, System-level analysis, URLLC},
+  location = {Coimbra, Portugal},
+  series = {OpenRIT6G '25}
 }
 ```
 
