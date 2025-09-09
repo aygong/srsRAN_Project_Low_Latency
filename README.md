@@ -2,7 +2,7 @@
 
 [Aoyu Gong](https://aygong.com/), [Arman Maghsoudnia](https://people.epfl.ch/arman.maghsoudnia), [Raphael Cannatà](https://www.raphaelcannata.com/), [Eduard Vlad](https://evlad.de/), [Néstor Lomba Lomba](https://www.linkedin.com/in/nlomba), [Dan Mihai Dumitriu](https://www.linkedin.com/in/dmdumitriu), [Haitham Hassanieh](https://people.epfl.ch/haitham.alhassanieh?lang=en)
 
-[[Paper](https://aygong.com/docu/openrit6g25-final5.pdf)] [Slides] [[Citation]](#-citation) [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
+[[Paper](https://aygong.com/docu/openrit6g25-final5.pdf)] [[Slides](https://aygong.com/docu/openrit6g25slides.pdf)] [[Citation](#-citation)] [[srsRAN Workshop](https://www.youtube.com/watch?v=o88ti2lHDuY)]
 
 ## Table of Contents
 - [🧭 Overview](#-overview)
